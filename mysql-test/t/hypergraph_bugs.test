@@ -3316,4 +3316,17 @@ SELECT 1 WHERE EXISTS (
 DROP TABLE t_small;
 DROP TABLE t_union;
 
+--echo #
+--echo # Bug 36784038 - Explain TREE format does not display
+--echo #.               transformed query like TRADITIONAL format
+--echo #
+
+CREATE TABLE t1 (f1 integer);
+--replace_regex $elide_costs
+--disable_warnings
+EXPLAIN FORMAT=tree SELECT * FROM (SELECT * FROM t1) AS dt WHERE f1 > 10;
+--enable_warnings
+SHOW WARNINGS;
+DROP TABLE t1;
+
 --source include/disable_hypergraph.inc

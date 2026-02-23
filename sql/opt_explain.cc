@@ -2202,6 +2202,17 @@ static bool ExplainIterator(THD *ethd, const THD *query_thd,
       return true;
     }
   }
+  if (ethd == query_thd && !ethd->lex->is_explain_analyze &&
+      !ethd->lex->explain_format->is_explain_into() &&
+      ethd->lex->explain_format->is_tree()) {
+    StringBuffer<1024> str;
+    print_query_for_explain(query_thd, unit, &str);
+    if (!str.is_empty()) {
+      str.append('\0');
+      push_warning(ethd, Sql_condition::SL_NOTE, ER_YES, str.ptr());
+    }
+  }
+
   return result->send_eof(ethd);
 }
 
@@ -2240,34 +2251,41 @@ class Query_result_null : public Query_result_interceptor {
 */
 void print_query_for_explain(const THD *query_thd, Query_expression *unit,
                              String *str) {
+  const enum_sql_command command = query_thd->query_plan.get_command();
+
   /* Only certain statements can be explained.  */
-  if (query_thd->query_plan.get_command() == SQLCOM_SELECT ||
-      query_thd->query_plan.get_command() == SQLCOM_INSERT_SELECT ||
-      query_thd->query_plan.get_command() == SQLCOM_REPLACE_SELECT ||
-      query_thd->query_plan.get_command() == SQLCOM_DELETE ||
-      query_thd->query_plan.get_command() == SQLCOM_DELETE_MULTI ||
-      query_thd->query_plan.get_command() == SQLCOM_UPDATE ||
-      query_thd->query_plan.get_command() == SQLCOM_UPDATE_MULTI ||
-      query_thd->query_plan.get_command() == SQLCOM_INSERT ||
-      query_thd->query_plan.get_command() == SQLCOM_REPLACE)  // (2)
+  if (command == SQLCOM_SELECT || command == SQLCOM_INSERT_SELECT ||
+      command == SQLCOM_REPLACE_SELECT || command == SQLCOM_DELETE ||
+      command == SQLCOM_DELETE_MULTI || command == SQLCOM_UPDATE ||
+      command == SQLCOM_UPDATE_MULTI || command == SQLCOM_INSERT ||
+      command == SQLCOM_REPLACE)  // (2)
   {
     /*
       The warnings system requires input in utf8, see mysqld_show_warnings().
+      enum_query_type is a bitmap, so combined flags are valid here.
     */
-
-    enum_query_type eqt =
-        enum_query_type(QT_TO_SYSTEM_CHARSET | QT_SHOW_SELECT_NUMBER);
+    auto eqt = enum_query_type(QT_TO_SYSTEM_CHARSET | QT_SHOW_SELECT_NUMBER);
 
     /**
       For DML statements use QT_NO_DATA_EXPANSION to avoid over-simplification.
     */
-    if (query_thd->query_plan.get_command() != SQLCOM_SELECT)
+    if (command != SQLCOM_SELECT) {
       eqt = enum_query_type(eqt | QT_NO_DATA_EXPANSION);
+    }
 
-    if (unit != nullptr) {
-      unit->print(query_thd, str, eqt);
-    } else if (query_thd->query_plan.get_command() == SQLCOM_INSERT ||
-               query_thd->query_plan.get_command() == SQLCOM_REPLACE) {
+    Query_expression *unit_to_print = unit;
+    /*
+      Single-table UPDATE/DELETE use explain_single_table_modification(),
+      which calls ExplainIterator() without a query expression.
+    */
+    if (unit_to_print == nullptr &&
+        (command == SQLCOM_UPDATE || command == SQLCOM_DELETE)) {
+      unit_to_print = query_thd->lex->unit;
+    }
+
+    if (unit_to_print != nullptr) {
+      unit_to_print->print(query_thd, str, eqt);
+    } else if (command == SQLCOM_INSERT || command == SQLCOM_REPLACE) {
       query_thd->lex->query_block->print(query_thd, str, eqt);
     }
   }
