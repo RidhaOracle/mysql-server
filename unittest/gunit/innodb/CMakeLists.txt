@@ -63,6 +63,8 @@ SET(TESTS
   ut0mem
   ut0new
   ut0object_cache
+  ut0per_thread
+  ut0prefix_cache
   ut0rbt
   ut0rnd
 )
