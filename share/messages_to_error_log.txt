@@ -13437,6 +13437,22 @@ ER_COMPONENT_OBJECT_POLICY_INIT_FAILED
 ER_COMPONENT_OBJECT_POLICY_DEINIT_FAILED
   eng "Failed to deinitialize component_object_policy. Check logs for more details."
 
+#
+# End of 9.7 error messages intended to be written to the server error log.
+#
+
+#
+# Start of 10.x error messages intended to be written to the server error log.
+# Append 9.7 error log messages to the end of the previous section.
+# Messages intended to be sent to _clients_ go in messages_to_clients.txt!
+#
+
+start-error-number 16000
+
+#
+# End of 10.x error messages intended to be written to the server error log.
+#
+
 ################################################################################
 # Error numbers 50000 to 51999 are reserved. Please do not use them for
 # other error messages.

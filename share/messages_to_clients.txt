@@ -10983,7 +10983,25 @@ ER_MASKING_POLICY_NON_DETERMINISTIC_FUNC 42000
   eng "MASKING POLICY expression is non-deterministic."
 
 #
-#  End of 9.x error messages (server-to-client).
+#  End of 9.7 error messages (server-to-client).
+#
+
+################################################################################
+# Error numbers starting at 6900: server-to-client messages 10.x
+################################################################################
+
+# Do NOT add messages intended for the error log here;
+# they belong in a separate file, messages_to_error_log.txt.
+#
+# Do NOT add messages to clients for server versions < 10 here;
+# they have their own sections above.
+#
+# See the FAQ at the end of the file for more information.
+
+start-error-number 6900
+
+#
+#  End of 10.x error messages (server-to-client).
 #
 
 ################################################################################
