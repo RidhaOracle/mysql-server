@@ -50,7 +50,7 @@ class TransporterReceiveHandleKernel : public TransporterReceiveHandle {
    */
   void assign_trps(Uint32 *recv_thread_idx_array);
 #endif
-  void *m_trpman;
+  void *m_trpman = nullptr;
 
   void assign_trpman(void *trpman) { m_trpman = trpman; }
   /* TransporterCallback interface. */
@@ -62,7 +62,7 @@ class TransporterReceiveHandleKernel : public TransporterReceiveHandle {
   void reportDisconnect(NodeId nodeId, Uint32 errNo) override;
   void reportError(NodeId nodeId, TransporterError errorCode,
                    const char *info = nullptr) override;
-  void transporter_recv_from(NodeId node) override;
+  void transporter_recv_from(NodeId node, TrpId trpId) override;
   int checkJobBuffer() override;
   ~TransporterReceiveHandleKernel() override {}
 };
