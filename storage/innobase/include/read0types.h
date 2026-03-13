@@ -36,8 +36,8 @@ this program; if not, write to the Free Software Foundation, Inc.,
 
 #include <algorithm>
 #include "dict0mem.h"
-
 #include "trx0types.h"
+#include "ut0cpu_cache.h"
 
 // Friend declaration
 class MVCC;
@@ -292,7 +292,7 @@ class ReadView {
   typedef UT_LIST_NODE_T(ReadView) node_t;
 
   /** List of read views in trx_sys */
-  byte pad1[64 - sizeof(node_t)];
+  byte pad1[ut::INNODB_CACHE_LINE_SIZE];
   node_t m_view_list;
 };
 
