@@ -916,6 +916,10 @@ static bool check_events(THD *thd, std::unique_ptr<Schema> &schema,
       dd::Event::DD_table::create_key_by_schema_id(schema->id()));
 
   auto process_event = [&](std::unique_ptr<dd::Event> &event) {
+    // Parse using the event's stored sql_mode.
+    Routine_event_context_guard guard(thd);
+    thd->variables.sql_mode = static_cast<sql_mode_t>(event->sql_mode());
+
     dd::String_type sql;
     if (build_event_sp(thd, event->name().c_str(), event->name().size(),
                        event->definition().c_str(), event->definition().size(),
