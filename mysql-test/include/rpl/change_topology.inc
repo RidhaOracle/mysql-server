@@ -246,9 +246,9 @@ while ($_rpl_topology)
   #  - If it is equal to 's1->s2', remove 's1->s2'
   --let $_rpl_topology= `SELECT SUBSTR('$_rpl_topology', IF(SUBSTR('$_rpl_topology', LENGTH('$_rpl_master_slave') + 1, 2) != '->', LENGTH('$_rpl_master_slave'), LOCATE('->', '$_rpl_master_slave')) + 2)`
   # Get 's1' from 's1->s2'
-  --let $_rpl_master= `SELECT RPAD(SUBSTRING_INDEX('$_rpl_master_slave', '->', 1), $rpl_server_count_length, ' ')`
+  --let $_rpl_master= `SELECT RTRIM(RPAD(SUBSTRING_INDEX('$_rpl_master_slave', '->', 1), $rpl_server_count_length, ' '))`
   # Get 's2' from 's1->s2'
-  --let $_rpl_slave= `SELECT RPAD(SUBSTRING('$_rpl_master_slave', LENGTH('$_rpl_master') + 3), $rpl_server_count_length, ' ')`
+  --let $_rpl_slave= `SELECT RTRIM(RPAD(SUBSTRING('$_rpl_master_slave', LENGTH('$_rpl_master') + 3), $rpl_server_count_length, ' '))`
 
   if (!$rpl_multi_source)
   {
@@ -260,7 +260,7 @@ while ($_rpl_topology)
     }
   }
   # Append 'm<s1> s<s2> ' to $rpl_connection_list
-  --let $_rpl_new_connection= m$_rpl_master s$_rpl_slave$_rpl_space
+  --let $_rpl_new_connection= `SELECT CONCAT('m$_rpl_master', REPEAT(' ', $rpl_server_count_length), 's$_rpl_slave', REPEAT(' ', $rpl_server_count_length))`
   --let $rpl_connection_list= $rpl_connection_list$_rpl_new_connection
   --inc $rpl_connection_count
 }

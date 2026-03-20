@@ -59,9 +59,10 @@
 if (!$rpl_unconditional_change_master)
 {
   if (`SELECT LOCATE(CONCAT('m',
-                            RPAD('$rpl_master', $rpl_server_count_length, ' '),
-                            ' s',
-                            RPAD('$rpl_slave', $rpl_server_count_length, ' '),
+                            '$rpl_master',
+                            REPEAT(' ', $rpl_server_count_length),
+                            's',
+                            '$rpl_slave',
                             ' '),
                      '$_rpl_old_connection_list')`)
   {
