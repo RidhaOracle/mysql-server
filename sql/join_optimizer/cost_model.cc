@@ -1594,14 +1594,26 @@ void EstimateAggregateCost(THD *thd, AccessPath *path,
         thd, child, query_block, path->aggregate().olap == ROLLUP_TYPE));
   }
 
-  path->set_init_cost(child->init_cost());
   path->set_init_once_cost(child->init_once_cost());
 
+  const uint num_group_elements =
+      CountOrderElements(query_block->join->group_list.order);
   path->set_cost(
       std::max(0.0, child->cost()) +
       AggregateCost(thd, path->num_output_rows(), child->num_output_rows(),
                     query_block->join->tmp_table_param.sum_func_count,
-                    CountOrderElements(query_block->join->group_list.order)));
+                    num_group_elements));
+
+  if (num_group_elements == 0 && thd->lex->using_hypergraph_optimizer()) {
+    // Without GROUP BY (e.g. SELECT avg(x) FROM t), the aggregate must
+    // process ALL input rows before producing its single output row.
+    // This is a blocking operation, so init_cost equals total cost.
+    // Restricted to hypergraph because the old optimizer does not consume
+    // init_cost for planning, so we keep its EXPLAIN output unchanged.
+    path->set_init_cost(path->cost());
+  } else {
+    path->set_init_cost(child->init_cost());
+  }
 
   path->num_output_rows_before_filter = path->num_output_rows();
   path->set_cost_before_filter(path->cost());

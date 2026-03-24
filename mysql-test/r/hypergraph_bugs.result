@@ -3781,3 +3781,121 @@ current_timestamp,
 ) = c3;
 ERROR HY000: Cannot convert string '\xF4\xDD\x01\x89\x99\x1D...' from utf8mb4 to gb18030
 DROP TABLE t;
+#
+# Bug#35767452: Inefficient ordering of UNION ALL inputs
+#
+CREATE TABLE t_union (
+a INT,
+b INT,
+PRIMARY KEY(a)
+);
+INSERT INTO t_union
+WITH RECURSIVE qn(n) AS (SELECT 1 UNION ALL SELECT n+1 FROM qn WHERE n<1000)
+SELECT n, n FROM qn;
+ANALYZE TABLE t_union;
+Table	Op	Msg_type	Msg_text
+test.t_union	analyze	status	OK
+# Show individual branch costs for reference:
+# Branch A: avg(b) — blocking aggregate, high init_cost
+EXPLAIN FORMAT=TREE SELECT avg(b) FROM t_union;
+EXPLAIN
+-> Aggregate: avg(t_union.b)  (cost=442..442 rows=1)
+    -> Index scan on t_union using PRIMARY  (cost=0.313..313 rows=1000)
+
+# Branch B: table scan — streaming, near-zero init_cost
+EXPLAIN FORMAT=TREE SELECT b FROM t_union;
+EXPLAIN
+-> Index scan on t_union using PRIMARY  (cost=0.313..313 rows=1000)
+
+# UNION ALL with EXISTS: aggregate written first textually,
+# but after the fix the scan (low init_cost) appears first
+# in the Append, allowing EXISTS to short-circuit immediately.
+EXPLAIN FORMAT=TREE
+SELECT * FROM t_union x0 WHERE EXISTS (
+SELECT avg(b) FROM t_union x2
+UNION ALL
+SELECT b FROM t_union x1
+);
+EXPLAIN
+-> Filter: exists(select #2)  (cost=0.417..417 rows=1000)
+    -> Index scan on x0 using PRIMARY  (cost=0.359..359 rows=1000)
+    -> Select #2 (subquery in condition; run only once)
+        -> Limit: 1 row(s)  (cost=442..442 rows=1)
+            -> Append  (cost=442..755 rows=1001)
+                -> Stream results  (cost=0.313..313 rows=1000)
+                    -> Index scan on x1 using PRIMARY  (cost=0.313..313 rows=1000)
+                -> Stream results  (cost=442..442 rows=1)
+                    -> Aggregate: avg(x2.b)  (cost=442..442 rows=1)
+                        -> Index scan on x2 using PRIMARY  (cost=0.313..313 rows=1000)
+
+# Reversed textual order — same plan expected (scan first).
+EXPLAIN FORMAT=TREE
+SELECT * FROM t_union x0 WHERE EXISTS (
+SELECT b FROM t_union x1
+UNION ALL
+SELECT avg(b) FROM t_union x2
+);
+EXPLAIN
+-> Filter: exists(select #2)  (cost=0.417..417 rows=1000)
+    -> Index scan on x0 using PRIMARY  (cost=0.359..359 rows=1000)
+    -> Select #2 (subquery in condition; run only once)
+        -> Limit: 1 row(s)  (cost=442..442 rows=1)
+            -> Append  (cost=442..755 rows=1001)
+                -> Stream results  (cost=0.313..313 rows=1000)
+                    -> Index scan on x1 using PRIMARY  (cost=0.313..313 rows=1000)
+                -> Stream results  (cost=442..442 rows=1)
+                    -> Aggregate: avg(x2.b)  (cost=442..442 rows=1)
+                        -> Index scan on x2 using PRIMARY  (cost=0.313..313 rows=1000)
+
+# Both queries produce identical results.
+SELECT COUNT(*) FROM t_union x0 WHERE EXISTS (
+SELECT avg(b) FROM t_union x2
+UNION ALL
+SELECT b FROM t_union x1
+);
+COUNT(*)
+1000
+SELECT COUNT(*) FROM t_union x0 WHERE EXISTS (
+SELECT b FROM t_union x1
+UNION ALL
+SELECT avg(b) FROM t_union x2
+);
+COUNT(*)
+1000
+# Selective-filter branch vs cheap branch: both have near-zero
+# init_cost (streaming scan), but the filter must read many rows
+# before producing one, so its first_row_cost is high. Sorting on
+# first_row_cost rather than raw init_cost places the cheap branch
+# first so EXISTS short-circuits without scanning t_union.
+CREATE TABLE t_small (b INT);
+INSERT INTO t_small VALUES (1),(2),(3);
+ANALYZE TABLE t_small;
+Table	Op	Msg_type	Msg_text
+test.t_small	analyze	status	OK
+EXPLAIN FORMAT=TREE
+SELECT 1 WHERE EXISTS (
+SELECT b FROM t_union WHERE b > 10000
+UNION ALL
+SELECT b FROM t_small
+);
+EXPLAIN
+-> Filter: exists(select #2)  (cost=0..0 rows=1)
+    -> Rows fetched before execution  (cost=0..0 rows=1)
+    -> Select #2 (subquery in condition; run only once)
+        -> Limit: 1 row(s)  (cost=1.11..1.11 rows=1)
+            -> Append  (cost=1.11..372 rows=336)
+                -> Stream results  (cost=0.295..0.885 rows=3)
+                    -> Table scan on t_small  (cost=0.295..0.885 rows=3)
+                -> Stream results  (cost=1.11..371 rows=333)
+                    -> Filter: (t_union.b > 10000)  (cost=1.11..371 rows=333)
+                        -> Index scan on t_union using PRIMARY  (cost=0.313..313 rows=1000)
+
+SELECT 1 WHERE EXISTS (
+SELECT b FROM t_union WHERE b > 10000
+UNION ALL
+SELECT b FROM t_small
+);
+1
+1
+DROP TABLE t_small;
+DROP TABLE t_union;

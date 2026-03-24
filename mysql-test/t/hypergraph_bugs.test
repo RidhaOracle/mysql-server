@@ -3238,4 +3238,82 @@ SELECT 1 FROM t WHERE date_format(
 
 DROP TABLE t;
 
+--echo #
+--echo # Bug#35767452: Inefficient ordering of UNION ALL inputs
+--echo #
+
+CREATE TABLE t_union (
+  a INT,
+  b INT,
+  PRIMARY KEY(a)
+);
+
+INSERT INTO t_union
+WITH RECURSIVE qn(n) AS (SELECT 1 UNION ALL SELECT n+1 FROM qn WHERE n<1000)
+SELECT n, n FROM qn;
+
+ANALYZE TABLE t_union;
+
+--echo # Show individual branch costs for reference:
+--echo # Branch A: avg(b) — blocking aggregate, high init_cost
+EXPLAIN FORMAT=TREE SELECT avg(b) FROM t_union;
+--echo # Branch B: table scan — streaming, near-zero init_cost
+EXPLAIN FORMAT=TREE SELECT b FROM t_union;
+
+--echo # UNION ALL with EXISTS: aggregate written first textually,
+--echo # but after the fix the scan (low init_cost) appears first
+--echo # in the Append, allowing EXISTS to short-circuit immediately.
+EXPLAIN FORMAT=TREE
+SELECT * FROM t_union x0 WHERE EXISTS (
+  SELECT avg(b) FROM t_union x2
+  UNION ALL
+  SELECT b FROM t_union x1
+);
+
+--echo # Reversed textual order — same plan expected (scan first).
+EXPLAIN FORMAT=TREE
+SELECT * FROM t_union x0 WHERE EXISTS (
+  SELECT b FROM t_union x1
+  UNION ALL
+  SELECT avg(b) FROM t_union x2
+);
+
+--echo # Both queries produce identical results.
+SELECT COUNT(*) FROM t_union x0 WHERE EXISTS (
+  SELECT avg(b) FROM t_union x2
+  UNION ALL
+  SELECT b FROM t_union x1
+);
+
+SELECT COUNT(*) FROM t_union x0 WHERE EXISTS (
+  SELECT b FROM t_union x1
+  UNION ALL
+  SELECT avg(b) FROM t_union x2
+);
+
+--echo # Selective-filter branch vs cheap branch: both have near-zero
+--echo # init_cost (streaming scan), but the filter must read many rows
+--echo # before producing one, so its first_row_cost is high. Sorting on
+--echo # first_row_cost rather than raw init_cost places the cheap branch
+--echo # first so EXISTS short-circuits without scanning t_union.
+CREATE TABLE t_small (b INT);
+INSERT INTO t_small VALUES (1),(2),(3);
+ANALYZE TABLE t_small;
+
+EXPLAIN FORMAT=TREE
+SELECT 1 WHERE EXISTS (
+  SELECT b FROM t_union WHERE b > 10000
+  UNION ALL
+  SELECT b FROM t_small
+);
+
+SELECT 1 WHERE EXISTS (
+  SELECT b FROM t_union WHERE b > 10000
+  UNION ALL
+  SELECT b FROM t_small
+);
+
+DROP TABLE t_small;
+DROP TABLE t_union;
+
 --source include/disable_hypergraph.inc
