@@ -4882,9 +4882,13 @@ void MoveDegenerateJoinConditionToFilter(THD *thd, JoinHypergraph &graph,
   new_expr->left = expr->left;
   new_expr->right = expr->right;
 
-  JoinPredicate *new_edge = new (thd->mem_root) JoinPredicate{
-      new_expr, /*selectivity=*/1.0, (*edge)->estimated_bytes_per_row,
-      (*edge)->functional_dependencies, /*functional_dependencies_idx=*/{}};
+  JoinPredicate *new_edge =
+      new (thd->mem_root) JoinPredicate{new_expr,
+                                        /*selectivity=*/1.0,
+                                        (*edge)->estimated_bytes_per_row,
+                                        (*edge)->estimated_hash_join_key_width,
+                                        (*edge)->functional_dependencies,
+                                        /*functional_dependencies_idx=*/{}};
 
   // Use the filter path and the new join edge with no condition for creating
   // the hash join.
@@ -5429,7 +5433,7 @@ void CostingReceiver::ProposeHashJoin(
   const AccessPath *outer = join_path.hash_join().outer;
 
   const double key_width{[&]() {
-    double width{static_cast<double>(EstimateHashJoinKeyWidth(edge->expr))};
+    double width{static_cast<double>(edge->estimated_hash_join_key_width)};
 
     // If the edge is part of a cycle in the hypergraph, there may be other
     // usable join predicates in other edges.
@@ -5454,7 +5458,8 @@ void CostingReceiver::ProposeHashJoin(
           assert(other_edge->expr->type == RelationalExpression::INNER_JOIN);
           if (other_edge != edge &&
               PassesConflictRules(left | right, other_edge->expr)) {
-            width += EstimateHashJoinKeyWidth(other_edge->expr);
+            width +=
+                static_cast<double>(other_edge->estimated_hash_join_key_width);
           }
         }
       }
@@ -9556,6 +9561,17 @@ static AccessPath *FindBestQueryPlanInner(THD *thd, Query_block *query_block,
       GetNodesUnderLimit(graph, orderings, distinct_ordering_idx);
 
   if (InjectCastNodes(&graph)) return nullptr;
+
+  // Cache EstimateHashJoinKeyWidth() for each edge to avoid redundant
+  // recomputation during plan enumeration. This must happen after
+  // MakeJoinHypergraph() (which finalizes equijoin_conditions) and after
+  // InjectCastNodes() (which may wrap arguments in CAST nodes, changing
+  // max_char_length()). The cached values are read by ProposeHashJoin()
+  // via: EnumerateAllConnectedPartitions() -> FoundSubgraphPair() ->
+  // ProposeHashJoin().
+  for (JoinPredicate &edge : graph.edges) {
+    edge.estimated_hash_join_key_width = EstimateHashJoinKeyWidth(edge.expr);
+  }
 
   // Run the actual join optimizer algorithm. This creates an access path
   // for the join as a whole (with lowest possible cost, and thus also
