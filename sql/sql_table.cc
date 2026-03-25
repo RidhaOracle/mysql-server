@@ -7810,11 +7810,11 @@ static bool check_promoted_index(const handler *file,
   const KEY *end = key_info_buffer + key_count;
   for (const KEY *k = key_info_buffer; k < end && !has_unique_key; ++k)
     if (!(k->flags & HA_NULL_PART_KEY) && (k->flags & HA_NOSAME)) {
-      has_unique_key = true;
       if (!k->is_visible) {
         my_error(ER_PK_INDEX_CANT_BE_INVISIBLE, MYF(0));
         return true;
       }
+      has_unique_key = true;
     }
   if (!has_unique_key && (file->ha_table_flags() & HA_REQUIRE_PRIMARY_KEY)) {
     my_error(ER_REQUIRES_PRIMARY_KEY, MYF(0));
