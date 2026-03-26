@@ -13,7 +13,7 @@
 # which uses ANSI SQL mode.
 # Start the server on the old datadir to trigger upgrade.
 # Without patch upgrade fails with syntax error for the event.
-# restart: --datadir=/export/home/tmp/npgopala/mysql-error/dbg/mysql-test/var/tmp/data
+# restart: --datadir=MYSQLD_DATADIR
 # Verify event exists after upgrade.
 SHOW CREATE EVENT test.event1;
 Event	sql_mode	time_zone	Create Event	character_set_client	collation_connection	Database Collation
