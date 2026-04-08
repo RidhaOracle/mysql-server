@@ -117,7 +117,7 @@ struct ConfigFactory {
     return true;
   }
 
-  static bool write_config_ini(Properties &config, const char *path) {
+  static bool write_config_ini(const Properties &config, const char *path) {
     FILE *config_file = fopen(path, "w");
     if (config_file == NULL) return false;
 
