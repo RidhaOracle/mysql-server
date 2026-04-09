@@ -14006,8 +14006,6 @@ PSI_mutex_key key_RELAYLOG_LOCK_log_end_pos;
 PSI_mutex_key key_RELAYLOG_LOCK_sync;
 PSI_mutex_key key_RELAYLOG_LOCK_xids;
 PSI_mutex_key key_gtid_ensure_index_mutex;
-PSI_mutex_key key_object_cache_mutex;  // TODO need to initialize
-PSI_cond_key key_object_loading_cond;  // TODO need to initialize
 PSI_mutex_key key_mta_temp_table_LOCK;
 PSI_mutex_key key_mta_gaq_LOCK;
 PSI_mutex_key key_thd_timer_mutex;
@@ -14015,6 +14013,7 @@ PSI_mutex_key key_commit_order_manager_mutex;
 PSI_mutex_key key_monitor_info_run_lock;
 PSI_mutex_key key_LOCK_delegate_connection_mutex;
 PSI_mutex_key key_LOCK_group_replication_connection_mutex;
+PSI_mutex_key key_object_cache_mutex;
 
 /* clang-format off */
 static PSI_mutex_info all_server_mutexes[]=
@@ -14110,6 +14109,7 @@ static PSI_mutex_info all_server_mutexes[]=
   { &key_LOCK_group_replication_connection_mutex, "LOCK_group_replication_connection_mutex", PSI_FLAG_SINGLETON, 0, PSI_DOCUMENT_ME},
   { &key_LOCK_authentication_policy, "LOCK_authentication_policy", PSI_FLAG_SINGLETON, 0, "A lock to ensure execution of CREATE USER or ALTER USER sql and SET @@global.authentication_policy variable are serialized"},
   { &key_LOCK_global_conn_mem_limit, "LOCK_global_conn_mem_limit", PSI_FLAG_SINGLETON, 0, PSI_DOCUMENT_ME},
+  { &key_object_cache_mutex, "DD::object_cache_mutex", 0, 0, PSI_DOCUMENT_ME}
 };
 /* clang-format on */
 
@@ -14181,6 +14181,7 @@ PSI_cond_key key_commit_order_manager_cond;
 PSI_cond_key key_monitor_info_run_cond;
 PSI_cond_key key_COND_delegate_connection_cond_var;
 PSI_cond_key key_COND_group_replication_connection_cond_var;
+PSI_cond_key key_object_loading_cond;
 
 /* clang-format off */
 static PSI_cond_info all_server_conds[]=
@@ -14224,7 +14225,8 @@ static PSI_cond_info all_server_conds[]=
   { &key_commit_order_manager_cond, "Commit_order_manager::m_workers.cond", 0, 0, PSI_DOCUMENT_ME},
   { &key_monitor_info_run_cond, "Source_IO_monitor::run_cond", 0, 0, PSI_DOCUMENT_ME},
   { &key_COND_delegate_connection_cond_var, "THD::COND_delegate_connection_cond_var", 0, 0, PSI_DOCUMENT_ME},
-  { &key_COND_group_replication_connection_cond_var, "THD::COND_group_replication_connection_cond_var", 0, 0, PSI_DOCUMENT_ME}
+  { &key_COND_group_replication_connection_cond_var, "THD::COND_group_replication_connection_cond_var", 0, 0, PSI_DOCUMENT_ME},
+  { &key_object_loading_cond, "DD::object_loading_cond", PSI_FLAG_SINGLETON, 0, PSI_DOCUMENT_ME}
 };
 /* clang-format on */
 
