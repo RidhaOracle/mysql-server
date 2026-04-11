@@ -3491,9 +3491,10 @@ static uint get_table_structure(const char *table, char *db, char *table_type,
     if (write_data) {
       if (opt_replace_into)
         dynstr_append_checked(&insert_pat, "REPLACE ");
-      else
+      else {
         dynstr_append_checked(&insert_pat, "INSERT ");
-      dynstr_append_checked(&insert_pat, insert_option);
+        dynstr_append_checked(&insert_pat, insert_option);
+      }
       dynstr_append_checked(&insert_pat, "INTO ");
       dynstr_append_checked(&insert_pat, opt_quoted_table);
       if (complete_insert) {
@@ -3610,9 +3611,10 @@ static uint get_table_structure(const char *table, char *db, char *table_type,
     if (write_data) {
       if (opt_replace_into)
         dynstr_append_checked(&insert_pat, "REPLACE ");
-      else
+      else {
         dynstr_append_checked(&insert_pat, "INSERT ");
-      dynstr_append_checked(&insert_pat, insert_option);
+        dynstr_append_checked(&insert_pat, insert_option);
+      }
       dynstr_append_checked(&insert_pat, "INTO ");
       dynstr_append_checked(&insert_pat, result_table);
       if (complete_insert)
