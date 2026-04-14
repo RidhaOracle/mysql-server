@@ -233,45 +233,9 @@ ALTER TABLE func
   MODIFY type enum ('function','aggregate') COLLATE utf8mb3_general_ci NOT NULL;
 
 #
-# Modify log tables.
+# ALTER plugin table
 #
 
-SET @old_log_state = @@global.general_log;
-SET GLOBAL general_log = 'OFF';
-SET @old_sql_require_primary_key = @@session.sql_require_primary_key;
-SET @@session.sql_require_primary_key = 0;
-ALTER TABLE general_log
-  MODIFY event_time TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6),
-  MODIFY user_host MEDIUMTEXT NOT NULL,
-  MODIFY thread_id INTEGER NOT NULL,
-  MODIFY server_id INTEGER UNSIGNED NOT NULL,
-  MODIFY command_type VARCHAR(64) NOT NULL,
-  MODIFY argument MEDIUMBLOB NOT NULL;
-ALTER TABLE general_log
-  MODIFY thread_id BIGINT UNSIGNED NOT NULL;
-SET GLOBAL general_log = @old_log_state;
-
-SET @old_log_state = @@global.slow_query_log;
-SET GLOBAL slow_query_log = 'OFF';
-ALTER TABLE slow_log
-  MODIFY start_time TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6),
-  MODIFY user_host MEDIUMTEXT NOT NULL,
-  MODIFY query_time TIME(6) NOT NULL,
-  MODIFY lock_time TIME(6) NOT NULL,
-  MODIFY rows_sent INTEGER NOT NULL,
-  MODIFY rows_examined INTEGER NOT NULL,
-  MODIFY db VARCHAR(512) NOT NULL,
-  MODIFY last_insert_id INTEGER NOT NULL,
-  MODIFY insert_id INTEGER NOT NULL,
-  MODIFY server_id INTEGER UNSIGNED NOT NULL,
-  MODIFY sql_text MEDIUMBLOB NOT NULL;
-ALTER TABLE slow_log
-  ADD COLUMN thread_id INTEGER NOT NULL AFTER sql_text;
-ALTER TABLE slow_log
-  MODIFY thread_id BIGINT UNSIGNED NOT NULL;
-SET GLOBAL slow_query_log = @old_log_state;
-
-SET @@session.sql_require_primary_key = @old_sql_require_primary_key;
 ALTER TABLE plugin
   MODIFY name varchar(64) DEFAULT '' NOT NULL,
   MODIFY dl varchar(128) DEFAULT '' NOT NULL,
