@@ -2280,11 +2280,12 @@ flag_ok:
 
   big_rec_t *big_rec;
 
+  const undo_no_t dummy_undo_no = 0;
   error = btr_cur_pessimistic_update(
       BTR_CREATE_FLAG | BTR_NO_LOCKING_FLAG | BTR_NO_UNDO_LOG_FLAG |
           BTR_KEEP_SYS_FLAG | BTR_KEEP_POS_FLAG,
       pcur.get_btr_cur(), &cur_offsets, &offsets_heap, heap, &big_rec, update,
-      0, thr, 0, 0, &mtr);
+      0, thr, dummy_undo_no, &mtr);
 
   if (big_rec) {
     if (error == DB_SUCCESS) {

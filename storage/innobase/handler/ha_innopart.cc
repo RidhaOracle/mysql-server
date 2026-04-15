@@ -2025,7 +2025,7 @@ int ha_innopart::sample_init(void *&scan_ctx, double sampling_percentage,
     update_thd(ha_thd());
 
     trx = m_prebuilt->trx;
-    trx_start_if_not_started_xa(trx, false, UT_LOCATION_HERE);
+    trx_start_if_not_started(trx, false, UT_LOCATION_HERE);
 
     if (trx->isolation_level > TRX_ISO_READ_UNCOMMITTED) {
       trx_assign_read_view(trx);
@@ -3194,7 +3194,7 @@ int ha_innopart::records(ha_rows *num_rows) {
   if (n_threads > 1 && trx->isolation_level > TRX_ISO_READ_UNCOMMITTED &&
       m_prebuilt->select_lock_type == LOCK_NONE &&
       trx->mysql_n_tables_locked == 0 && !m_prebuilt->ins_sel_stmt) {
-    trx_start_if_not_started_xa(trx, false, UT_LOCATION_HERE);
+    trx_start_if_not_started(trx, false, UT_LOCATION_HERE);
     trx_assign_read_view(trx);
 
     const auto first_used_partition = m_part_info->get_first_used_partition();

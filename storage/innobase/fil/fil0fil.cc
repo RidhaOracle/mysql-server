@@ -9575,7 +9575,7 @@ dberr_t Fil_system::prepare_open_for_business(bool read_only_mode) {
 
   trx->isolation_level = trx_t::READ_UNCOMMITTED;
 
-  trx_start_if_not_started_xa(trx, false, UT_LOCATION_HERE);
+  trx_start_if_not_started(trx, false, UT_LOCATION_HERE);
 
   size_t count = 0;
   size_t failed = 0;
@@ -9656,7 +9656,7 @@ dberr_t Fil_system::prepare_open_for_business(bool read_only_mode) {
 
       batch_size = 0;
 
-      trx_start_if_not_started_xa(trx, false, UT_LOCATION_HERE);
+      trx_start_if_not_started(trx, false, UT_LOCATION_HERE);
     }
   }
 

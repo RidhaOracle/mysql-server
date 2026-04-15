@@ -3088,7 +3088,7 @@ static void trx_set_prepared_in_tc(trx_t *trx) {
 Does the transaction prepare for MySQL.
 @param[in, out] trx             Transaction instance to prepare */
 dberr_t trx_prepare_for_mysql(trx_t *trx) {
-  trx_start_if_not_started_xa(trx, false, UT_LOCATION_HERE);
+  trx_start_if_not_started(trx, false, UT_LOCATION_HERE);
 
   TrxInInnoDB trx_in_innodb(trx, true);
 
@@ -3298,38 +3298,6 @@ trx_t *trx_get_trx_by_xid(const XID *xid) {
   trx_sys_mutex_exit();
 
   return (trx);
-}
-
-/** Starts the transaction if it is not yet started.
-@param[in,out] trx Transaction
-@param[in] read_write True if read write transaction */
-void trx_start_if_not_started_xa_low(trx_t *trx, bool read_write) {
-  ut_ad(trx_can_be_handled_by_current_thread_or_is_hp_victim(trx));
-  switch (trx->state.load(std::memory_order_relaxed)) {
-    case TRX_STATE_NOT_STARTED:
-    case TRX_STATE_FORCED_ROLLBACK:
-      trx_start_low(trx, read_write);
-      return;
-
-    case TRX_STATE_ACTIVE:
-      if (trx->id == 0 && read_write) {
-        /* If the transaction is tagged as read-only then
-        it can only write to temp tables and for such
-        transactions we don't want to move them to the
-        trx_sys_t::rw_trx_list. */
-        if (!trx->read_only) {
-          trx_set_rw_mode(trx);
-        } else if (!srv_read_only_mode) {
-          trx_assign_rseg_temp(trx);
-        }
-      }
-      return;
-    case TRX_STATE_PREPARED:
-    case TRX_STATE_COMMITTED_IN_MEMORY:
-      break;
-  }
-
-  ut_error;
 }
 
 /** Starts the transaction if it is not yet started.

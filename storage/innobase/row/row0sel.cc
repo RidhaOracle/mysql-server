@@ -2130,7 +2130,7 @@ que_thr_t *row_sel_step(que_thr_t *thr) /*!< in: query thread */
     /* It may be that the current session has not yet started
     its transaction, or it has been committed: */
 
-    trx_start_if_not_started_xa(thr_get_trx(thr), false, UT_LOCATION_HERE);
+    trx_start_if_not_started(thr_get_trx(thr), false, UT_LOCATION_HERE);
 
     plan_reset_cursor(sel_node_get_nth_plan(node, 0));
 

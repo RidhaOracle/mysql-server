@@ -147,7 +147,7 @@ dberr_t trx_rollback_to_savepoint(
 {
   ut_ad(!trx_mutex_own(trx));
 
-  trx_start_if_not_started_xa(trx, true, UT_LOCATION_HERE);
+  trx_start_if_not_started(trx, true, UT_LOCATION_HERE);
 
   trx_rollback_to_savepoint_low(trx, savept);
 
@@ -500,7 +500,7 @@ dberr_t trx_savepoint_for_mysql(
 {
   trx_named_savept_t *savep;
 
-  trx_start_if_not_started_xa(trx, false, UT_LOCATION_HERE);
+  trx_start_if_not_started(trx, false, UT_LOCATION_HERE);
 
   savep = trx_savepoint_find(trx, savepoint_name);
 

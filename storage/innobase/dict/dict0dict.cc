@@ -5339,10 +5339,10 @@ dberr_t DDTableBuffer::replace(table_id_t id, uint64_t version,
     static const ulint flags =
         (BTR_CREATE_FLAG | BTR_NO_LOCKING_FLAG | BTR_NO_UNDO_LOG_FLAG |
          BTR_KEEP_POS_FLAG | BTR_KEEP_SYS_FLAG);
-
+    const undo_no_t dummy_undo_no = 0;
     error = btr_cur_pessimistic_update(
         flags, pcur.get_btr_cur(), &cur_offsets, &m_dynamic_heap,
-        m_replace_heap, &big_rec, update, 0, nullptr, 0, 0, &mtr);
+        m_replace_heap, &big_rec, update, 0, nullptr, dummy_undo_no, &mtr);
     ut_a(error == DB_SUCCESS);
     /* We don't have big rec in this table */
     ut_ad(!big_rec);

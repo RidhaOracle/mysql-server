@@ -279,8 +279,7 @@ void ins_node_set_new_row(
 
     /* TODO: pass only *offsets */
     err = btr_cur_optimistic_update(flags | BTR_KEEP_SYS_FLAG, cursor, offsets,
-                                    &offsets_heap, update, 0, thr,
-                                    thr_get_trx(thr)->id, mtr);
+                                    &offsets_heap, update, 0, thr, mtr);
     switch (err) {
       case DB_OVERFLOW:
       case DB_UNDERFLOW:
@@ -294,11 +293,11 @@ void ins_node_set_new_row(
     if (buf_LRU_buf_pool_running_out()) {
       return (DB_LOCK_TABLE_FULL);
     }
-
-    trx_t *trx = thr_get_trx(thr);
-    err = btr_cur_pessimistic_update(
-        flags | BTR_KEEP_SYS_FLAG, cursor, offsets, &offsets_heap, heap,
-        &dummy_big_rec, update, 0, thr, trx->id, trx->undo_no, mtr);
+    ut_ad(!thr_get_trx(thr)->in_rollback);
+    const undo_no_t dummy_undo_no = 0;
+    err = btr_cur_pessimistic_update(flags | BTR_KEEP_SYS_FLAG, cursor, offsets,
+                                     &offsets_heap, heap, &dummy_big_rec,
+                                     update, 0, thr, dummy_undo_no, mtr);
     ut_ad(!dummy_big_rec);
   }
 
@@ -360,7 +359,7 @@ void ins_node_set_new_row(
     within the page */
 
     err = btr_cur_optimistic_update(flags, cursor, offsets, offsets_heap,
-                                    update, 0, thr, thr_get_trx(thr)->id, mtr);
+                                    update, 0, thr, mtr);
     switch (err) {
       case DB_OVERFLOW:
       case DB_UNDERFLOW:
@@ -376,13 +375,13 @@ void ins_node_set_new_row(
 
     big_rec_t *big_rec = nullptr;
     trx_t *trx = thr_get_trx(thr);
-    trx_id_t trx_id = thr_get_trx(thr)->id;
 
     DEBUG_SYNC_C("before_row_ins_upd_pessimistic");
-
+    ut_ad(!trx->in_rollback);
+    const undo_no_t dummy_undo_no = 0;
     err = btr_cur_pessimistic_update(flags | BTR_KEEP_POS_FLAG, cursor, offsets,
                                      offsets_heap, heap, &big_rec, update, 0,
-                                     thr, trx_id, trx->undo_no, mtr);
+                                     thr, dummy_undo_no, mtr);
 
     if (big_rec) {
       ut_a(err == DB_SUCCESS);
@@ -3666,7 +3665,7 @@ que_thr_t *row_ins_step(que_thr_t *thr) /*!< in: query thread */
 
   trx = thr_get_trx(thr);
 
-  trx_start_if_not_started_xa(trx, true, UT_LOCATION_HERE);
+  trx_start_if_not_started(trx, true, UT_LOCATION_HERE);
 
   node = static_cast<ins_node_t *>(thr->run_node);
 

@@ -2804,12 +2804,12 @@ void upd_t::append(const upd_field_t &field) {
   bool persist_autoinc = false;
   bool is_old_or_new_rec_extern = false;
   const dtuple_t *rebuilt_old_pk = nullptr;
-  trx_id_t trx_id = thr_get_trx(thr)->id;
   trx_t *trx = thr_get_trx(thr);
+  constexpr undo_no_t dummy_undo_no = 0;
 
   ut_ad(node);
   ut_ad(index->is_clustered());
-  ut_ad(!thr_get_trx(thr)->in_rollback);
+  ut_ad(!trx->in_rollback);
 
   pcur = node->pcur;
   btr_cur = pcur->get_btr_cur();
@@ -2841,12 +2841,11 @@ void upd_t::append(const upd_field_t &field) {
 
   if (node->cmpl_info & UPD_NODE_NO_SIZE_CHANGE) {
     err = btr_cur_update_in_place(flags | BTR_NO_LOCKING_FLAG, btr_cur, offsets,
-                                  node->update, node->cmpl_info, thr,
-                                  thr_get_trx(thr)->id, mtr);
+                                  node->update, node->cmpl_info, thr, mtr);
   } else {
-    err = btr_cur_optimistic_update(
-        flags | BTR_NO_LOCKING_FLAG, btr_cur, &offsets, offsets_heap,
-        node->update, node->cmpl_info, thr, thr_get_trx(thr)->id, mtr);
+    err = btr_cur_optimistic_update(flags | BTR_NO_LOCKING_FLAG, btr_cur,
+                                    &offsets, offsets_heap, node->update,
+                                    node->cmpl_info, thr, mtr);
   }
 
   if (err == DB_SUCCESS) {
@@ -2894,8 +2893,8 @@ void upd_t::append(const upd_field_t &field) {
 
   err = btr_cur_pessimistic_update(
       flags | BTR_NO_LOCKING_FLAG | BTR_KEEP_POS_FLAG, btr_cur, &offsets,
-      offsets_heap, heap, &big_rec, node->update, node->cmpl_info, thr, trx_id,
-      trx->undo_no, mtr);
+      offsets_heap, heap, &big_rec, node->update, node->cmpl_info, thr,
+      dummy_undo_no, mtr);
   if (big_rec) {
     ut_a(err == DB_SUCCESS);
 
@@ -3271,7 +3270,7 @@ que_thr_t *row_upd_step(que_thr_t *thr) /*!< in: query thread */
 
   trx = thr_get_trx(thr);
 
-  trx_start_if_not_started_xa(trx, true, UT_LOCATION_HERE);
+  trx_start_if_not_started(trx, true, UT_LOCATION_HERE);
 
   node = static_cast<upd_node_t *>(thr->run_node);
 

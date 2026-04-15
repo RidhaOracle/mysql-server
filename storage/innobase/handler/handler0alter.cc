@@ -1483,7 +1483,7 @@ int ha_innobase::parallel_scan_init(void *&scan_ctx, size_t *num_threads,
 
   innobase_register_trx(ht, ha_thd(), trx);
 
-  trx_start_if_not_started_xa(trx, false, UT_LOCATION_HERE);
+  trx_start_if_not_started(trx, false, UT_LOCATION_HERE);
 
   trx_assign_read_view(trx);
 
@@ -4435,7 +4435,7 @@ template <typename Table>
 
   user_table = ctx->new_table;
 
-  trx_start_if_not_started_xa(ctx->prebuilt->trx, true, UT_LOCATION_HERE);
+  trx_start_if_not_started(ctx->prebuilt->trx, true, UT_LOCATION_HERE);
 
   if (ha_alter_info->handler_flags & Alter_inplace_info::DROP_VIRTUAL_COLUMN) {
     if (prepare_inplace_drop_virtual(ha_alter_info, old_table)) {
@@ -7489,7 +7489,7 @@ bool ha_innobase::commit_inplace_alter_table_impl(
   ut_ad(m_prebuilt->table == ctx0->old_table);
   ha_alter_info->group_commit_ctx = nullptr;
 
-  trx_start_if_not_started_xa(m_prebuilt->trx, true, UT_LOCATION_HERE);
+  trx_start_if_not_started(m_prebuilt->trx, true, UT_LOCATION_HERE);
 
   for (inplace_alter_handler_ctx **pctx = ctx_array; *pctx; pctx++) {
     ha_innobase_inplace_ctx *ctx =
@@ -10042,7 +10042,7 @@ int ha_innopart::parallel_scan_init(void *&scan_ctx, size_t *num_threads,
 
   innobase_register_trx(ht, ha_thd(), trx);
 
-  trx_start_if_not_started_xa(trx, false, UT_LOCATION_HERE);
+  trx_start_if_not_started(trx, false, UT_LOCATION_HERE);
 
   trx_assign_read_view(trx);
 
@@ -10727,7 +10727,7 @@ bool ha_innopart::prepare_inplace_alter_partition(
     const dd::Table *old_dd_tab, dd::Table *new_dd_tab) {
   clear_ins_upd_nodes();
 
-  trx_start_if_not_started_xa(m_prebuilt->trx, true, UT_LOCATION_HERE);
+  trx_start_if_not_started(m_prebuilt->trx, true, UT_LOCATION_HERE);
 
   if (alter_parts::need_copy(ha_alter_info) &&
       prepare_for_copy_partitions(ha_alter_info)) {
@@ -11298,7 +11298,7 @@ void *ha_innobase::bulk_load_begin(THD *thd, size_t keynr, size_t data_size,
 
   if (trx->flush_observer == nullptr) {
     innobase_register_trx(ht, ha_thd(), trx);
-    trx_start_if_not_started_xa(trx, true, UT_LOCATION_HERE);
+    trx_start_if_not_started(trx, true, UT_LOCATION_HERE);
 
     auto observer = ut::new_withkey<Flush_observer>(
         ut::make_psi_memory_key(mem_key_ddl), table->space, trx, nullptr);

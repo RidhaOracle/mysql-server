@@ -143,11 +143,6 @@ void trx_disconnect_prepared(trx_t *trx);
 void trx_lists_init_at_db_start(void);
 
 /** Starts the transaction if it is not yet started.
-@param[in,out] trx Transaction
-@param[in] read_write True if read write transaction */
-void trx_start_if_not_started_xa_low(trx_t *trx, bool read_write);
-
-/** Starts the transaction if it is not yet started.
 @param[in] trx Transaction
 @param[in] read_write True if read write transaction */
 void trx_start_if_not_started_low(trx_t *trx, bool read_write);
@@ -1253,49 +1248,32 @@ static inline uint64_t TRX_WEIGHT(const trx_t *t) {
   return t->undo_no + UT_LIST_GET_LEN(t->lock.trx_locks);
 }
 
+static inline void trx_start_if_not_started(trx_t *t, bool rw,
+                                            ut::Location l [[maybe_unused]]) {
 #ifdef UNIV_DEBUG
-static inline void trx_start_if_not_started_xa(trx_t *t, bool rw,
-                                               ut::Location loc) {
-  t->start_line = loc.line;
-  t->start_file = loc.filename;
-  trx_start_if_not_started_xa_low(t, rw);
-}
-
-static inline void trx_start_if_not_started(trx_t *t, bool rw, ut::Location l) {
   t->start_line = l.line;
   t->start_file = l.filename;
-  trx_start_if_not_started_low(t, rw);
-}
-
-static inline void trx_start_internal(trx_t *t, ut::Location loc) {
-  t->start_line = loc.line;
-  t->start_file = loc.filename;
-  trx_start_internal_low(t);
-}
-
-static inline void trx_start_internal_read_only(trx_t *t, ut::Location loc) {
-  t->start_line = loc.line;
-  t->start_file = loc.filename;
-  trx_start_internal_read_only_low(t);
-}
-#else
-static inline void trx_start_if_not_started_xa(trx_t *t, bool rw,
-                                               ut::Location loc) {
-  trx_start_if_not_started_low(t, rw);
-}
-
-static inline void trx_start_internal(trx_t *t, ut::Location loc) {
-  trx_start_internal_low(t);
-}
-
-static inline void trx_start_internal_read_only(trx_t *t, ut::Location loc) {
-  trx_start_internal_read_only_low(t);
-}
-
-static inline void trx_start_if_not_started(trx_t *t, bool rw, ut::Location l) {
-  trx_start_if_not_started_xa_low(t, rw);
-}
 #endif /* UNIV_DEBUG */
+  trx_start_if_not_started_low(t, rw);
+}
+
+static inline void trx_start_internal(trx_t *t,
+                                      ut::Location loc [[maybe_unused]]) {
+#ifdef UNIV_DEBUG
+  t->start_line = loc.line;
+  t->start_file = loc.filename;
+#endif /* UNIV_DEBUG */
+  trx_start_internal_low(t);
+}
+
+static inline void trx_start_internal_read_only(trx_t *t, ut::Location loc
+                                                [[maybe_unused]]) {
+#ifdef UNIV_DEBUG
+  t->start_line = loc.line;
+  t->start_file = loc.filename;
+#endif /* UNIV_DEBUG */
+  trx_start_internal_read_only_low(t);
+}
 
 /* Transaction isolation levels (trx->isolation_level) */
 #define TRX_ISO_READ_UNCOMMITTED trx_t::READ_UNCOMMITTED

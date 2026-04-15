@@ -3218,7 +3218,7 @@ void ha_innobase::init_table_handle_for_HANDLER(void) {
 
   /* If the transaction is not started yet, start it */
 
-  trx_start_if_not_started_xa(m_prebuilt->trx, false, UT_LOCATION_HERE);
+  trx_start_if_not_started(m_prebuilt->trx, false, UT_LOCATION_HERE);
 
   TrxInInnoDB trx_in_innodb(m_prebuilt->trx);
 
@@ -5916,7 +5916,7 @@ static int innobase_start_trx_and_assign_read_view(
   /* The transaction should not be active yet, start it */
   ut_ad(!trx_is_started(trx));
 
-  trx_start_if_not_started_xa(trx, false, UT_LOCATION_HERE);
+  trx_start_if_not_started(trx, false, UT_LOCATION_HERE);
 
   /* Assign a read view if the transaction does not have it yet.
   Do this only if transaction is using REPEATABLE READ isolation
@@ -10946,7 +10946,7 @@ int ha_innobase::sample_init(void *&scan_ctx, double sampling_percentage,
     update_thd();
 
     trx = m_prebuilt->trx;
-    trx_start_if_not_started_xa(trx, false, UT_LOCATION_HERE);
+    trx_start_if_not_started(trx, false, UT_LOCATION_HERE);
 
     if (trx->isolation_level > TRX_ISO_READ_UNCOMMITTED) {
       trx_assign_read_view(trx);

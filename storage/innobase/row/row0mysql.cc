@@ -1177,7 +1177,7 @@ run_again:
   /* It may be that the current session has not yet started
   its transaction, or it has been committed: */
 
-  trx_start_if_not_started_xa(trx, true, UT_LOCATION_HERE);
+  trx_start_if_not_started(trx, true, UT_LOCATION_HERE);
 
   err = lock_table(0, prebuilt->table, LOCK_AUTO_INC, thr);
 
@@ -1233,7 +1233,7 @@ run_again:
   /* It may be that the current session has not yet started
   its transaction, or it has been committed: */
 
-  trx_start_if_not_started_xa(trx, false, UT_LOCATION_HERE);
+  trx_start_if_not_started(trx, false, UT_LOCATION_HERE);
 
   err =
       lock_table(0, prebuilt->table,
@@ -1554,7 +1554,7 @@ static dberr_t row_insert_for_mysql_using_ins_graph(const byte *mysql_rec,
 
   row_mysql_delay_if_needed();
 
-  trx_start_if_not_started_xa(trx, true, UT_LOCATION_HERE);
+  trx_start_if_not_started(trx, true, UT_LOCATION_HERE);
 
   row_get_prebuilt_insert_row(prebuilt);
   node = prebuilt->ins_node;
@@ -2305,7 +2305,7 @@ static dberr_t row_update_for_mysql_using_upd_graph(const byte *mysql_rec,
 
   init_fts_doc_id_for_ref(table, &fk_depth);
 
-  trx_start_if_not_started_xa(trx, true, UT_LOCATION_HERE);
+  trx_start_if_not_started(trx, true, UT_LOCATION_HERE);
 
   if (dict_table_is_referenced_by_foreign_key(table)) {
     /*TODO: use foreign key MDL to protect foreign
@@ -3294,7 +3294,7 @@ static dict_table_t *row_discard_tablespace_begin(
 
   //    trx_set_dict_operation(trx, TRX_DICT_OP_TABLE);
 
-  trx_start_if_not_started_xa(trx, true, UT_LOCATION_HERE);
+  trx_start_if_not_started(trx, true, UT_LOCATION_HERE);
 
   /* Serialize data dictionary operations with dictionary mutex:
   this is to avoid deadlocks during data dictionary operations */
@@ -4568,7 +4568,7 @@ dberr_t row_scan_index_for_mysql(row_prebuilt_t *prebuilt, dict_index_t *index,
 
     if (n_threads > 1) {
       /* No INSERT INTO  ... SELECT  and non-locking selects only. */
-      trx_start_if_not_started_xa(prebuilt->trx, false, UT_LOCATION_HERE);
+      trx_start_if_not_started(prebuilt->trx, false, UT_LOCATION_HERE);
 
       trx_assign_read_view(prebuilt->trx);
 
