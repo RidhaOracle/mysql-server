@@ -2286,6 +2286,7 @@ static void innobase_col_to_mysql(
 void innobase_rec_to_mysql(struct TABLE *table, const rec_t *rec,
                            const dict_index_t *index, const ulint *offsets) {
   uint n_fields = table->s->fields;
+  ulint num_v = 0;
 
   ut_ad(n_fields ==
         dict_table_get_n_tot_u_cols(index->table) -
@@ -2297,9 +2298,9 @@ void innobase_rec_to_mysql(struct TABLE *table, const rec_t *rec,
     ulint ilen;
     const uchar *ifield;
 
-    field->reset();
+    const auto col_n = innobase_is_v_fld(field) ? num_v++ : i - num_v;
 
-    ipos = index->get_col_pos(i, true, false);
+    ipos = index->get_col_pos(col_n, true, innobase_is_v_fld(field));
 
     if (ipos == ULINT_UNDEFINED || rec_offs_nth_extern(index, offsets, ipos)) {
     null_field:
@@ -2339,8 +2340,6 @@ void innobase_fields_to_mysql(struct TABLE *table, const dict_index_t *index,
     Field *field = table->field[i];
     ulint ipos;
     ulint col_n;
-
-    field->reset();
 
     if (innobase_is_v_fld(field)) {
       col_n = num_v;
