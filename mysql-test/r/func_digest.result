@@ -1832,3 +1832,24 @@ SHOW variables LIKE 'character_set_client';
 Variable_name	Value
 character_set_client	latin1
 SET NAMES DEFAULT;
+
+#
+# Bug#36997723: STATEMENT_DIGEST() adds trailing semicolon to digest
+#
+SELECT statement_digest('select 1;')
+d1b44b0c19af710b5a679907e284acd2ddc285201794bc69a2389d77baedddae
+
+SELECT statement_digest('select 1')
+d1b44b0c19af710b5a679907e284acd2ddc285201794bc69a2389d77baedddae
+
+include/assert.inc [statement_digest() ignores trailing semicolon]
+
+SELECT statement_digest_text('select 1;')
+SELECT ?
+
+include/assert.inc [statement_digest_text() normalizes to SELECT ?]
+
+SELECT statement_digest_text('select 1')
+SELECT ?
+
+include/assert.inc [statement_digest_text() unaffected by semicolon]
