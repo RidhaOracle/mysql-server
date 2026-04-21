@@ -7462,9 +7462,22 @@ func_datetime_precision:
         | '(' ')'                    { $$= 0; }
         | '(' NUM ')'
            {
-             int error;
-             $$= (ulong) my_strtoll10($2.str, nullptr, &error);
-           }
+             int error = 0;
+             longlong precision = my_strtoll10($2.str, nullptr, &error);
+             // This cannot fail, because a NUM token cannot have more than 9
+             // digits.
+             assert(error == 0);
+
+             // Perform check here to prevent overflow when value is assigned to
+             // uint8 variable decimals when contructing func_datetime Items.
+             if (precision > DATETIME_MAX_DECIMALS) {
+               my_error(ER_TOO_BIG_PRECISION, MYF(0),
+                 precision, "datetime precision",
+                 DATETIME_MAX_DECIMALS);
+               MYSQL_YYABORT;
+             }
+             $$= precision;
+          }
         ;
 
 field_options:
@@ -7679,12 +7692,14 @@ storage_media:
 now:
           NOW_SYM func_datetime_precision
           {
+            assert($2 <= DATETIME_MAX_DECIMALS);
             $$= $2;
           };
 
 now_or_signed_literal:
           now
           {
+            assert($1 <= DATETIME_MAX_DECIMALS);
             $$= NEW_PTN Item_func_now_local(@$, static_cast<uint8>($1));
           }
         | signed_literal_or_null
@@ -11055,6 +11070,7 @@ function_call_nonkeyword:
           }
         | CURTIME func_datetime_precision
           {
+            assert($2 <= DATETIME_MAX_DECIMALS);
             $$= NEW_PTN Item_func_curtime_local(@$, static_cast<uint8>($2));
           }
         | DATE_ADD_INTERVAL '(' expr ',' INTERVAL_SYM expr interval ')'
@@ -11085,6 +11101,7 @@ function_call_nonkeyword:
           }
         | now
           {
+            assert($1 <= DATETIME_MAX_DECIMALS);
             $$= NEW_PTN PTI_function_call_nonkeyword_now(@$,
               static_cast<uint8>($1));
           }
@@ -11135,10 +11152,12 @@ function_call_nonkeyword:
           }
         | UTC_TIME_SYM func_datetime_precision
           {
+            assert($2 <= DATETIME_MAX_DECIMALS);
             $$= NEW_PTN Item_func_curtime_utc(@$, static_cast<uint8>($2));
           }
         | UTC_TIMESTAMP_SYM func_datetime_precision
           {
+            assert($2 <= DATETIME_MAX_DECIMALS);
             $$= NEW_PTN Item_func_now_utc(@$, static_cast<uint8>($2));
           }
         ;
