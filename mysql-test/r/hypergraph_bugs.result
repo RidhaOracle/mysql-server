@@ -55,15 +55,14 @@ test.t2	analyze	status	OK
 test.t3	analyze	status	OK
 EXPLAIN FORMAT=tree SELECT * FROM t0, t1 LEFT JOIN (t2,t3) ON a1=5 WHERE a0=a1 AND a0=1;
 EXPLAIN
--> Left hash join (no condition), extra conditions: false  (rows=0.04)
+-> Nested loop left join  (rows=0.04)
     -> Inner hash join (no condition)  (rows=0.04)
         -> Filter: (t0.a0 = 1)  (rows=0.2)
             -> Table scan on t0  (rows=2)
         -> Hash
             -> Filter: (t1.a1 = 1)  (rows=0.2)
                 -> Table scan on t1  (rows=2)
-    -> Hash
-        -> Zero rows (Join condition rejects all rows)  (rows=0)
+    -> Zero rows (Join condition rejects all rows)  (rows=0)
 
 SELECT * FROM t0, t1 LEFT JOIN (t2,t3) ON a1=5 WHERE a0=a1 AND a0=1;
 a0	a1	a2	a3
@@ -3502,3 +3501,78 @@ WHERE f1 NOT BETWEEN 2 AND 999;
 COUNT(*)
 3
 DROP TABLE t1;
+#
+# Bug#34513189: Wrong cost for filter with independent subquery
+#
+CREATE TABLE num10 (n INT PRIMARY KEY);
+INSERT INTO num10 VALUES (0),(1),(2),(3),(4),(5),(6),(7),(8),(9);
+CREATE TABLE t30 (a INT PRIMARY KEY, b INT);
+INSERT INTO t30 SELECT x1.n + x2.n*10, x1.n FROM num10 x1, num10 x2 WHERE x2.n < 3;
+CREATE TABLE t_large (x INT PRIMARY KEY, y INT);
+INSERT INTO t_large SELECT x1.n + x2.n*10 + x3.n*100, x3.n
+FROM num10 x1, num10 x2, num10 x3;
+CREATE TABLE t_sub (v INT);
+INSERT INTO t_sub SELECT x1.n + x2.n*10 FROM num10 x1, num10 x2;
+ANALYZE TABLE num10, t30, t_large, t_sub;
+Table	Op	Msg_type	Msg_text
+test.num10	analyze	status	OK
+test.t30	analyze	status	OK
+test.t_large	analyze	status	OK
+test.t_sub	analyze	status	OK
+# Should use NLJ with PK lookup on t_large. Without the fix the
+# inflated NLJ cost made the optimizer pick hash join instead.
+EXPLAIN FORMAT=TREE
+SELECT * FROM t30 JOIN t_large ON t_large.x = t30.a
+AND t30.b + t_large.y > (SELECT MAX(v) FROM t_sub);
+EXPLAIN
+-> Nested loop inner join  (cost=45..115 rows=30)
+    -> Index scan on t30 using PRIMARY  (cost=0.359..10.8 rows=30)
+    -> Filter: ((t30.b + t_large.y) > (select #2))  (cost=44.6..44.6 rows=1)
+        -> Single-row index lookup on t_large using PRIMARY (x = t30.a)  (cost=1.98..1.98 rows=1)
+        -> Select #2 (subquery in condition; run only once)
+            -> Aggregate: max(t_sub.v)  (cost=42.6..42.6 rows=1)
+                -> Table scan on t_sub  (cost=0.295..29.5 rows=100)
+
+CREATE TABLE t2r (a INT PRIMARY KEY, b INT);
+INSERT INTO t2r VALUES (0,0),(1,1);
+ANALYZE TABLE t2r;
+Table	Op	Msg_type	Msg_text
+test.t2r	analyze	status	OK
+SET SESSION optimizer_trace='enabled=on';
+SELECT 1 FROM t2r LEFT JOIN num10 ON t2r.a = num10.n
+WHERE (t2r.b + IFNULL(num10.n,0) > (SELECT MAX(v) FROM t_sub)) IS NOT FALSE;
+# Expect 1: NLJ candidate carries the subquery init cost in
+# init_once_cost (so rescan_cost is reported).
+SELECT REGEXP_SUBSTR(trace, 'NESTED_LOOP_JOIN[^}]*') REGEXP 'rescan_cost'
+  AS nlj_has_init_once_cost FROM information_schema.optimizer_trace;
+nlj_has_init_once_cost
+1
+SET SESSION optimizer_trace='enabled=off';
+SET SESSION optimizer_trace='enabled=on';
+SELECT 1 FROM t2r STRAIGHT_JOIN t_large ON t_large.x = t2r.a
+WHERE t_large.y < (SELECT MAX(v) FROM t_sub);
+# Expect 1: base-table filter carries the subquery init cost in
+# init_once_cost (so the enclosing NLJ reports rescan_cost).
+SELECT trace REGEXP 'NESTED_LOOP_JOIN[^}]*rescan_cost'
+  AS nlj_base_table_filter_has_init_once_cost
+FROM information_schema.optimizer_trace;
+nlj_base_table_filter_has_init_once_cost
+1
+SET SESSION optimizer_trace='enabled=off';
+ALTER TABLE t_large ADD INDEX iy(y);
+ANALYZE TABLE t_large;
+Table	Op	Msg_type	Msg_text
+test.t_large	analyze	status	OK
+EXPLAIN FORMAT=TREE
+SELECT 1 FROM t2r JOIN t_large ON t_large.y = t2r.a
+AND t2r.b + t_large.x > (SELECT MAX(v) FROM t_sub);
+EXPLAIN
+-> Nested loop inner join  (rows=1000)
+    -> Index scan on t2r using PRIMARY  (rows=2)
+    -> Filter: ((t2r.b + t_large.x) > (select #2))  (cost=HIGH rows=500)
+        -> Covering index lookup on t_large using iy (y = t2r.a)  (rows=500)
+        -> Select #2 (subquery in condition; run only once)
+            -> Aggregate: max(t_sub.v)  (rows=1)
+                -> Table scan on t_sub  (rows=100)
+
+DROP TABLE num10, t2r, t30, t_large, t_sub;

@@ -4471,6 +4471,8 @@ void CostingReceiver::ApplyPredicatesForBaseTable(
         path->set_cost(path->cost() + cost.cost_if_not_materialized);
         path->set_init_cost(path->init_cost() +
                             cost.init_cost_if_not_materialized);
+        path->set_init_once_cost(path->init_once_cost() +
+                                 cost.init_cost_if_not_materialized);
       }
       if (IsBitSet(i, absorbed_predicates.applied())) {
         // We already factored in this predicate when calculating
@@ -5734,6 +5736,10 @@ void CostingReceiver::ApplyDelayedPredicatesAfterJoin(
           } else {
             join_path->set_cost(join_path->cost() +
                                 cost.cost_if_not_materialized);
+            join_path->set_init_cost(join_path->init_cost() +
+                                     cost.init_cost_if_not_materialized);
+            join_path->set_init_once_cost(join_path->init_once_cost() +
+                                          cost.init_cost_if_not_materialized);
           }
           if (!already_applied_as_sargable) {
             filter_selectivity *= pred.selectivity;
@@ -6120,7 +6126,12 @@ void CostingReceiver::ProposeNestedLoopJoin(
       left_path->immediate_update_delete_table;
 
   const AccessPath *inner = join_path.nested_loop_join().inner;
+  // filter_cost is a bundled value: init + per-row cost. See FilterCost
+  // struct comment in cost_model.h (cost_if_not_materialized includes
+  // init_cost_if_not_materialized). We track init cost separately so it
+  // is charged once, not multiplied by the number of outer rows.
   double filter_cost = 0.0;
+  double filter_init_cost = 0.0;
 
   double right_path_already_applied_selectivity = 1.0;
   join_path.nested_loop_join().equijoin_predicates = OverflowBitset{};
@@ -6165,17 +6176,19 @@ void CostingReceiver::ProposeNestedLoopJoin(
           AlreadyAppliedAsSargable(condition, left_path, right_path);
       if (!subsumed) {
         equijoin_predicates.SetBit(join_cond_idx);
-        filter_cost += EstimateFilterCost(m_thd, rows_after_filtering,
-                                          properties.contained_subqueries)
-                           .cost_if_not_materialized;
+        const FilterCost fc = EstimateFilterCost(
+            m_thd, rows_after_filtering, properties.contained_subqueries);
+        filter_cost += fc.cost_if_not_materialized;
+        filter_init_cost += fc.init_cost_if_not_materialized;
         rows_after_filtering *= properties.selectivity;
       }
     }
     for (const CachedPropertiesForPredicate &properties :
          edge->expr->properties_for_join_conditions) {
-      filter_cost += EstimateFilterCost(m_thd, rows_after_filtering,
-                                        properties.contained_subqueries)
-                         .cost_if_not_materialized;
+      const FilterCost fc = EstimateFilterCost(m_thd, rows_after_filtering,
+                                               properties.contained_subqueries);
+      filter_cost += fc.cost_if_not_materialized;
+      filter_init_cost += fc.init_cost_if_not_materialized;
       rows_after_filtering *= properties.selectivity;
     }
     join_path.nested_loop_join().equijoin_predicates =
@@ -6226,12 +6239,20 @@ void CostingReceiver::ProposeNestedLoopJoin(
   // high (e.g. 1e6). A cost estimate of 1e-6 * 1e6 = 1 would be very
   // misleading if 'outer' produces a few rows. (@see AccessPath::m_init_cost
   // for a general description of init_cost.)
-  join_path.set_init_cost(outer->init_cost() + inner->init_cost());
+  join_path.set_init_cost(outer->init_cost() + inner->init_cost() +
+                          filter_init_cost);
+  // The subquery init cost is paid once per query, not once per rescan of
+  // this join. Record it in init_once_cost so that rescan_cost() of this
+  // path (used when it is itself the inner side of an enclosing NLJ)
+  // excludes it.
+  join_path.set_init_once_cost(outer->init_once_cost() +
+                               inner->init_once_cost() + filter_init_cost);
 
   const double first_loop_cost = inner->cost() + filter_cost;
 
+  const double filter_cost_per_row = filter_cost - filter_init_cost;
   const double subsequent_loops_cost =
-      (inner->rescan_cost() + filter_cost) *
+      (inner->rescan_cost() + filter_cost_per_row) *
       std::max(0.0, outer->num_output_rows() - 1.0);
 
   join_path.set_cost(outer->cost() + first_loop_cost + subsequent_loops_cost);

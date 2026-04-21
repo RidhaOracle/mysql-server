@@ -2951,4 +2951,97 @@ eval $query;
 
 DROP TABLE t1;
 
+--echo #
+--echo # Bug#34513189: Wrong cost for filter with independent subquery
+--echo #
+
+# When an NLJ has a join-edge filter containing an independent (cacheable)
+# scalar subquery, the subquery cost is a one-time init cost. Before this
+# fix, ProposeNestedLoopJoin() charged it once per outer row, inflating the
+# NLJ estimate enough that the optimizer wrongly preferred a hash join that
+# full-scans the 1000-row inner table.
+#
+# t30 (30 rows) JOIN t_large (1000 rows, PK on x) ON
+#   t_large.x = t30.a AND t30.b + t_large.y > (SELECT MAX(v) FROM t_sub)
+#
+# Before fix: NLJ ~1350 (subquery cost 42.6 charged 30x) > hash join ~517
+#   -> hash join chosen (full scan of t_large).
+# After fix:  NLJ ~115 (subquery cost charged once) < hash join ~517
+#   -> NLJ with PK lookup chosen.
+
+CREATE TABLE num10 (n INT PRIMARY KEY);
+INSERT INTO num10 VALUES (0),(1),(2),(3),(4),(5),(6),(7),(8),(9);
+
+CREATE TABLE t30 (a INT PRIMARY KEY, b INT);
+INSERT INTO t30 SELECT x1.n + x2.n*10, x1.n FROM num10 x1, num10 x2 WHERE x2.n < 3;
+
+CREATE TABLE t_large (x INT PRIMARY KEY, y INT);
+INSERT INTO t_large SELECT x1.n + x2.n*10 + x3.n*100, x3.n
+  FROM num10 x1, num10 x2, num10 x3;
+
+CREATE TABLE t_sub (v INT);
+INSERT INTO t_sub SELECT x1.n + x2.n*10 FROM num10 x1, num10 x2;
+
+ANALYZE TABLE num10, t30, t_large, t_sub;
+
+--echo # Should use NLJ with PK lookup on t_large. Without the fix the
+--echo # inflated NLJ cost made the optimizer pick hash join instead.
+EXPLAIN FORMAT=TREE
+SELECT * FROM t30 JOIN t_large ON t_large.x = t30.a
+  AND t30.b + t_large.y > (SELECT MAX(v) FROM t_sub);
+
+# Coverage for the three other call sites that the same fix touches.
+
+CREATE TABLE t2r (a INT PRIMARY KEY, b INT);
+INSERT INTO t2r VALUES (0,0),(1,1);
+ANALYZE TABLE t2r;
+
+# ApplyDelayedPredicatesAfterJoin(): the WHERE predicate is a delayed
+# filter applied on top of the (t2r,num10) join. With the fix it adds
+# the subquery's one-time cost to init_once_cost, so the NLJ candidate
+# in the trace gains a "rescan_cost=" field. Without the fix the field
+# is absent (init_once_cost stays zero).
+SET SESSION optimizer_trace='enabled=on';
+--disable_result_log
+SELECT 1 FROM t2r LEFT JOIN num10 ON t2r.a = num10.n
+WHERE (t2r.b + IFNULL(num10.n,0) > (SELECT MAX(v) FROM t_sub)) IS NOT FALSE;
+--enable_result_log
+--echo # Expect 1: NLJ candidate carries the subquery init cost in
+--echo # init_once_cost (so rescan_cost is reported).
+SELECT REGEXP_SUBSTR(trace, 'NESTED_LOOP_JOIN[^}]*') REGEXP 'rescan_cost'
+  AS nlj_has_init_once_cost FROM information_schema.optimizer_trace;
+SET SESSION optimizer_trace='enabled=off';
+
+# ApplyPredicatesForBaseTable(): the WHERE predicate is a single-table
+# filter on the inner side of an NLJ. With the fix it adds the subquery's
+# one-time cost to the inner path's init_once_cost, so the enclosing NLJ
+# candidate in the trace gains a "rescan_cost=" field. Without the fix the
+# field is absent (the subquery cost is still part of inner->rescan_cost()).
+SET SESSION optimizer_trace='enabled=on';
+--disable_result_log
+SELECT 1 FROM t2r STRAIGHT_JOIN t_large ON t_large.x = t2r.a
+WHERE t_large.y < (SELECT MAX(v) FROM t_sub);
+--enable_result_log
+--echo # Expect 1: base-table filter carries the subquery init cost in
+--echo # init_once_cost (so the enclosing NLJ reports rescan_cost).
+SELECT trace REGEXP 'NESTED_LOOP_JOIN[^}]*rescan_cost'
+  AS nlj_base_table_filter_has_init_once_cost
+FROM information_schema.optimizer_trace;
+SET SESSION optimizer_trace='enabled=off';
+
+# ExpandSingleFilterAccessPath(): the displayed Filter node on the inner
+# side of an NLJ now includes the subquery init cost in its init_cost.
+# Only observable when the filter returns >1 row (hence the secondary
+# index, which makes the inner lookup return ~500 rows). The first
+# number in "cost=A..B" is bucketed: without the fix A≈0.5, with the
+# fix A≈43 (≈ subquery cost).
+ALTER TABLE t_large ADD INDEX iy(y);
+ANALYZE TABLE t_large;
+--replace_regex /(select #2[)][)]  [(]cost=)0[.][0-9.e+-]+ rows/\1LOW rows/ /(select #2[)][)]  [(]cost=)[1-9][0-9.e+-]* rows/\1HIGH rows/ /[(]cost=[0-9.e+-]+ rows/(rows/
+EXPLAIN FORMAT=TREE
+SELECT 1 FROM t2r JOIN t_large ON t_large.y = t2r.a
+  AND t2r.b + t_large.x > (SELECT MAX(v) FROM t_sub);
+
+DROP TABLE num10, t2r, t30, t_large, t_sub;
+
 --source include/disable_hypergraph.inc
