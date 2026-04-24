@@ -48,7 +48,7 @@ DEFINE_BOOL_METHOD(mysql_command_consumer_dom_imp::start,
     ctx->m_mysql = mysql_handle->mysql;
     *srv_ctx_h = reinterpret_cast<SRV_CTX_H>(ctx);
     auto *mcs_extn = MYSQL_COMMAND_SERVICE_EXTN(ctx->m_mysql);
-    mcs_extn->consumer_srv_data = reinterpret_cast<SRV_CTX_H *>(ctx);
+    mcs_extn->consumer_srv_data = reinterpret_cast<SRV_CTX_H>(ctx);
     ctx->m_result = &mcs_extn->data;
     if (!(*ctx->m_result = (MYSQL_DATA *)my_malloc(
               key_memory_cc_MYSQL_DATA, sizeof(MYSQL_DATA),
@@ -64,6 +64,7 @@ DEFINE_BOOL_METHOD(mysql_command_consumer_dom_imp::start,
     ctx->m_message = new std::string();
     ctx->m_err_msg = new std::string();
     ctx->m_sqlstate = new std::string();
+    *ctx->m_sqlstate = not_error_sqlstate;
     ctx->m_data = *ctx->m_result;
   } catch (...) {
     mysql_components_handle_std_exception(__func__);
@@ -441,6 +442,8 @@ DEFINE_METHOD(void, mysql_command_consumer_dom_imp::end,
   try {
     auto *ctx = reinterpret_cast<Dom_ctx *>(srv_ctx_h);
     if (ctx == nullptr) return;
+    auto *mcs_extn = MYSQL_COMMAND_SERVICE_EXTN(ctx->m_mysql);
+    if (mcs_extn != nullptr) mcs_extn->consumer_srv_data = nullptr;
     // Free MYSQL_FIELD buffer allocated in start_result_metadata()
     if (ctx->m_mysql && ctx->m_mysql->field_alloc) {
       ctx->m_mysql->field_alloc->Clear();
