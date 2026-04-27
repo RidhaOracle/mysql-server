@@ -516,7 +516,7 @@ struct dict_col_t {
                             character, in bytes;
                             DATA_MBMINMAXLEN(mbminlen,mbmaxlen);
                             mbminlen=DATA_MBMINLEN(mbminmaxlen);
-                            mbmaxlen=DATA_MBMINLEN(mbminmaxlen) */
+                            mbmaxlen=DATA_MBMAXLEN(mbminmaxlen) */
   /*----------------------*/
   /* End of definitions copied from dtype_t */
   /** @} */
@@ -913,6 +913,8 @@ struct dict_field_t {
 
     return col->get_col_phy_pos();
   }
+
+  size_t get_mbmaxlen() const { return DATA_MBMAXLEN(col->mbminmaxlen); }
 };
 
 /** PADDING HEURISTIC BASED ON LINEAR INCREASE OF PADDING TO AVOID

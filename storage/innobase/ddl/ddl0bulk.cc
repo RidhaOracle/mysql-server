@@ -780,25 +780,53 @@ void fill_index_entry(dtuple_t *entry, const dtuple_t *tuple,
                       unsigned char *rollptr_data, unsigned char *row_id_data,
                       bool fill_sys_cols) {
   dict_index_t *index = prebuilt->index;
-
   /* This function is a miniature of row_ins_index_entry_set_vals(). */
   auto n_fields = dtuple_get_n_fields(entry);
   for (size_t nth_field = 0; nth_field < n_fields; nth_field++) {
     auto field = dtuple_get_nth_field(entry, nth_field);
-
+    dict_field_t &fld = index->fields[nth_field];
     auto column_number =
         index->is_clustered() ? index->get_col_no(nth_field) : nth_field;
+
+    const dict_col_t *col = index->get_col(nth_field);
 
     auto row_field = dtuple_get_nth_field(tuple, column_number);
     auto data = dfield_get_data(row_field);
     auto data_len = dfield_get_len(row_field);
 
+    if (dfield_is_null(row_field)) {
+      dfield_set_null(field);
+      continue;
+    }
+
+    if (fld.prefix_len > 0 && data_len > fld.prefix_len) {
+      data_len = dtype_get_at_most_n_mbchars(
+          col->prtype, col->mbminmaxlen, fld.prefix_len, data_len,
+          static_cast<const char *>(dfield_get_data(row_field)));
+    }
+
     dfield_set_data(field, data, data_len);
-    /* TODO:
-     1. Handle external field
-     2. Handle prefix index. */
+
     if (row_field->is_ext()) {
-      if (!index->is_clustered()) {
+      if (fld.prefix_len == 0) {
+        if (index->is_clustered()) {
+          dfield_set_ext(field);
+        }
+      }
+
+      if (col->ord_part && fld.prefix_len == 0) {
+        const auto row_field_len = dfield_get_len(row_field);
+        byte *tmp = static_cast<byte *>(data) + row_field_len -
+                    BTR_EXTERN_FIELD_REF_SIZE;
+        lob::ref_t ref(tmp);
+        ut_ad(ref.space_id() == index->space);
+        dfield_set_data(field, tmp, BTR_EXTERN_FIELD_REF_SIZE);
+        if (index->is_clustered()) {
+          dfield_set_ext(field);
+        }
+      }
+
+      if (dfield_is_ext(field) && !index->is_clustered()) {
         /* sec indexes cannot contain external fields. */
         char query[1024];
         memset(query, '\0', sizeof query);
@@ -811,7 +839,6 @@ void fill_index_entry(dtuple_t *entry, const dtuple_t *tuple,
 
         ut_a(index->is_clustered());
       }
-      dfield_set_ext(field);
     }
   }
   if (index->is_clustered() && fill_sys_cols) {
@@ -828,6 +855,10 @@ dberr_t setup_dfield(const row_prebuilt_t *prebuilt, Field *field,
   size_t data_len = sql_col.m_data_len;
 
   dst_dfield->type = src_dfield->type;
+
+  if (sql_col.is_ext()) {
+    dfield_set_ext(dst_dfield);
+  }
 
   /* For integer data, the column is passed as integer and not in mysql
   format. We use empty column buffer to store column in innobase format. */
@@ -846,8 +877,6 @@ dberr_t setup_dfield(const row_prebuilt_t *prebuilt, Field *field,
     }
     dfield_set_data(dst_dfield, data_ptr, data_len);
   } else if (dtype->mtype == DATA_BLOB || dtype->mtype == DATA_GEOMETRY) {
-    auto field_str = (const Field_str *)field;
-    const CHARSET_INFO *field_charset = field_str->charset();
     size_t length_size{0};
     switch (sql_col.m_type) {
       case MYSQL_TYPE_TINY_BLOB:
@@ -874,26 +903,11 @@ dberr_t setup_dfield(const row_prebuilt_t *prebuilt, Field *field,
     }
     byte *field_data = data_ptr + length_size;
     dfield_set_data(dst_dfield, field_data, data_len);
-    if (data_len == lob::ref_t::SIZE) {
-      lob::ref_t ref(field_data);
-      if (ref.space_id() == space_id) {
-        dfield_set_ext(dst_dfield);
-      } else {
-        /* Not an externally stored field.  So, validate the string. */
-        size_t valid_length{0};
-        bool length_error;
 
-        char *tmp = reinterpret_cast<char *>(field_data);
-
-        const bool failure = validate_string(field_charset, tmp, data_len,
-                                             &valid_length, &length_error);
-        if (failure) {
-          my_error(ER_INVALID_CHARACTER_STRING, MYF(0), field_charset->csname,
-                   field_data);
-          return DB_ERROR;
-        }
-      }
+    if (sql_col.is_ext()) {
+      dfield_set_ext(dst_dfield);
     }
+
   } else if ((dtype->mtype == DATA_VARMYSQL || dtype->mtype == DATA_BINARY) &&
              data_len == lob::ref_t::SIZE) {
     byte *field_data = data_ptr;
@@ -989,7 +1003,6 @@ dberr_t fill_tuple_up_to_n_cols(dtuple_t *tuple, const row_prebuilt_t *prebuilt,
     }
 
     auto &sql_col = rows.read_column(row_offset, column_number);
-
     if (sql_col.m_is_null) {
       dfield_set_null(dfield);
       continue;
@@ -1012,8 +1025,6 @@ dberr_t fill_tuple_up_to_n_cols(dtuple_t *tuple, const row_prebuilt_t *prebuilt,
       }
       dfield_set_data(dfield, data_ptr, data_len);
     } else if (dtype->mtype == DATA_BLOB || dtype->mtype == DATA_GEOMETRY) {
-      auto field_str = (const Field_str *)field;
-      const CHARSET_INFO *field_charset = field_str->charset();
       size_t length_size{0};
       switch (sql_col.m_type) {
         case MYSQL_TYPE_TINY_BLOB:
@@ -1038,27 +1049,14 @@ dberr_t fill_tuple_up_to_n_cols(dtuple_t *tuple, const row_prebuilt_t *prebuilt,
           assert(0);
           break;
       }
+
       byte *field_data = data_ptr + length_size;
       dfield_set_data(dfield, field_data, data_len);
-      if (data_len == lob::ref_t::SIZE) {
-        lob::ref_t ref(field_data);
-        if (ref.space_id() == space_id) {
-          dfield_set_ext(dfield);
-        } else {
-          /* Not an externally stored field.  So, validate the string. */
-          size_t valid_length{0};
-          bool length_error;
-
-          char *tmp = reinterpret_cast<char *>(field_data);
-
-          const bool failure = validate_string(field_charset, tmp, data_len,
-                                               &valid_length, &length_error);
-          if (failure) {
-            my_error(ER_INVALID_CHARACTER_STRING, MYF(0), field_charset->csname,
-                     field_data);
-            return DB_ERROR;
-          }
-        }
+      if (sql_col.is_ext()) {
+        byte *tmp = field_data + data_len - BTR_EXTERN_FIELD_REF_SIZE;
+        lob::ref_t ref(tmp);
+        ut_ad(ref.space_id() == space_id);
+        dfield_set_ext(dfield);
       }
     } else if ((dtype->mtype == DATA_VARMYSQL || dtype->mtype == DATA_BINARY) &&
                data_len == lob::ref_t::SIZE) {
@@ -1199,6 +1197,7 @@ dberr_t fill_tuple(dtuple_t *tuple, const row_prebuilt_t *prebuilt,
                    size_t queue_size, mem_heap_t *gcol_heap,
                    bool &gcol_blobs_flushed) {
   const auto n_cols = rows.get_num_cols();
+
   return fill_tuple_up_to_n_cols(tuple, prebuilt, rows, row_index, n_cols,
                                  last_rowid, row_id_data, subtrees, queue_size,
                                  true, gcol_heap, gcol_blobs_flushed, true);

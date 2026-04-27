@@ -1079,12 +1079,6 @@ ulint read(ReadContext *ctx, ref_t ref, ulint offset, ulint len, byte *buf) {
   ref_mem_t ref_mem;
   ref.parse(ref_mem);
 
-#ifdef LOB_DEBUG
-  std::cout << "thread=" << std::this_thread::get_id()
-            << ", lob::read(): table=" << ctx->index()->table->name
-            << ", ref=" << ref << std::endl;
-#endif /* LOB_DEBUG */
-
   /* Cache of s-latched blocks of LOB index pages.*/
   BlockCache cached_blocks;
 

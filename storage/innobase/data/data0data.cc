@@ -1105,6 +1105,7 @@ dtuple_t *dtuple_t::deep_copy(mem_heap_t *heap) const {
   for (uint32_t i = 0; i < n_fields; ++i) {
     dfield_dup(&copy->fields[i], heap);
   }
+  copy->n_fields_cmp = n_fields_cmp;
   return copy;
 }
 

@@ -344,6 +344,14 @@ void dfield_print(std::ostream &o, const dfield_t *field, ulint n);
 @param[in]      tuple   data tuple */
 void dtuple_print(std::ostream &o, const dtuple_t *tuple);
 
+/** Print the contents of a tuple, followed by a newline.
+@param[out]     o       output stream
+@param[in]      tuple   data tuple */
+inline void dtuple_println(std::ostream &o, const dtuple_t *tuple) {
+  dtuple_print(o, tuple);
+  o << std::endl;
+}
+
 /** Print the contents of a tuple.
 @param[out]     o       output stream
 @param[in]      tuple   data tuple */
@@ -662,6 +670,12 @@ struct dfield_t {
   @param[in,out]        heap    memory heap to keep value when necessary */
   void adjust_v_data_mysql(const dict_v_col_t *vcol, bool comp,
                            const byte *field, ulint len, mem_heap_t *heap);
+
+  std::string to_string() const {
+    std::ostringstream sout;
+    print(sout);
+    return sout.str();
+  }
 };
 
 /** Compare a multi-value clustered index field with a secondary index

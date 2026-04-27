@@ -45,6 +45,8 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #include "ha_prototypes.h"
 #include "log0write.h"
 #include "mach0data.h"
+#include "my_sqlcommand.h"
+#include "mysql/plugin.h"
 
 #include "my_dbug.h"
 
@@ -425,15 +427,18 @@ dberr_t dict_create_index_tree_in_mem(dict_index_t *index, trx_t *trx) {
     there is no way to find the resources(two segments, etc.)
     allocated to this index. Since this is a rare case, living
     with it is acceptable */
-    /* FIXME: if it's part of CREATE TABLE, and file_per_table is
-    true, skip ddl log, because during rollback, the whole
-    tablespace would be dropped */
+    /* For bulk-load truncate on file-per-table tables, rollback/post-DDL
+    cleanup will eventually drop the whole replacement tablespace, so a
+    per-index FREE_TREE log is redundant. */
 
     /* During upgrade, etc., the log_ddl may haven't been
     initialized and we don't need to write DDL logs too.
     This can only happen for CREATE TABLE. */
     if (log_ddl != nullptr) {
-      err = log_ddl->write_free_tree_log(trx, index, false);
+      if (!(dict_table_is_file_per_table(index->table) &&
+            thd_sql_command(trx->mysql_thd) == SQLCOM_LOAD)) {
+        err = log_ddl->write_free_tree_log(trx, index, false);
+      }
     }
   }
 

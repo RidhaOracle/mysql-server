@@ -51,6 +51,7 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #include "ha_innodb.h"
 #include "log0chkp.h"
 #include "log0ddl.h"
+#include "my_sqlcommand.h"
 #include "my_sys.h"
 #include "mysql/plugin.h"
 #include "mysqld.h"  //get_server_state
@@ -991,6 +992,8 @@ dberr_t Log_DDL::write_free_tree_log(trx_t *trx, const dict_index_t *index,
   dberr_t err;
 
   trx->ddl_operation = true;
+
+  ut_ad(thd_sql_command(trx->mysql_thd) != SQLCOM_LOAD);
 
   DBUG_INJECT_CRASH("ddl_log_crash_before_free_tree_log",
                     crash_before_free_tree_log_counter++);
