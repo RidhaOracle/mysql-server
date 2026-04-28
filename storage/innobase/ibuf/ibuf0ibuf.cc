@@ -1190,29 +1190,6 @@ inline ibuf_op_t ibuf_rec_get_op_type(mtr_t *mtr [[maybe_unused]],
   return ibuf_rec_get_op_type_func(IF_DEBUG(mtr, ) rec);
 }
 
-/** Read the first two bytes from a record's fourth field (counter field in
- new records; something else in older records).
- @return "counter" field, or ULINT_UNDEFINED if for some reason it
- can't be read */
-ulint ibuf_rec_get_counter(const rec_t *rec) /*!< in: ibuf record */
-{
-  const byte *ptr;
-  ulint len;
-
-  if (rec_get_n_fields_old_raw(rec) <= IBUF_REC_FIELD_METADATA) {
-    return (ULINT_UNDEFINED);
-  }
-
-  /* nullptr for index as it can't be clustered index */
-  ptr = rec_get_nth_field_old(nullptr, rec, IBUF_REC_FIELD_METADATA, &len);
-
-  if (len >= 2) {
-    return (mach_read_from_2(ptr));
-  } else {
-    return (ULINT_UNDEFINED);
-  }
-}
-
 bool ibuf_rec_has_multi_value(const rec_t *rec) {
   ulint len;
   ulint info_len;

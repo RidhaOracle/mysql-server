@@ -771,12 +771,6 @@ static inline ulint xdes_calc_descriptor_index(const page_size_t &page_size,
 @param[in]  mtr  mini transaction context. */
 void xdes_mark_all_used(xdes_t *descr, mtr_t *mtr);
 
-/** Mark all the pages of the extent from given page_no as free.
-@param[in]  descr   extent descriptor
-@param[in]  mtr  mini transaction context.
-@param[in]  from  all pages from this page_no is marked as free. */
-void xdes_mark_pages_free(xdes_t *descr, mtr_t *mtr, const page_no_t from);
-
 /** Gets a descriptor bit of a page.
 @param[in]      descr   descriptor
 @param[in]      bit     XDES_FREE_BIT or XDES_CLEAN_BIT

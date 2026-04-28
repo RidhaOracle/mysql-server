@@ -419,16 +419,6 @@ void xdes_mark_all_used(xdes_t *descr, mtr_t *mtr) {
   ut_ad(xdes_is_full(descr, mtr));
 }
 
-void xdes_mark_pages_free(xdes_t *descr, mtr_t *mtr, const page_no_t from) {
-  ut_ad(descr && mtr);
-  ut_ad(mtr_memo_contains_page(mtr, descr, MTR_MEMO_PAGE_SX_FIX));
-  const page_no_t from_page = from % FSP_EXTENT_SIZE;
-
-  for (size_t i = from_page; i < FSP_EXTENT_SIZE; ++i) {
-    xdes_set_bit(descr, XDES_FREE_BIT, i, true, mtr);
-  }
-}
-
 static inline page_no_t xdes_get_n_used(const xdes_t *descr, mtr_t *mtr) {
   page_no_t count = 0;
 

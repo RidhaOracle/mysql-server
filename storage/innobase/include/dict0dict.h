@@ -617,14 +617,6 @@ void dict_table_copy_v_types(dtuple_t *tuple, const dict_table_t *table);
 void dict_table_copy_types(dtuple_t *tuple, /*!< in/out: data tuple */
                            const dict_table_t *table); /*!< in: table */
 #ifndef UNIV_HOTBACKUP
-/********************************************************************
-Wait until all the background threads of the given table have exited, i.e.,
-bg_threads == 0. Note: bg_threads_mutex must be reserved when
-calling this. */
-void dict_table_wait_for_bg_threads_to_exit(
-    dict_table_t *table,              /* in: table */
-    std::chrono::microseconds delay); /* in: time to wait between
-                         checks of bg_threads. */
 
 /** Look up an index among already opened tables. Does not attempt to open
 tables that are not available in the dictionary cache.  This behaviour is fine

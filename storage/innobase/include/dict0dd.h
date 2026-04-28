@@ -966,21 +966,6 @@ const char *dd_process_dd_partitions_rec_and_mtr_commit(
     mem_heap_t *heap, const rec_t *rec, dict_table_t **table,
     dict_table_t *dd_tables, MDL_ticket **mdl, mtr_t *mtr);
 
-/** Process one mysql.columns record and get info to dict_col_t
-@param[in,out]  heap            Temp memory heap
-@param[in]      rec             mysql.columns record
-@param[in,out]  col             dict_col_t to fill
-@param[in,out]  table_id        Table id
-@param[in,out]  col_name        Column name
-@param[in,out]  nth_v_col       Nth v column
-@param[in]      dd_columns      dict_table_t obj of mysql.columns
-@param[in,out]  mtr             Mini-transaction
-@retval true if column is filled */
-bool dd_process_dd_columns_rec(mem_heap_t *heap, const rec_t *rec,
-                               dict_col_t *col, table_id_t *table_id,
-                               char **col_name, ulint *nth_v_col,
-                               const dict_table_t *dd_columns, mtr_t *mtr);
-
 /** Process one mysql.columns record for virtual columns
 @param[in]      heap            temp memory heap
 @param[in,out]  rec             mysql.columns record

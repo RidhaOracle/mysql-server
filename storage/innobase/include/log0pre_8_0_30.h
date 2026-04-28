@@ -91,21 +91,6 @@ struct Checkpoint_header {
   uint64_t m_log_buf_size;
 };
 
-/** Provides a file offset for the given lsn. For this function to work,
-some existing file lsn and corresponding offset to that file lsn have to
-be provided.
-@param[in]  n_files           number of log files
-@param[in]  file_size         size of each log file (in bytes)
-@param[in]  some_file_lsn     some file_lsn for which offset is known
-@param[in]  some_file_offset  file offset corresponding to the given
-                              some_file_lsn
-@param[in]  requested_lsn     the given lsn for which offset is computed
-@return file offset corresponding to the given requested_lsn */
-os_offset_t compute_real_offset_for_lsn(size_t n_files, os_offset_t file_size,
-                                        lsn_t some_file_lsn,
-                                        os_offset_t some_file_offset,
-                                        lsn_t requested_lsn);
-
 /** Deserializes the log checkpoint header stored in the given buffer.
 @param[in]   buf       the buffer to deserialize
 @param[out]  header    the deserialized header */

@@ -69,17 +69,6 @@ void Tablespace::shutdown() {
   m_space_id = SPACE_UNKNOWN;
 }
 
-/** Note that the data file was found.
-@param[in,out] file     Data file object to set */
-void Tablespace::file_found(Datafile &file) {
-  /* Note that the file exists and can be opened
-  in the appropriate mode. */
-  file.m_exists = true;
-
-  file.set_open_flags(&file == &m_files.front() ? OS_FILE_OPEN_RETRY
-                                                : OS_FILE_OPEN);
-}
-
 /** Find a filename in the list of Datafiles for a tablespace
 @return true if the filename exists in the data files */
 bool Tablespace::find(const char *filename) {

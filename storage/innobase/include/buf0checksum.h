@@ -239,9 +239,6 @@ class BlockReporter {
                                  srv_checksum_algorithm_t page_checksum,
                                  const page_id_t &page_id) const;
 
-  [[nodiscard]] space_id_t space_id() const noexcept;
-  [[nodiscard]] page_no_t page_no() const noexcept;
-
  protected:
   /** If true, do a LSN check during innodb recovery. */
   bool m_check_lsn;

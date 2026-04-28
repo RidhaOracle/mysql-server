@@ -1701,12 +1701,6 @@ os_fd_t innobase_mysql_tmpfile(const char *path);
         of the compressed data (including footer) if it is a compressed page */
 ulint os_file_compressed_page_size(const byte *buf);
 
-/** If it is a compressed page return the original page data + footer size
-@param[in]      buf             Buffer to check, must include header + 10 bytes
-@return ULINT_UNDEFINED if the page is not a compressed page or length
-        of the original data + footer if it is a compressed page */
-ulint os_file_original_page_size(const byte *buf);
-
 #ifndef _WIN32
 /** Set the global file create umask. This value is to be set once, at startup
 and never modified.

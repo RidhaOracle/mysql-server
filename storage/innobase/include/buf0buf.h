@@ -297,9 +297,6 @@ static inline ulint buf_pool_get_curr_size(void);
  @return size in pages */
 static inline ulint buf_pool_get_n_pages(void);
 
-/** @return true if buffer pool resize is in progress. */
-bool is_buffer_pool_resize_in_progress();
-
 #endif /* !UNIV_HOTBACKUP */
 
 /** Gets the smallest oldest_modification lsn among all of the earliest

@@ -191,10 +191,6 @@ class Tablespace {
   @return true if the filename exists in the data files */
   bool find(const char *filename);
 
-  /** Note that the data file was found.
-  @param[in,out] file   Data file object to set */
-  void file_found(Datafile &file);
-
   /* DATA MEMBERS */
 
   /** Name of the tablespace. */

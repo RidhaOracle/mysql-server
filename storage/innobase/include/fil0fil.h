@@ -241,10 +241,6 @@ struct fil_space_t {
   using List_node = UT_LIST_NODE_T(fil_space_t);
   using Files = std::vector<fil_node_t, ut::allocator<fil_node_t>>;
 
-  /** Release the reserved free extents.
-  @param[in]    n_reserved      number of reserved extents */
-  void release_free_extents(ulint n_reserved);
-
   /** @return true if the instance is queued for deletion. Guarantees the space
   is not deleted as long as the fil_shard mutex is not released. */
   bool is_deleted() const;
@@ -769,9 +765,6 @@ class Fil_path {
     return (ancestor.is_ancestor(descendant));
   }
 
-  /** @return true if m_path exists and is a file. */
-  [[nodiscard]] bool is_file_and_exists() const;
-
   /** @return true if m_path exists and is a directory. */
   [[nodiscard]] bool is_directory_and_exists() const;
 
@@ -919,16 +912,6 @@ class Fil_path {
 
   /** @return true if the path exists and is a file . */
   [[nodiscard]] static os_file_type_t get_file_type(const std::string &path);
-
-  /** Return a string to display the file type of a path.
-  @param[in]  path  path name
-  @return true if the path exists and is a file . */
-  static const char *get_file_type_string(const std::string &path);
-
-  /** Return a string to display the file type of a path.
-  @param[in]  type  OS file type
-  @return true if the path exists and is a file . */
-  static const char *get_file_type_string(os_file_type_t type);
 
   /** Get the real path for a directory or a file name. This path can be
   used to compare with another absolute path. It will be converted to

@@ -7030,11 +7030,6 @@ void buf_pool_free_all() {
   buf_pool_free();
 }
 
-bool is_buffer_pool_resize_in_progress() {
-  auto status = buf_pool_resize_status_code.load();
-  return (status != BUF_POOL_RESIZE_COMPLETE &&
-          status != BUF_POOL_RESIZE_FAILED);
-}
 #endif /* !UNIV_HOTBACKUP */
 
 [[nodiscard]] bool buf_page_t::is_memory(const page_t *const ptr) noexcept {

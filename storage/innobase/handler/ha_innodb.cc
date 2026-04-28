@@ -7984,23 +7984,6 @@ int innobase_fts_nocase_compare(const CHARSET_INFO *cs, const fts_string_t *s1,
 
 #endif /* UNIV_HOTBACKUP */
 
-/** Compare two character strings case insensitively according to their
-charset.
-@param[in]  cs  character set
-@param[in]  s1  string 1
-@param[in]  s2  string 2
-@return 0 if the two strings are equal */
-int innobase_nocase_compare(const void *cs, const char *s1, const char *s2) {
-  const CHARSET_INFO *charset = static_cast<const CHARSET_INFO *>(cs);
-  const uchar *str1 = reinterpret_cast<const uchar *>(s1);
-  const uchar *str2 = reinterpret_cast<const uchar *>(s2);
-  uint len1 = static_cast<uint>(strlen(s1));
-  uint len2 = static_cast<uint>(strlen(s2));
-
-  /* This function returns zero if the two strings are equal. */
-  return (ha_compare_text(charset, str1, len1, str2, len2, false));
-}
-
 #ifndef UNIV_HOTBACKUP
 
 ulint innobase_strnxfrm(const CHARSET_INFO *cs, const uchar *str,

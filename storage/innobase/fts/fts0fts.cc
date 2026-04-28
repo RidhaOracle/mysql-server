@@ -5350,54 +5350,6 @@ void fts_cache_append_deleted_doc_ids(
   mutex_exit((ib_mutex_t *)&cache->deleted_lock);
 }
 
-bool fts_wait_for_background_thread_to_start(
-    dict_table_t *table, std::chrono::microseconds max_wait) {
-  ulint count = 0;
-  bool done = false;
-
-  ut_a(max_wait == std::chrono::seconds::zero() ||
-       max_wait >= FTS_MAX_BACKGROUND_THREAD_WAIT);
-
-  for (;;) {
-    fts_t *fts = table->fts;
-
-    mutex_enter(&fts->bg_threads_mutex);
-
-    if (fts->fts_status & BG_THREAD_READY) {
-      done = true;
-    }
-
-    mutex_exit(&fts->bg_threads_mutex);
-
-    if (!done) {
-      std::this_thread::sleep_for(FTS_MAX_BACKGROUND_THREAD_WAIT);
-
-      if (max_wait > std::chrono::seconds::zero()) {
-        max_wait -= FTS_MAX_BACKGROUND_THREAD_WAIT;
-
-        /* We ignore the residual value. */
-        if (max_wait < FTS_MAX_BACKGROUND_THREAD_WAIT) {
-          break;
-        }
-      }
-
-      ++count;
-    } else {
-      break;
-    }
-
-    if (count >= FTS_BACKGROUND_THREAD_WAIT_COUNT) {
-      ib::error(ER_IB_MSG_480) << "The background thread for the FTS"
-                                  " table "
-                               << table->name << " refuses to start";
-
-      count = 0;
-    }
-  }
-
-  return (done);
-}
-
 /** Add the FTS document id hidden column.
 @param[in,out] table Table with FTS index
 @param[in] heap Temporary memory heap, or NULL
@@ -5527,40 +5479,6 @@ void fts_free(dict_table_t *table) /*!< in/out: table with FTS indexes */
 
   table->fts = nullptr;
 }
-
-#if 0  // TODO: Enable this in WL#6608
-/*********************************************************************//**
-Signal FTS threads to initiate shutdown. */
-void
-fts_start_shutdown(
-        dict_table_t*   table,          /*!< in: table with FTS indexes */
-        fts_t*          fts)            /*!< in: fts instance that needs
-                                        to be informed about shutdown */
-{
-        mutex_enter(&fts->bg_threads_mutex);
-
-        fts->fts_status |= BG_THREAD_STOP;
-
-        mutex_exit(&fts->bg_threads_mutex);
-
-}
-
-/*********************************************************************//**
-Wait for FTS threads to shutdown. */
-void
-fts_shutdown(
-        dict_table_t*   table,          /*!< in: table with FTS indexes */
-        fts_t*          fts)            /*!< in: fts instance to shutdown */
-{
-        mutex_enter(&fts->bg_threads_mutex);
-
-        ut_a(fts->fts_status & BG_THREAD_STOP);
-
-        dict_table_wait_for_bg_threads_to_exit(table, std::chrono::milliseconds{20});
-
-        mutex_exit(&fts->bg_threads_mutex);
-}
-#endif
 
 /** Take a FTS savepoint. */
 static inline void fts_savepoint_copy(

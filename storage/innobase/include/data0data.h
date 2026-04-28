@@ -649,10 +649,6 @@ struct dfield_t {
 
   byte *blobref() const;
 
-  /** Obtain the LOB version number, if this is an externally
-  stored field. */
-  uint32_t lob_version() const;
-
   dfield_t()
       : data(nullptr), ext(0), spatial_status(0), len(0), type({0, 0, 0, 0}) {}
 
@@ -750,10 +746,6 @@ struct dtuple_t {
     dtuple_print(out, this);
     return out;
   }
-
-  /** Read the trx id from the tuple (DB_TRX_ID)
-  @return transaction id of the tuple. */
-  trx_id_t get_trx_id() const;
 
   /** Ignore at most n trailing default fields if this is a tuple
   from instant index

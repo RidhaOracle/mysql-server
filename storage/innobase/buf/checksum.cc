@@ -719,11 +719,3 @@ bool BlockReporter::is_lsn_valid(const byte *frame,
 
   return lsn1 == lsn2;
 }
-
-space_id_t BlockReporter::space_id() const noexcept {
-  return mach_read_from_4(m_read_buf + FIL_PAGE_SPACE_ID);
-}
-
-page_no_t BlockReporter::page_no() const noexcept {
-  return mach_read_from_4(m_read_buf + FIL_PAGE_OFFSET);
-}

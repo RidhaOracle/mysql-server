@@ -2926,21 +2926,6 @@ void dict_table_copy_types(dtuple_t *tuple,           /*!< in/out: data tuple */
   dict_table_copy_v_types(tuple, table);
 }
 
-void dict_table_wait_for_bg_threads_to_exit(dict_table_t *table,
-                                            std::chrono::microseconds delay) {
-  fts_t *fts = table->fts;
-
-  ut_ad(mutex_own(&fts->bg_threads_mutex));
-
-  while (fts->bg_threads > 0) {
-    mutex_exit(&fts->bg_threads_mutex);
-
-    std::this_thread::sleep_for(delay);
-
-    mutex_enter(&fts->bg_threads_mutex);
-  }
-}
-
 /** Builds the internal dictionary cache representation for a clustered
  index, containing also system fields not defined by the user.
  @return own: the internal representation of the clustered index */

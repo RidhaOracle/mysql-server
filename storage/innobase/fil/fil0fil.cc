@@ -9211,44 +9211,6 @@ os_file_type_t Fil_path::get_file_type(const std::string &path) {
   return type;
 }
 
-/** Return a string to display the file type of a path.
-@param[in]  path  path name
-@return true if the path exists and is a file . */
-const char *Fil_path::get_file_type_string(const std::string &path) {
-  return get_file_type_string(Fil_path::get_file_type(path));
-}
-
-/** Return a string to display the file type of a path.
-@param[in]  type  OS file type
-@return true if the path exists and is a file . */
-const char *Fil_path::get_file_type_string(os_file_type_t type) {
-  switch (type) {
-    case OS_FILE_TYPE_FILE:
-      return "file";
-    case OS_FILE_TYPE_LINK:
-      return "symbolic link";
-    case OS_FILE_TYPE_DIR:
-      return "directory";
-    case OS_FILE_TYPE_BLOCK:
-      return "block device";
-    case OS_FILE_TYPE_NAME_TOO_LONG:
-      return "name too long";
-    case OS_FILE_PERMISSION_ERROR:
-      return "permission error";
-    case OS_FILE_TYPE_MISSING:
-      return "missing";
-    case OS_FILE_TYPE_UNKNOWN:
-    case OS_FILE_TYPE_FAILED:
-      break;
-  }
-  return "unknown";
-}
-
-/** @return true if the path exists and is a file . */
-bool Fil_path::is_file_and_exists() const {
-  return (get_file_type(abs_path()) == OS_FILE_TYPE_FILE);
-}
-
 /** @return true if the path exists and is a directory. */
 bool Fil_path::is_directory_and_exists() const {
   return (get_file_type(abs_path()) == OS_FILE_TYPE_DIR);
@@ -9393,19 +9355,6 @@ void test_make_filepath() {
   DISPLAY;
 }
 #endif /* UNIV_ENABLE_UNIT_TEST_MAKE_FILEPATH */
-
-/** Release the reserved free extents.
-@param[in]      n_reserved      number of reserved extents */
-void fil_space_t::release_free_extents(ulint n_reserved) {
-#ifndef UNIV_HOTBACKUP
-  ut_ad(rw_lock_own(&latch, RW_LOCK_X));
-#endif /* !UNIV_HOTBACKUP */
-
-  ut_a(n_reserved < std::numeric_limits<uint32_t>::max());
-  ut_a(n_reserved_extents >= n_reserved);
-
-  n_reserved_extents -= (uint32_t)n_reserved;
-}
 
 #ifndef UNIV_HOTBACKUP
 
