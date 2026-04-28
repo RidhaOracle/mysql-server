@@ -2551,6 +2551,11 @@ int io_thread_init_commands(MYSQL *mysql, Master_info *mi) {
 
   sprintf(query, "SET @slave_uuid = '%s', @replica_uuid = '%s'", server_uuid,
           server_uuid);
+  DBUG_EXECUTE_IF("replica_registers_specific_uuid", {
+    const std::string specific_uuid{"00000000-0000-0000-0000-000000000000"};
+    sprintf(query, "SET @slave_uuid = '%s', @replica_uuid = '%s'",
+            specific_uuid.c_str(), specific_uuid.c_str());
+  });
   if (mysql_real_query(mysql, query, static_cast<ulong>(strlen(query))) &&
       !check_io_slave_killed(mi->info_thd, mi, nullptr))
     goto err;

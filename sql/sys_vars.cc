@@ -2406,6 +2406,14 @@ static Sys_var_ulong Sys_rpl_stop_replica_timeout(
 static Sys_var_deprecated_alias Sys_rpl_stop_slave_timeout(
     "rpl_stop_slave_timeout", Sys_rpl_stop_replica_timeout);
 
+static Sys_var_bool Sys_rpl_dump_thread_account_affinity(
+    "rpl_dump_thread_account_affinity",
+    "Require a reconnect matching an existing dump thread's replica "
+    "identity to use the same authenticated account. Disabled by default "
+    "to preserve legacy dump-thread replacement behavior.",
+    GLOBAL_VAR(opt_rpl_dump_thread_account_affinity), CMD_LINE(OPT_ARG),
+    DEFAULT(false), NO_MUTEX_GUARD, NOT_IN_BINLOG);
+
 static Sys_var_enum Sys_binlog_error_action(
     "binlog_error_action",
     "When statements cannot be written to the binary log due to a fatal "
