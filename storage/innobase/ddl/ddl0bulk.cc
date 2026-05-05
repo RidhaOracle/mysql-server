@@ -384,8 +384,39 @@ void Loader::Thread_data::read_input_entry(const Rows_mysql &rows,
   if (m_err != DB_SUCCESS) {
     return;
   }
+#ifdef UNIV_DEBUG
+  for (size_t i = 0; i < dtuple_get_n_fields(m_input_row); ++i) {
+    auto *field = dtuple_get_nth_field(m_input_row, i);
+    auto *type = dfield_get_type(field);
+    if (type->mtype == DATA_SYS) {
+      continue;
+    }
+    if (dfield_is_null(field) && (type->prtype & DATA_NOT_NULL)) {
+      std::ostringstream out;
+      out << "ddl_bulk invalid input row row=" << row_index
+          << " index=" << prebuilt->index->name() << " tuple=";
+      dtuple_print(out, m_input_row);
+      ib::info() << out.str();
+      ut_ad(false);
+    }
+  }
+#endif
   fill_index_entry(m_input_entry, m_input_row, prebuilt, m_trx_data,
                    m_rollptr_data, m_rowid_data);
+#ifdef UNIV_DEBUG
+  for (size_t i = 0; i < dtuple_get_n_fields(m_input_entry); ++i) {
+    auto *field = dtuple_get_nth_field(m_input_entry, i);
+    if (dfield_is_null(field) &&
+        (dfield_get_type(field)->prtype & DATA_NOT_NULL)) {
+      std::ostringstream out;
+      out << "ddl_bulk invalid input entry row=" << row_index
+          << " index=" << prebuilt->index->name() << " tuple=";
+      dtuple_print(out, m_input_entry);
+      ib::info() << out.str();
+      ut_ad(false);
+    }
+  }
+#endif
   m_more_available_in_input = true;
 }
 
@@ -791,6 +822,21 @@ void fill_index_entry(dtuple_t *entry, const dtuple_t *tuple,
     const dict_col_t *col = index->get_col(nth_field);
 
     auto row_field = dtuple_get_nth_field(tuple, column_number);
+#ifdef UNIV_DEBUG
+    auto *row_type = dfield_get_type(row_field);
+    auto *entry_type = dfield_get_type(field);
+
+    if (row_type->mtype == DATA_SYS && entry_type->mtype != DATA_SYS) {
+      std::ostringstream out;
+      out << "ddl_bulk suspicious DATA_SYS source while filling index entry"
+          << " index=" << index->name() << " nth_field=" << nth_field
+          << " source_column_number=" << column_number << " tuple=";
+      dtuple_print(out, tuple);
+      ib::info() << out.str();
+      ut_ad(false);
+    }
+#endif
+
     auto data = dfield_get_data(row_field);
     auto data_len = dfield_get_len(row_field);
 
@@ -1004,6 +1050,36 @@ dberr_t fill_tuple_up_to_n_cols(dtuple_t *tuple, const row_prebuilt_t *prebuilt,
 
     auto &sql_col = rows.read_column(row_offset, column_number);
     if (sql_col.m_is_null) {
+#ifdef UNIV_DEBUG
+      if (dfield_get_type(dfield)->prtype & DATA_NOT_NULL) {
+        std::ostringstream out;
+        out << "ddl_bulk NULL source while filling tuple"
+            << " row_index=" << row_index << " row_offset=" << row_offset
+            << " index=" << prebuilt->index->name()
+            << " is_clustered=" << prebuilt->index->is_clustered()
+            << " loop_index=" << index
+            << " tuple_field_pos=" << (tuple_index - 1)
+            << " source_column_number=" << column_number
+            << " source_mysql_type=" << sql_col.m_type;
+
+        if (tuple_index > 0 &&
+            tuple_index - 1 < dict_index_get_n_fields(prebuilt->index)) {
+          auto *index_field = prebuilt->index->get_field(tuple_index - 1);
+          out << " index_field_name=" << index_field->name
+              << " index_field_prefix_len=" << index_field->prefix_len;
+        }
+
+        if (field != nullptr) {
+          out << " mysql_field_name="
+              << (field != nullptr ? field->field_name : "<null>");
+        }
+
+        out << " tuple_before=";
+        dtuple_print(out, tuple);
+        ib::info() << out.str();
+        ut_ad(false);
+      }
+#endif
       dfield_set_null(dfield);
       continue;
     }
@@ -1197,6 +1273,8 @@ dberr_t fill_tuple(dtuple_t *tuple, const row_prebuilt_t *prebuilt,
                    size_t queue_size, mem_heap_t *gcol_heap,
                    bool &gcol_blobs_flushed) {
   const auto n_cols = rows.get_num_cols();
+  ut_ad(prebuilt->index->is_clustered() ||
+        (n_cols == dict_index_get_n_fields(prebuilt->index)));
 
   return fill_tuple_up_to_n_cols(tuple, prebuilt, rows, row_index, n_cols,
                                  last_rowid, row_id_data, subtrees, queue_size,

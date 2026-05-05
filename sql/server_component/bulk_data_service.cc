@@ -2177,9 +2177,10 @@ static void fill_column_metadata(const Field *field, Column_meta &col_meta) {
   col_meta.m_null_bit = 0;
 }
 
-static bool add_index_columns(TABLE_SHARE *table_share, const KEY &key,
+static bool add_index_columns(const TABLE *table, const KEY &key,
                               Row_meta &row_meta, const KEY &pk,
                               bool &all_key_int, bool &all_key_int_signed_asc) {
+  TABLE_SHARE *table_share = table->s;
   assert(table_share != nullptr);
 
   all_key_int = true;
@@ -2191,7 +2192,7 @@ static bool add_index_columns(TABLE_SHARE *table_share, const KEY &key,
   /* The column index in the secondary index. */
   auto col_index = 0;
 
-  for (size_t index = 0; index < key.actual_key_parts; ++index) {
+  for (size_t index = 0; index < key.user_defined_key_parts; ++index) {
     KEY_PART_INFO &key_part = key.key_part[index];
     auto key_field = key_part.field;
 
@@ -2220,7 +2221,8 @@ static bool add_index_columns(TABLE_SHARE *table_share, const KEY &key,
     }
 
     auto field_index = key_field->field_index();
-    field_added[field_index] = true;
+    field_added[field_index] = !col_meta.m_is_prefix_key;
+
     col_meta.m_null_byte = col_meta.m_index / 8;
     col_meta.m_null_bit = col_meta.m_index % 8;
     columns.push_back(col_meta);
@@ -2254,10 +2256,17 @@ static bool add_index_columns(TABLE_SHARE *table_share, const KEY &key,
       auto &key_part = pk.key_part[index];
       auto key_field = key_part.field;
       auto field_index = key_field->field_index();
-      if (field_added[field_index]) {
+      Column_meta col_meta;
+
+      if (key_part.key_part_flag & HA_PART_KEY_SEG) {
+        col_meta.m_max_len = key_part.length;
+        col_meta.m_is_prefix_key = true;
+      }
+
+      if (!col_meta.m_is_prefix_key && field_added[field_index]) {
         continue;
       }
-      Column_meta col_meta;
+
       col_meta.m_is_pk = false;
       fill_column_metadata(key_field, col_meta);
       /* The column index in the secondary index. */
@@ -2279,6 +2288,7 @@ static bool add_index_columns(TABLE_SHARE *table_share, const KEY &key,
       field_added[field_index] = true;
 
       switch (col_meta.m_type) {
+        case MYSQL_TYPE_VARCHAR:
         case MYSQL_TYPE_BLOB:
         case MYSQL_TYPE_MEDIUM_BLOB:
         case MYSQL_TYPE_LONG_BLOB:
@@ -2530,7 +2540,7 @@ bool get_row_metadata_for_sk(THD *thd [[maybe_unused]], const TABLE *table,
   row_meta.m_keys = key.user_defined_key_parts + pk_key_parts;
   row_meta.m_non_keys = 0;
 
-  if (!add_index_columns(table_share, key, row_meta, pk, all_key_int,
+  if (!add_index_columns(table, key, row_meta, pk, all_key_int,
                          all_key_int_signed_asc)) {
     return false;
   }
