@@ -1396,6 +1396,21 @@ bool Loader::Table_reader::init(const std::string &schema,
   char path[FN_REFLEN + 1];
   build_table_filename(path, sizeof(path) - 1, schema.c_str(), table.c_str(),
                        nullptr, 0);
+
+  if (dict_table_is_partition(prebuilt->table)) {
+    const char *full_name = prebuilt->table->name.m_name;
+    const char *slash = strchr(full_name, '/');
+    const char *table_name = (slash == nullptr) ? full_name : slash + 1;
+    const char *partition_suffix = strstr(table_name, "#p#");
+
+    if (partition_suffix != nullptr) {
+      size_t path_len = strlen(path);
+      size_t suffix_len = strlen(partition_suffix);
+      ut_ad(path_len + suffix_len < sizeof(path));
+      memcpy(path + path_len, partition_suffix, suffix_len + 1);
+    }
+  }
+
   ib_cursor_open_table(path, m_trx, &m_table_cursor);
 
   if (m_table_cursor == nullptr) {

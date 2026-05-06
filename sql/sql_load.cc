@@ -26,6 +26,7 @@
 
 #include "sql/sql_load.h"
 #include "my_sqlcommand.h"
+#include "sql/mysqld_cs.h"
 #include "sql/sql_rename.h"
 
 #include <fcntl.h>
@@ -39,6 +40,7 @@
 #include <algorithm>
 #include <atomic>
 #include <limits>
+#include <memory>
 #include <sstream>
 
 #include "my_base.h"
@@ -336,8 +338,9 @@ bool Sql_cmd_load_table::validate_table_for_bulk_load(
     return true;
   }
 
-  if (table_ref->table->part_info != nullptr) {
-    my_error(ER_NOT_SUPPORTED_YET, MYF(0), "Partitioned Table");
+  if (table_ref->table->part_info != nullptr && m_opt_partitions == nullptr) {
+    my_error(ER_NOT_SUPPORTED_YET, MYF(0),
+             "Partitioned Table without explicit PARTITION clause.");
     return true;
   }
 
@@ -411,6 +414,92 @@ bool Sql_cmd_load_table::duplicate_table_for_bulk_load(
   return res;
 }
 
+bool Sql_cmd_load_table::run_bulk_driver_for_target(
+    THD *thd, Table_ref *table_ref, Table_ref *new_table_ref,
+    bool has_duplicate_table, const std::string *partition_name_ptr,
+    Bulk_load_file_info &info, Bulk_source src, size_t &affected_rows) {
+  TABLE *saved_open_tables = thd->open_tables;
+
+  Table_ref table_ref_copy(table_ref->db, table_ref->db_length,
+                           table_ref->table_name, table_ref->table_name_length,
+                           table_ref->alias, table_ref->lock_descriptor().type,
+                           table_ref->mdl_request.type);
+  table_ref_copy.open_strategy = table_ref->open_strategy;
+  table_ref_copy.open_type = table_ref->open_type;
+  table_ref_copy.required_type = table_ref->required_type;
+  table_ref_copy.mdl_request.ticket = table_ref->mdl_request.ticket;
+
+  Table_ref new_table_ref_copy;
+  Table_ref *new_table_ref_ptr = nullptr;
+  if (has_duplicate_table && new_table_ref != nullptr) {
+    new_table_ref_copy = Table_ref(
+        new_table_ref->db, new_table_ref->db_length, new_table_ref->table_name,
+        new_table_ref->table_name_length, new_table_ref->alias,
+        new_table_ref->lock_descriptor().type, new_table_ref->mdl_request.type);
+    new_table_ref_copy.open_strategy = new_table_ref->open_strategy;
+    new_table_ref_copy.open_type = new_table_ref->open_type;
+    new_table_ref_copy.required_type = new_table_ref->required_type;
+    new_table_ref_copy.mdl_request.ticket = new_table_ref->mdl_request.ticket;
+    new_table_ref_ptr = &new_table_ref_copy;
+  }
+
+  List<String> partitions;
+  String partition_name_storage;
+  if (partition_name_ptr != nullptr) {
+    partition_name_storage.set_charset(character_set_filesystem);
+    partition_name_storage.copy(partition_name_ptr->c_str(),
+                                partition_name_ptr->length(),
+                                character_set_filesystem);
+    info.m_current_partition = *partition_name_ptr;
+    partitions.push_back(&partition_name_storage);
+    table_ref_copy.partition_names = &partitions;
+    if (new_table_ref_ptr != nullptr)
+      new_table_ref_ptr->partition_names = &partitions;
+  } else {
+    info.m_current_partition.clear();
+    table_ref_copy.partition_names = nullptr;
+    if (new_table_ref_ptr != nullptr)
+      new_table_ref_ptr->partition_names = nullptr;
+  }
+
+  thd->set_open_tables(nullptr);
+  auto cleanup_open_tables = create_scope_guard([&]() {
+    close_thread_tables(thd);
+    table_ref_copy.table = nullptr;
+    if (new_table_ref_ptr != nullptr) new_table_ref_ptr->table = nullptr;
+    thd->set_open_tables(saved_open_tables);
+  });
+
+  Open_table_context ot_ctx(thd, MYSQL_OPEN_REOPEN);
+  if (open_table(thd, &table_ref_copy, &ot_ctx)) {
+    my_error(ER_INTERNAL_ERROR, MYF(0), "BULK LOAD: open_table failed");
+    return true;
+  }
+
+  if (has_duplicate_table && new_table_ref_ptr != nullptr) {
+    Open_table_context duplicate_ot_ctx(thd, MYSQL_OPEN_REOPEN);
+    if (open_table(thd, new_table_ref_ptr, &duplicate_ot_ctx)) {
+      my_error(ER_INTERNAL_ERROR, MYF(0),
+               "BULK LOAD: open_table failed on duplicate table");
+      return true;
+    }
+  }
+
+  size_t affected_rows_partition = 0;
+  TABLE *duplicate_table = (has_duplicate_table && new_table_ref_ptr != nullptr)
+                               ? new_table_ref_ptr->table
+                               : nullptr;
+  if (!bulk_driver_service(thd, table_ref_copy.table, duplicate_table, info,
+                           src, affected_rows_partition)) {
+    my_error(ER_INTERNAL_ERROR, MYF(0),
+             "BULK LOAD: bulk_driver_service failed");
+    return true;
+  }
+
+  affected_rows += affected_rows_partition;
+  return false;
+}
+
 /**
   Execute BULK LOAD DATA
   @param thd Current thread.
@@ -418,6 +507,13 @@ bool Sql_cmd_load_table::duplicate_table_for_bulk_load(
 */
 bool Sql_cmd_load_table::execute_bulk(THD *thd) {
   DBUG_TRACE;
+
+  if (m_opt_partitions != nullptr && m_file_count > 1 &&
+      m_opt_partitions->mode() != Load_data_partition_mode::NAME_WITH_FILES) {
+    my_error(ER_WRONG_USAGE, MYF(0), "LOAD DATA with BULK Algorithm",
+             "PARTITION without FILES range mapping");
+    return true;
+  }
 
   if (check_bulk_load_parameters(thd)) {
     return true;
@@ -462,6 +558,29 @@ bool Sql_cmd_load_table::execute_bulk(THD *thd) {
     return true;
   }
 
+  if (m_opt_partitions != nullptr && table_ref->table->part_info != nullptr) {
+    partition_info *part_info = table_ref->table->part_info;
+    for (const auto *partition : m_opt_partitions->partitions()) {
+      uint32 part_id = NOT_A_PARTITION_ID;
+      partition_element *part_elem =
+          part_info->get_part_elem(partition->name().str, &part_id);
+
+      if (part_elem == nullptr) {
+        my_error(ER_UNKNOWN_PARTITION, MYF(0), partition->name().str,
+                 table_ref->alias);
+        return true;
+      }
+
+      if (part_info->is_sub_partitioned() &&
+          part_elem->subpartitions.elements > 0) {
+        my_error(
+            ER_LOAD_BULK_DATA_FAILED, MYF(0), partition->name().str,
+            "BULK LOAD requires leaf subpartition names in PARTITION clause");
+        return true;
+      }
+    }
+  }
+
   Bulk_source src = Bulk_source::LOCAL;
 
   switch (m_bulk_source) {
@@ -487,6 +606,23 @@ bool Sql_cmd_load_table::execute_bulk(THD *thd) {
     if (!info.parse(error)) {
       my_error(ER_BULK_PARSER_ERROR, MYF(0), error.c_str());
       return false;
+    }
+  }
+
+  if (m_opt_partitions != nullptr && !m_opt_partitions->partitions().empty()) {
+    info.m_partitions.clear();
+    for (const auto *partition : m_opt_partitions->partitions()) {
+      std::vector<int> file_indexes;
+      if (m_opt_partitions->mode() ==
+          Load_data_partition_mode::NAME_WITH_FILES) {
+        const auto &files_range = partition->files_range();
+        assert(files_range.has_value());
+        for (ulong file_index = files_range->first;
+             file_index <= files_range->second; ++file_index) {
+          file_indexes.push_back(static_cast<int>(file_index));
+        }
+      }
+      info.m_partitions.emplace(partition->name().str, std::move(file_indexes));
     }
   }
 
@@ -519,7 +655,6 @@ bool Sql_cmd_load_table::execute_bulk(THD *thd) {
   }
 
   Table_ref new_table_ref{};
-  Table_ref *new_table_ref_ptr = &new_table_ref;
 
   std::string original_name = table_ref->table_name;
   std::string temp_name{};
@@ -528,11 +663,9 @@ bool Sql_cmd_load_table::execute_bulk(THD *thd) {
   Disable_binlog_guard disable_binlog(thd);
 
   bool success = false;
-  bool new_table_opened = false;
   // Actions needed to cleanup before leaving scope.
   auto cleanup_guard = create_scope_guard([&]() {
     THD_STAGE_INFO(thd, stage_end);
-
     close_thread_tables(thd);
     // End transaction
     if (success) {
@@ -586,6 +719,7 @@ bool Sql_cmd_load_table::execute_bulk(THD *thd) {
   tdc_remove_table(thd, TDC_RT_REMOVE_ALL, table_ref->db, table_ref->table_name,
                    false);
   table_ref->table = nullptr;
+
   if (m_non_empty_table && !info.m_is_dryrun) {
     tdc_remove_table(thd, TDC_RT_REMOVE_ALL, new_table_ref.db,
                      new_table_ref.table_name, false);
@@ -613,42 +747,23 @@ bool Sql_cmd_load_table::execute_bulk(THD *thd) {
     return true;
   }
 
-  /* Open the table after truncate. Here we open the destination table, on
-  which we already have an exclusive metadata lock.  */
-  Open_table_context ot_ctx(thd, MYSQL_OPEN_REOPEN);
-  if (open_table(thd, table_ref, &ot_ctx)) {
-    my_error(ER_INTERNAL_ERROR, MYF(0), "BULK LOAD: open_table failed");
-    success = false;
-    return true;
-  }
-
-  if (m_non_empty_table && !info.m_is_dryrun) {
-    new_table_opened = !open_tables(thd, &new_table_ref_ptr, &counter,
-                                    MYSQL_OPEN_HAS_MDL_LOCK);
-    if (!new_table_opened) {
-      my_error(ER_INTERNAL_ERROR, MYF(0),
-               "BULK LOAD: open_tables failed on duplicate table");
-      success = false;
-      return true;
-    }
-  }
-
   size_t affected_rows = 0;
-  if (!m_non_empty_table && !bulk_driver_service(thd, table_ref->table, nullptr,
-                                                 info, src, affected_rows)) {
-    my_error(ER_INTERNAL_ERROR, MYF(0),
-             "BULK LOAD: bulk_driver_service failed");
-    success = false;
-    return true;
-  }
+  const bool partitioned_load = !info.m_partitions.empty();
+  const bool has_duplicate_table = m_non_empty_table && !info.m_is_dryrun;
 
-  if (m_non_empty_table) {
-    auto *duplicate_table =
-        info.m_is_dryrun ? nullptr : new_table_ref_ptr->table;
-    if (!bulk_driver_service(thd, table_ref->table, duplicate_table, info, src,
-                             affected_rows)) {
-      my_error(ER_INTERNAL_ERROR, MYF(0),
-               "BULK LOAD: bulk_driver_service failed");
+  if (partitioned_load) {
+    for (const auto &p : info.m_partitions) {
+      if (run_bulk_driver_for_target(thd, table_ref, &new_table_ref,
+                                     has_duplicate_table, &p.first, info, src,
+                                     affected_rows)) {
+        success = false;
+        return true;
+      }
+    }
+  } else {
+    if (run_bulk_driver_for_target(thd, table_ref, &new_table_ref,
+                                   has_duplicate_table, nullptr, info, src,
+                                   affected_rows)) {
       success = false;
       return true;
     }
@@ -656,6 +771,14 @@ bool Sql_cmd_load_table::execute_bulk(THD *thd) {
 
   const bool no_fk_check =
       thd->variables.option_bits & OPTION_NO_FOREIGN_KEY_CHECKS;
+
+  table_ref->partition_names = nullptr;
+  Open_table_context ot_ctx(thd, MYSQL_OPEN_REOPEN);
+  if (open_table(thd, table_ref, &ot_ctx)) {
+    my_error(ER_INTERNAL_ERROR, MYF(0), "BULK LOAD: open_table failed");
+    success = false;
+    return true;
+  }
 
   if (table_ref->table->s->foreign_keys > 0 && !no_fk_check) {
     auto *share = table_ref->table->s;
@@ -773,7 +896,8 @@ bool Sql_cmd_load_table::bulk_driver_service(THD *thd, const TABLE *sql_table,
   auto load_handle = load_driver->create_bulk_loader(
       thd, thd->thread_id(), sql_table, duplicate_table, src,
       (m_exchange.file_info.cs != nullptr) ? m_exchange.file_info.cs
-                                           : thd->variables.collation_database);
+                                           : thd->variables.collation_database,
+      info);
 
   /* Set schema, table, file name string options. */
   std::string schema_name(sql_table->s->db.str, sql_table->s->db.length);

@@ -2326,6 +2326,14 @@ CHARSET_INFO *warn_on_deprecated_user_defined_collation(
 
 %type <load_set_list> load_data_set_list opt_load_data_set_spec
 
+
+%type <load_data_partition_spec> load_data_partition_spec
+
+%type <load_data_partition_list>
+        opt_load_data_partition_clause
+        load_data_partition_clause
+        load_data_partition_spec_list
+
 %type <install_component_set_list> install_set_value_list opt_install_set_value_list
 %type <install_component_set_element>  install_set_value
 
@@ -15009,7 +15017,7 @@ load_stmt:
           INTO                          /* 11 */
           TABLE_SYM                     /* 12 */
           table_ident                   /* 13 */
-          opt_use_partition             /* 14 */
+          opt_load_data_partition_clause /* 14 */
           opt_load_data_charset         /* 15 */
           opt_compression_algorithm     /* 16 */
           opt_xml_rows_identified_by    /* 17 */
@@ -15251,6 +15259,68 @@ field_or_var:
 opt_load_data_set_spec:
           %empty { $$= {nullptr, nullptr, nullptr}; }
         | SET_SYM load_data_set_list { $$= $2; }
+        ;
+
+opt_load_data_partition_clause:
+          %empty { $$= nullptr; }
+        | load_data_partition_clause
+        ;
+
+load_data_partition_clause:
+          PARTITION_SYM '(' load_data_partition_spec_list ')'
+          {
+            $$= $3;
+          }
+        ;
+
+load_data_partition_spec_list:
+          load_data_partition_spec
+          {
+            auto *partitions= NEW_PTN Load_data_partition_list(
+                YYTHD, $1->files_range().has_value()
+                           ? Load_data_partition_mode::NAME_WITH_FILES
+                           : Load_data_partition_mode::NAMES_ONLY);
+            if (partitions == nullptr)
+              MYSQL_YYABORT;
+            if ($1->files_range().has_value()) {
+              if (partitions->push_back_range(
+                      YYTHD, $1->name(), $1->files_range()->first,
+                      $1->files_range()->second))
+                MYSQL_YYABORT;
+            } else if (partitions->push_back_name(YYTHD, $1->name())) {
+              MYSQL_YYABORT;
+            }
+            $$= NEW_PTN PT_load_data_partition_list(partitions);
+            if ($$ == nullptr)
+              MYSQL_YYABORT;
+          }
+        | load_data_partition_spec_list ',' load_data_partition_spec
+          {
+            $$= $1;
+            if ($3->files_range().has_value()) {
+              if ($$->partitions()->push_back_range(
+                      YYTHD, $3->name(), $3->files_range()->first,
+                      $3->files_range()->second))
+                MYSQL_YYABORT;
+            } else if ($$->partitions()->push_back_name(YYTHD, $3->name())) {
+              MYSQL_YYABORT;
+            }
+          }
+        ;
+
+load_data_partition_spec:
+          ident
+          {
+            $$= NEW_PTN PT_load_data_partition_spec($1);
+          }
+        | ident FILES_SYM ulong_num
+          {
+            $$= NEW_PTN PT_load_data_partition_spec($1, $3, $3);
+          }
+        | ident FILES_SYM ulong_num TO_SYM ulong_num
+          {
+            $$= NEW_PTN PT_load_data_partition_spec($1, $3, $5);
+          }
         ;
 
 load_data_set_list:
