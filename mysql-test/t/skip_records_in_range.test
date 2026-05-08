@@ -122,3 +122,19 @@ eval $query1;
 
 DROP VIEW v1;
 DROP TABLE t1;
+
+--echo #
+--echo # Bug#37727982: FORCE INDEX does not skip records_in_range() for
+--echo #               IS NOT NULL
+--echo #
+
+CREATE TABLE t1 (c1 INT, KEY (c1));
+INSERT INTO t1 VALUES (1), (2), (3), (4), (5), (6), (7), (8), (NULL), (NULL);
+ANALYZE TABLE t1;
+
+SET SESSION DEBUG="+d,crash_records_in_range";
+SELECT * FROM t1 FORCE INDEX(c1) WHERE c1 > 0;
+SELECT * FROM t1 FORCE INDEX(c1) WHERE c1 IS NOT NULL;
+SET SESSION DEBUG="-d,crash_records_in_range";
+
+DROP TABLE t1;

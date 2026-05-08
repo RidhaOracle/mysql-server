@@ -532,3 +532,35 @@ select * from v1;
 v3
 DROP VIEW v1;
 DROP TABLE t1;
+#
+# Bug#37727982: FORCE INDEX does not skip records_in_range() for
+#               IS NOT NULL
+#
+CREATE TABLE t1 (c1 INT, KEY (c1));
+INSERT INTO t1 VALUES (1), (2), (3), (4), (5), (6), (7), (8), (NULL), (NULL);
+ANALYZE TABLE t1;
+Table	Op	Msg_type	Msg_text
+test.t1	analyze	status	OK
+SET SESSION DEBUG="+d,crash_records_in_range";
+SELECT * FROM t1 FORCE INDEX(c1) WHERE c1 > 0;
+c1
+1
+2
+3
+4
+5
+6
+7
+8
+SELECT * FROM t1 FORCE INDEX(c1) WHERE c1 IS NOT NULL;
+c1
+1
+2
+3
+4
+5
+6
+7
+8
+SET SESSION DEBUG="-d,crash_records_in_range";
+DROP TABLE t1;
