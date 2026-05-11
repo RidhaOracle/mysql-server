@@ -86,6 +86,11 @@ uint clone_restart_timeout;
 /** Clone system variable: time delay after removing data */
 uint clone_delay_after_data_drop;
 
+#ifndef NDEBUG
+/** Debug-only test hook to corrupt a cloned file index descriptor. */
+bool clone_inject_invalid_file_index;
+#endif
+
 /** Key for registering clone allocations with performance schema */
 PSI_memory_key clone_mem_key;
 
@@ -632,6 +637,14 @@ static MYSQL_SYSVAR_UINT(delay_after_data_drop, clone_delay_after_data_drop,
                          60 * 60,             /* Maximum =  1 hour */
                          1);                  /* Step    =  1 sec */
 
+#ifndef NDEBUG
+static MYSQL_SYSVAR_BOOL(inject_invalid_file_index,
+                         clone_inject_invalid_file_index, PLUGIN_VAR_OPCMDARG,
+                         "Debug-only test hook to corrupt a cloned file "
+                         "metadata index descriptor.",
+                         nullptr, nullptr, false);
+#endif
+
 /** Clone system variables */
 static SYS_VAR *clone_system_variables[] = {
     MYSQL_SYSVAR(buffer_size),
@@ -648,6 +661,9 @@ static SYS_VAR *clone_system_variables[] = {
     MYSQL_SYSVAR(ssl_ca),
     MYSQL_SYSVAR(donor_timeout_after_network_failure),
     MYSQL_SYSVAR(delay_after_data_drop),
+#ifndef NDEBUG
+    MYSQL_SYSVAR(inject_invalid_file_index),
+#endif
     nullptr};
 
 /** Declare clone plugin */

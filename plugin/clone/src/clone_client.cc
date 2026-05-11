@@ -36,9 +36,27 @@ Clone Plugin: Client implementation
 #include "sql/sql_plugin.h"  // For check_valid_path() only.
 #include "sql/sql_thd_internal_api.h"
 #include "sql_string.h"
+#include "storage/innobase/include/clone_descriptor_format.h"
 
 /* Namespace for all clone data types */
 namespace myclone {
+
+namespace {
+
+uint32_t clone_desc_read4(const uchar *ptr) {
+  return (static_cast<uint32_t>(ptr[0]) << 24) |
+         (static_cast<uint32_t>(ptr[1]) << 16) |
+         (static_cast<uint32_t>(ptr[2]) << 8) | static_cast<uint32_t>(ptr[3]);
+}
+
+void clone_desc_write4(uchar *ptr, uint32_t val) {
+  ptr[0] = static_cast<uchar>(val >> 24);
+  ptr[1] = static_cast<uchar>(val >> 16);
+  ptr[2] = static_cast<uchar>(val >> 8);
+  ptr[3] = static_cast<uchar>(val);
+}
+
+}  // namespace
 
 /** Default timeout is 300 seconds */
 Time_Sec Client::s_reconnect_timeout{300};
@@ -704,6 +722,12 @@ int Client::clone() {
   bool restart = false;
   uint restart_count = 0;
   char info_mesg[128];
+
+#ifndef NDEBUG
+  if (clone_inject_invalid_file_index) {
+    m_share->m_inject_invalid_file_index = true;
+  }
+#endif
 
   auto num_workers = get_max_concurrency() - 1;
 
@@ -1829,6 +1853,25 @@ int Client::set_descriptor(const uchar *buffer, size_t length) {
   }
 
   Ha_clone_cbk *clone_callback = new Client_Cbk(this);
+
+#ifndef NDEBUG
+  /** Corrupt the serialized file metadata index for debug test coverage of
+  recipient-side descriptor validation. */
+  std::vector<uchar> desc_buffer;
+  if (m_share->m_inject_invalid_file_index &&
+      length >= clone_desc_format::CLONE_FILE_IDX_OFFSET + 4 &&
+      clone_desc_read4(buffer + clone_desc_format::CLONE_DESC_TYPE_OFFSET) ==
+          clone_desc_format::CLONE_DESC_FILE_METADATA_TYPE) {
+    desc_buffer.assign(buffer, buffer + length);
+    auto file_index = clone_desc_read4(
+        desc_buffer.data() + clone_desc_format::CLONE_FILE_IDX_OFFSET);
+    clone_desc_write4(
+        desc_buffer.data() + clone_desc_format::CLONE_FILE_IDX_OFFSET,
+        file_index + 1024);
+    buffer = desc_buffer.data();
+    length = desc_buffer.size();
+  }
+#endif
 
   clone_callback->set_data_desc(buffer, length);
   clone_callback->clear_flags();

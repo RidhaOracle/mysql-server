@@ -40,9 +40,37 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #include "log0files_io.h"
 #include "sql/handler.h"
 
+int Clone_Snapshot::validate_file_index(uint32_t file_index,
+                                        bool ddl_create) const {
+  bool valid = false;
+
+  switch (m_snapshot_state) {
+    case CLONE_SNAPSHOT_FILE_COPY:
+    case CLONE_SNAPSHOT_PAGE_COPY:
+      valid = ddl_create ? file_index <= num_data_files()
+                         : file_index < num_data_files();
+      break;
+
+    case CLONE_SNAPSHOT_REDO_COPY:
+      valid = file_index < num_redo_files();
+      break;
+
+    default:
+      break;
+  }
+
+  if (valid) {
+    return 0;
+  }
+
+  int err = ER_CLONE_PROTOCOL;
+  my_error(err, MYF(0), "Wrong Clone RPC: Invalid File Index");
+  return err;
+}
+
 int Clone_Snapshot::get_file_from_desc(const Clone_File_Meta *file_meta,
                                        const char *data_dir, bool desc_create,
-                                       bool &desc_exists,
+                                       bool ddl_create, bool &desc_exists,
                                        Clone_file_ctx *&file_ctx) {
   int err = 0;
 
@@ -57,6 +85,13 @@ int Clone_Snapshot::get_file_from_desc(const Clone_File_Meta *file_meta,
         m_snapshot_state == CLONE_SNAPSHOT_REDO_COPY);
 
   desc_exists = false;
+
+  err = validate_file_index(idx, ddl_create);
+
+  if (err != 0) {
+    mutex_exit(&m_snapshot_mutex);
+    return (err);
+  }
 
   /* File metadata is already there, possibly sent by another task. */
   file_ctx = get_file_ctx_by_index(idx);
@@ -77,8 +112,18 @@ int Clone_Snapshot::get_file_from_desc(const Clone_File_Meta *file_meta,
 int Clone_Snapshot::rename_desc(const Clone_File_Meta *file_meta,
                                 const char *data_dir,
                                 Clone_file_ctx *&file_ctx) {
+  mutex_enter(&m_snapshot_mutex);
+
+  auto err = validate_file_index(file_meta->m_file_index, false);
+
+  mutex_exit(&m_snapshot_mutex);
+
+  if (err != 0) {
+    return err;
+  }
+
   /* Create new file context with new name. */
-  auto err = create_desc(data_dir, file_meta, true, file_ctx);
+  err = create_desc(data_dir, file_meta, true, file_ctx);
 
   if (err != 0) {
     return err; /* purecov: inspected */
@@ -87,9 +132,8 @@ int Clone_Snapshot::rename_desc(const Clone_File_Meta *file_meta,
   file_ctx->m_state.store(Clone_file_ctx::State::RENAMED);
 
   /* Overwrite with the renamed file context. */
-  add_file_from_desc(file_ctx, false);
-
-  return 0;
+  bool last_file = false;
+  return add_file_from_desc(file_ctx, false, last_file);
 }
 
 int Clone_Snapshot::fix_ddl_extension(const char *data_dir,
@@ -519,12 +563,20 @@ int Clone_Snapshot::create_desc(const char *data_dir,
   return (err);
 }
 
-bool Clone_Snapshot::add_file_from_desc(Clone_file_ctx *&file_ctx,
-                                        bool ddl_create) {
+int Clone_Snapshot::add_file_from_desc(Clone_file_ctx *&file_ctx,
+                                       bool ddl_create, bool &last_file) {
+  last_file = false;
   mutex_enter(&m_snapshot_mutex);
 
   ut_ad(m_snapshot_handle_type == CLONE_HDL_APPLY);
   auto file_meta = file_ctx->get_file_meta();
+
+  auto err = validate_file_index(file_meta->m_file_index, ddl_create);
+
+  if (err != 0) {
+    mutex_exit(&m_snapshot_mutex);
+    return err;
+  }
 
   if (m_snapshot_state == CLONE_SNAPSHOT_FILE_COPY ||
       m_snapshot_state == CLONE_SNAPSHOT_PAGE_COPY) {
@@ -540,14 +592,16 @@ bool Clone_Snapshot::add_file_from_desc(Clone_file_ctx *&file_ctx,
     m_redo_file_vector[file_meta->m_file_index] = file_ctx;
   }
 
-  mutex_exit(&m_snapshot_mutex);
-
   /** Check if it the last file */
-  if (file_meta->m_file_index == num_data_files() - 1) {
-    return true;
+  if ((m_snapshot_state == CLONE_SNAPSHOT_FILE_COPY ||
+       m_snapshot_state == CLONE_SNAPSHOT_PAGE_COPY) &&
+      file_meta->m_file_index == num_data_files() - 1) {
+    last_file = true;
   }
 
-  return (false);
+  mutex_exit(&m_snapshot_mutex);
+
+  return 0;
 }
 
 int Clone_Handle::apply_task_metadata(Clone_Task *task,
@@ -1169,7 +1223,7 @@ int Clone_Handle::apply_file_metadata(Clone_Task *task,
 
   /* Check file metadata entry based on the descriptor. */
   auto err = snapshot->get_file_from_desc(file_desc_meta, m_clone_dir, false,
-                                          desc_exists, file_ctx);
+                                          ddl_desc, desc_exists, file_ctx);
   if (err != 0) {
     return (err);
   }
@@ -1189,7 +1243,7 @@ int Clone_Handle::apply_file_metadata(Clone_Task *task,
 
   /* Create file metadata entry based on the descriptor. */
   err = snapshot->get_file_from_desc(file_desc_meta, m_clone_dir, true,
-                                     desc_exists, file_ctx);
+                                     ddl_desc, desc_exists, file_ctx);
   if (err != 0 || desc_exists) {
     mutex_exit(m_clone_task_manager.get_mutex());
 
@@ -1233,9 +1287,14 @@ int Clone_Handle::apply_file_metadata(Clone_Task *task,
       err = file_create_init(file_ctx, file_type, ddl_desc);
     }
 
-    /* If last file is received, set all file metadata transferred */
-    if (snapshot->add_file_from_desc(file_ctx, ddl_desc)) {
-      m_clone_task_manager.set_file_meta_transferred();
+    if (err == 0) {
+      /* If last file is received, set all file metadata transferred */
+      bool last_file = false;
+      err = snapshot->add_file_from_desc(file_ctx, ddl_desc, last_file);
+
+      if (err == 0 && last_file) {
+        m_clone_task_manager.set_file_meta_transferred();
+      }
     }
 
     mutex_exit(m_clone_task_manager.get_mutex());
@@ -1255,7 +1314,10 @@ int Clone_Handle::apply_file_metadata(Clone_Task *task,
 
   err = open_file(nullptr, file_ctx, OS_CLONE_LOG_FILE, true, empty_cbk);
 
-  snapshot->add_file_from_desc(file_ctx, false);
+  if (err == 0) {
+    bool last_file = false;
+    err = snapshot->add_file_from_desc(file_ctx, false, last_file);
+  }
 
   mutex_exit(m_clone_task_manager.get_mutex());
   return (err);

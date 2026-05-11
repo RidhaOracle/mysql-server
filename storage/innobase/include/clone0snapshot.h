@@ -449,11 +449,12 @@ class Clone_Snapshot {
   @param[in]    file_meta       file metadata from donor
   @param[in]    data_dir        destination data directory
   @param[in]    desc_create     create if doesn't exist
+  @param[in]    ddl_create      descriptor can be appended by concurrent DDL
   @param[out]   desc_exists     descriptor already exists
   @param[out]   file_ctx        if there, set to current file context
   @return error code */
   int get_file_from_desc(const Clone_File_Meta *file_meta, const char *data_dir,
-                         bool desc_create, bool &desc_exists,
+                         bool desc_create, bool ddl_create, bool &desc_exists,
                          Clone_file_ctx *&file_ctx);
 
   /** Rename an existing file descriptor.
@@ -474,8 +475,10 @@ class Clone_Snapshot {
   /** Add file descriptor to file list
   @param[in,out]        file_ctx        current file context
   @param[in]            ddl_create      added by DDL concurrently
-  @return true, if it is the last file. */
-  bool add_file_from_desc(Clone_file_ctx *&file_ctx, bool ddl_create);
+  @param[out]           last_file       true if this is the last data file
+  @return error code */
+  int add_file_from_desc(Clone_file_ctx *&file_ctx, bool ddl_create,
+                         bool &last_file);
 
   /** Extract file information from node and add to snapshot
   @param[in]    node    file node
@@ -949,6 +952,12 @@ class Clone_Snapshot {
                            uint32_t data_file_index,
                            const std::string &data_file,
                            Clone_file_ctx::Extension &extn);
+
+  /** Validate donor-provided file index for the current snapshot state.
+  @param[in]    file_index      donor-provided file index
+  @param[in]    ddl_create      true if DDL may append a new data file
+  @return error code */
+  int validate_file_index(uint32_t file_index, bool ddl_create) const;
 
   /** @return number of data files to transfer. */
   inline size_t num_data_files() const { return m_data_file_vector.size(); }
