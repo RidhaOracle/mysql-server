@@ -92,6 +92,12 @@ SET @@GLOBAL.DEBUG = '-d, mysql_command_services_component_test_errno';
 --echo # Test : failing connect() when running in an initialized thread; cleanup (cmd_factory->close() + cmd_thread->end()) must not leak the session
 SELECT test_mysql_command_services_explicit_connect_fail_cleanup_udf();
 
+--echo # Test : MYSQL_COMMAND_CLIENT_FLAGS should switch UPDATE affected rows to found rows
+CREATE TABLE test.mcs_client_flags(c1 INT PRIMARY KEY);
+INSERT INTO test.mcs_client_flags VALUES (1);
+SELECT test_mysql_command_services_client_flags_udf() AS client_flags_switch_update_affected_rows;
+DROP TABLE test.mcs_client_flags;
+
 # Error-log must not contain: [ERROR] [MY-010470] [Server] Closed forcefully 1 session left opened by plugin server_service
 
 UNINSTALL COMPONENT "file://component_test_mysql_command_services";

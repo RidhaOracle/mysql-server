@@ -293,6 +293,11 @@ bool          |MYSQL_NO_LOCK_REGISTRY         |Flag to use the _no_lock        |
               |                               |implementation of registry      |
               |                               |service.                        |
 --------------+-------------------------------+--------------------------------+
+uint32_t      |MYSQL_COMMAND_CLIENT_FLAGS     |Client flags passed to          |
+              |                               |mysql_real_connect() and exposed|
+              |                               |by the default capabilities     |
+              |                               |consumer.                       |
+--------------+-------------------------------+--------------------------------+
 
   @note For the other mysql client options it calls the mysql_options api from
   this api.
@@ -619,6 +624,21 @@ DEFINE_BOOL_METHOD(mysql_command_services_imp::set,
           mcs_ext->mcs_tcpip_port = *static_cast<const int *>(arg);
         }
         break;
+      case MYSQL_COMMAND_CLIENT_FLAGS: {
+        const auto *client_flags = static_cast<const uint32_t *>(arg);
+
+        // The default mysql_text_consumer_client_capabilities service reports
+        // MYSQL::server_capabilities through its SRV_CTX_H
+        if (client_flags == nullptr) {
+          mcs_ext->mcs_client_flag = 0;
+          m_handle->mysql->server_capabilities = 0;
+        } else {
+          mcs_ext->mcs_client_flag = *client_flags;
+
+          m_handle->mysql->server_capabilities = *client_flags;
+        }
+        break;
+      }
       case MYSQL_NO_LOCK_REGISTRY:
         mcs_ext->no_lock_registry = static_cast<const bool *>(arg);
         break;
@@ -653,6 +673,10 @@ DEFINE_BOOL_METHOD(mysql_command_services_imp::get,
     auto mcs_ext = MYSQL_COMMAND_SERVICE_EXTN(m_handle->mysql);
     if (m_handle == nullptr || !arg) return true;
     switch (option) {
+      case MYSQL_COMMAND_CLIENT_FLAGS:
+        *(const_cast<uint32_t *>(static_cast<const uint32_t *>(arg))) =
+            mcs_ext->mcs_client_flag;
+        break;
       case MYSQL_NO_LOCK_REGISTRY:
         *(const_cast<bool *>(static_cast<const bool *>(arg))) =
             mcs_ext->no_lock_registry;

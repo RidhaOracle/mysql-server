@@ -32,6 +32,8 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 #include <cstring>
 #include <thread>
 
+#include "scope_guard.h"
+
 REQUIRES_SERVICE_PLACEHOLDER_AS(mysql_thd_security_context, thd_security_ctx);
 REQUIRES_SERVICE_PLACEHOLDER_AS(mysql_account_database_security_context_lookup,
                                 account_db_security_ctx_lookup);
@@ -443,6 +445,78 @@ static long long test_mysql_command_services_explicit_connect_fail_cleanup_udf(
   return ret_err;
 }
 
+static bool mcs_client_flags_noop_update_affected_rows(
+    bool set_client_found_rows, uint64_t *affected_rows) {
+  // Simple UPDATE that matches one row but changes no rows. Without
+  // CLIENT_FOUND_ROWS it should report 0 affected rows, otherwise, if set it
+  // should report 1
+  constexpr const char *noop_update_matching_row =
+      "UPDATE test.mcs_client_flags SET c1 = 1 WHERE c1 = 1";
+
+  MYSQL_H mysql_h = nullptr;
+  const uint32_t client_flags = CLIENT_FOUND_ROWS;
+  uint32_t actual_client_flags = 0;
+
+  if (cmd_factory_srv->init(&mysql_h) != 0 || mysql_h == nullptr) return true;
+
+  auto close_mysql_h =
+      create_scope_guard([&] { cmd_factory_srv->close(mysql_h); });
+
+  const uint32_t expected_client_flags =
+      set_client_found_rows ? client_flags : 0;
+
+  // Verify that MYSQL_COMMAND_CLIENT_FLAGS stores the value before connect()
+  if (set_client_found_rows &&
+      cmd_options_srv->set(mysql_h, MYSQL_COMMAND_CLIENT_FLAGS,
+                           &client_flags) != 0) {
+    return true;
+  }
+
+  if (cmd_options_srv->get(mysql_h, MYSQL_COMMAND_CLIENT_FLAGS,
+                           &actual_client_flags) != 0 ||
+      actual_client_flags != expected_client_flags) {
+    return true;
+  }
+
+  if (cmd_factory_srv->connect(mysql_h) != 0) return true;
+
+  if (cmd_query_srv->query(mysql_h, noop_update_matching_row,
+                           strlen(noop_update_matching_row)) != 0) {
+    return true;
+  }
+
+  if (cmd_query_srv->affected_rows(mysql_h, affected_rows) != 0) return true;
+
+  return false;
+}
+
+static long long test_mysql_command_services_client_flags_udf(
+    UDF_INIT *, UDF_ARGS *args, unsigned char *is_null, unsigned char *error) {
+  *is_null = 0;
+  *error = 0;
+
+  if (args->arg_count > 0) {
+    *error = 1;
+    return 0;
+  }
+
+  uint64_t default_affected_rows = 0;
+  uint64_t found_rows_affected_rows = 0;
+
+  // Run an UPDATE that matches one row but changes nothing
+  if (mcs_client_flags_noop_update_affected_rows(false,
+                                                 &default_affected_rows) ||
+      mcs_client_flags_noop_update_affected_rows(true,
+                                                 &found_rows_affected_rows)) {
+    *error = 1;
+    return 0;
+  }
+
+  // Expectation is that without CLIENT_FOUND_ROWS set it should report 0
+  // affected rows, otherwise 1
+  return (default_affected_rows == 0 && found_rows_affected_rows == 1) ? 1 : 0;
+}
+
 static mysql_service_status_t init() {
   Udf_func_string udf1 = test_mysql_command_services_udf;
   if (udf_srv->udf_register("test_mysql_command_services_udf", STRING_RESULT,
@@ -482,6 +556,16 @@ static mysql_service_status_t init() {
     return 1;
   }
 
+  Udf_func_longlong udf5 = test_mysql_command_services_client_flags_udf;
+  if (udf_srv->udf_register("test_mysql_command_services_client_flags_udf",
+                            INT_RESULT, reinterpret_cast<Udf_func_any>(udf5),
+                            nullptr, nullptr)) {
+    fprintf(
+        stderr,
+        "Can't register test_mysql_command_services_client_flags_udf UDF\n");
+    return 1;
+  }
+
   return 0;
 }
 
@@ -506,6 +590,11 @@ static mysql_service_status_t deinit() {
         stderr,
         "Can't unregister "
         "test_mysql_command_services_explicit_connect_fail_cleanup_udf UDF\n");
+  if (udf_srv->udf_unregister("test_mysql_command_services_client_flags_udf",
+                              &was_present))
+    fprintf(stderr,
+            "Can't unregister test_mysql_command_services_client_flags_udf "
+            "UDF\n");
   return 0; /* success */
 }
 
