@@ -307,7 +307,8 @@ struct Client_Share {
         m_protocol_version(CLONE_PROTOCOL_VERSION)
 #ifndef NDEBUG
         ,
-        m_inject_invalid_file_index(false) {
+        m_inject_invalid_file_index(false),
+        m_inject_missing_task_mapping(false) {
 #else
   {
 #endif
@@ -344,6 +345,11 @@ struct Client_Share {
 #ifndef NDEBUG
   /** Debug test hook to corrupt a file metadata descriptor index. */
   bool m_inject_invalid_file_index;
+
+  /** Debug test hook to force a recipient locator/task mismatch after
+  locator setup so descriptor handling can be validated against a short
+  task vector. */
+  bool m_inject_missing_task_mapping;
 #endif
 
   /** Clone storage vector */

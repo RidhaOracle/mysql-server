@@ -89,6 +89,11 @@ uint clone_delay_after_data_drop;
 #ifndef NDEBUG
 /** Debug-only test hook to corrupt a cloned file index descriptor. */
 bool clone_inject_invalid_file_index;
+
+/** Debug-only test hook to force a recipient locator/task mismatch before
+descriptor apply. Tests use this to verify runtime protocol validation for
+task-vector indexing. */
+bool clone_inject_missing_task_mapping;
 #endif
 
 /** Key for registering clone allocations with performance schema */
@@ -643,6 +648,12 @@ static MYSQL_SYSVAR_BOOL(inject_invalid_file_index,
                          "Debug-only test hook to corrupt a cloned file "
                          "metadata index descriptor.",
                          nullptr, nullptr, false);
+
+static MYSQL_SYSVAR_BOOL(inject_missing_task_mapping,
+                         clone_inject_missing_task_mapping, PLUGIN_VAR_OPCMDARG,
+                         "Debug-only test hook to force a recipient "
+                         "locator/task mismatch before descriptor apply.",
+                         nullptr, nullptr, false);
 #endif
 
 /** Clone system variables */
@@ -663,6 +674,7 @@ static SYS_VAR *clone_system_variables[] = {
     MYSQL_SYSVAR(delay_after_data_drop),
 #ifndef NDEBUG
     MYSQL_SYSVAR(inject_invalid_file_index),
+    MYSQL_SYSVAR(inject_missing_task_mapping),
 #endif
     nullptr};
 

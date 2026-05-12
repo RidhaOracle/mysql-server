@@ -727,6 +727,10 @@ int Client::clone() {
   if (clone_inject_invalid_file_index) {
     m_share->m_inject_invalid_file_index = true;
   }
+
+  if (clone_inject_missing_task_mapping) {
+    m_share->m_inject_missing_task_mapping = true;
+  }
 #endif
 
   auto num_workers = get_max_concurrency() - 1;
@@ -1807,6 +1811,17 @@ int Client::set_locators(const uchar *buffer, size_t length) {
     return (err);
   }
 
+#ifndef NDEBUG
+  /* Fault injection for coverage: remove one task mapping after locator
+  initialization so later descriptor handling sees a valid locator index but
+  an undersized task vector. This simulates the condition guarded in
+  set_descriptor() without requiring protocol corruption beyond the test hook.
+  */
+  if (m_share->m_inject_missing_task_mapping && !m_tasks.empty()) {
+    m_tasks.pop_back();
+  }
+#endif
+
   /* Master should set locators */
   if (is_master()) {
     int index = 0;
@@ -1875,6 +1890,14 @@ int Client::set_descriptor(const uchar *buffer, size_t length) {
 
   clone_callback->set_data_desc(buffer, length);
   clone_callback->clear_flags();
+
+  if (loc_index >= m_tasks.size()) {
+    err = ER_CLONE_PROTOCOL;
+    my_error(err, MYF(0),
+             "Wrong Clone RPC response, invalid descriptor task mapping");
+    delete clone_callback;
+    return (err);
+  }
 
   /* Apply using descriptor */
   assert(loc_index < m_tasks.size());
