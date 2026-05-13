@@ -1523,6 +1523,14 @@ const ConfigInfo::ParamInfo ConfigInfo::m_ParamInfo[] = {
     {CFG_API_VERBOSE, "ApiVerbose", "API", "Tracelevel for API nodes.",
      ConfigInfo::CI_USED, false, ConfigInfo::CI_INT, nullptr, "0", "100"},
 
+    {CFG_DB_API_HEARTBEAT_INTERVAL, "HeartbeatIntervalDbApi", API_TOKEN,
+     "Time between " API_TOKEN_PRINT "-" DB_TOKEN_PRINT
+     " heartbeats. " DB_TOKEN_PRINT
+     " connection closed by API after 3 missed HBs. " API_TOKEN_PRINT
+     " connection closed by DB after 4 missed HBs.",
+     ConfigInfo::CI_USED, false, ConfigInfo::CI_INT, nullptr, "100",
+     STR_VALUE(MAX_INT_RNIL)},
+
     /****************************************************************************
      * MGM
      ***************************************************************************/
