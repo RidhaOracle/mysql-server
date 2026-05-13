@@ -263,6 +263,7 @@ class CertSubject {
 
   /* Class Methods */
   static int set_common_name(struct X509_name_st *, const char *);
+  static BaseString timestamp(time_t time, const char *fmt);
 
   /* Public Instance Methods */
   bool bind_hostname(const char *);
@@ -279,7 +280,7 @@ class CertSubject {
 
  protected:
   int bound_hostname(int n, char *, int len) const;  // Returns length written
-  size_t timestamp(time_t, char *m, size_t) const;
+  static size_t timestamp(time_t, char *m, size_t, const char *fmt = "%b %Y");
   size_t timestamp(char *, size_t) const;
   size_t print_name(char *, size_t) const;
   bool parse_name(struct X509_name_st *);

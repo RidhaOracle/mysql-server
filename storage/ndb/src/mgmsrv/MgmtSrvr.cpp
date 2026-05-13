@@ -1135,7 +1135,7 @@ int MgmtSrvr::sendStopMgmd(NodeId nodeId, bool abort, bool stop, bool restart,
   NdbMgmHandle h = ndb_mgm_create_handle();
   if (h && connect_string.length() > 0) {
     ndb_mgm_set_connectstring(h, connect_string.c_str());
-    ndb_mgm_set_ssl_ctx(h, ssl_ctx());
+    ndb_mgm_set_ssl_ctx(h, tlsKeyManager()->ctx());
     if (ndb_mgm_connect_tls(h, 1, 0, 0, m_client_tls_req)) {
       DBUG_PRINT("info", ("failed ndb_mgm_connect"));
       ndb_mgm_destroy_handle(&h);
@@ -4473,7 +4473,7 @@ bool MgmtSrvr::connect_to_self() {
              m_port);
   ndb_mgm_set_connectstring(mgm_handle, buf.c_str());
 
-  ndb_mgm_set_ssl_ctx(mgm_handle, ssl_ctx());
+  ndb_mgm_set_ssl_ctx(mgm_handle, tlsKeyManager()->ctx());
   if (ndb_mgm_connect_tls(mgm_handle, 0, 0, 0, m_client_tls_req) < 0) {
     g_eventLogger->warning("%d %s", ndb_mgm_get_latest_error(mgm_handle),
                            ndb_mgm_get_latest_error_desc(mgm_handle));

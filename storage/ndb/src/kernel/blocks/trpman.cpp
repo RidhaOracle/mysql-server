@@ -734,6 +734,36 @@ void Trpman::execDBINFO_SCANREQ(Signal *signal) {
       }
       break;
     }
+    case Ndbinfo::TRUSTED_CERTS_TABLEID: {
+      if (instance() > 1) break;
+
+      TlsKeyManager *keyMgr = globalTransporterRegistry.getTlsKeyManager();
+      TlsKeyManager::CA_Table trust_table(*keyMgr);
+
+      for (cert_table_entry &entry : trust_table) {
+        jam();
+        if (trust_table.id() < (int)cursor->data[0]) continue;
+
+        Ndbinfo::Row row(signal, req);
+
+        row.write_uint32(getOwnNodeId());
+        row.write_string(entry.name);
+        row.write_string(entry.serial);
+        row.write_uint64(entry.expires);
+        row.write_uint32(entry.flags);
+        row.write_uint32(entry.use_count);
+        row.write_uint64(entry.last_use);
+
+        ndbinfo_send_row(signal, req, row, rl);
+
+        if (rl.need_break(req)) {
+          jam();
+          ndbinfo_send_scan_break(signal, req, rl, trust_table.id() + 1);
+          return;
+        }
+      }
+      break;
+    }
     case Ndbinfo::TRANSPORTER_ACTIVITY_TABLEID: {
       jam();
       Uint32 restore = cursor->data[0];

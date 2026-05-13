@@ -1091,10 +1091,17 @@ size_t CertSubject::timestamp(char *buf, size_t len) const {
   return timestamp(raw_time, buf, len);
 }
 
-size_t CertSubject::timestamp(time_t raw_time, char *out, size_t len) const {
+size_t CertSubject::timestamp(time_t raw_time, char *out, size_t len,
+                              const char *fmt) {
   struct tm partials;
   gmtime_r(&raw_time, &partials);
-  return strftime(out, len, "%b %Y", &partials);
+  return strftime(out, len, fmt, &partials);
+}
+
+BaseString CertSubject::timestamp(time_t raw_time, const char *fmt) {
+  char buffer[128];
+  timestamp(raw_time, buffer, sizeof(buffer), fmt);
+  return BaseString(buffer);
 }
 
 size_t CertSubject::print_name(char *buffer, size_t sz) const {
