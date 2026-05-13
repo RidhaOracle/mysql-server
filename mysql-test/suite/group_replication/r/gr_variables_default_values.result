@@ -131,7 +131,7 @@ include/assert.inc [Default group_replication_recovery_tls_version is "TLSv1.2,T
 include/assert.inc [Default group_replication_recovery_tls_ciphersuites is NULL]
 include/assert.inc [Default group_replication_advertise_recovery_endpoints is "DEFAULT"]
 include/assert.inc [Default group_replication_view_change_uuid is "AUTOMATIC"]
-include/assert.inc [Default group_replication_communication_stack is XCom]
+include/assert.inc [Default group_replication_communication_stack is MYSQL]
 include/assert.inc [Default group_replication_paxos_single_leader is 0]
 include/assert.inc [Default group_replication_preemptive_garbage_collection is 0]
 include/assert.inc [Default group_replication_preemptive_garbage_collection_rows_threshold is 100000]

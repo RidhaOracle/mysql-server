@@ -176,11 +176,11 @@ perl mysql-test-run.pl --debug-server --force --timer --big-test --testcase-time
 #GR with loose-group_replication_gtid_assignment_block_size=1
 perl mysql-test-run.pl --timer --force --parallel=6 --comment=group_replication_gtid_assignment_block_size_1 --vardir=var-gr_gtid_assignment_block_size_1 --suite=group_replication  --big-test --testcase-timeout=60 --suite-timeout=360 --mysqld=--loose-group_replication_gtid_assignment_block_size=1
 
-#GR with MySQL Stack
-perl mysql-test-run.pl --timer --force --parallel=6 --comment=group_replication_mysql --vardir=var-group_replication_mysql --suite=group_replication  --big-test --testcase-timeout=60 --suite-timeout=360 --mysqld=--loose-group_replication_communication_stack=MySQL
+#GR with XCom Stack
+perl mysql-test-run.pl --timer --force --parallel=6 --comment=group_replication_mysql --vardir=var-group_replication_xcom --suite=group_replication  --big-test --testcase-timeout=60 --suite-timeout=360 --mysqld=--loose-group_replication_communication_stack=XCOM
 
-#GR with MySQL Stack and Single Leader
-perl mysql-test-run.pl --timer --force --parallel=6 --comment=group_replication_mysql_single_leader --vardir=var-gr_mysql_single_leader --suite=group_replication  --big-test --testcase-timeout=60 --suite-timeout=360 --mysqld=--loose-group_replication_communication_stack=MySQL --mysqld=--loose-group_replication_paxos_single_leader=ON
+#GR with Single Leader
+perl mysql-test-run.pl --timer --force --parallel=6 --comment=group_replication_mysql_single_leader --vardir=var-gr_mysql_single_leader --suite=group_replication  --big-test --testcase-timeout=60 --suite-timeout=360 --mysqld=--loose-group_replication_paxos_single_leader=ON
 
 #
 # b) DEBUG
@@ -190,7 +190,7 @@ perl mysql-test-run.pl --timer --force --parallel=6 --comment=group_replication_
 perl mysql-test-run.pl --timer --debug-server --force --parallel=6 --comment=group_replication_gtid_assignment_block_size_1-debug --vardir=var-gr_gtid_assignment_block_size_1-debug --suite=group_replication  --big-test --testcase-timeout=60 --suite-timeout=360 --mysqld=--loose-group_replication_gtid_assignment_block_size=1
 
 #GR with MySQL Stack on debug build
-perl mysql-test-run.pl --timer --debug-server --force --parallel=6 --comment=group_replication_mysql-debug --vardir=var-group_replication_mysql-debug --suite=group_replication  --big-test --testcase-timeout=60 --suite-timeout=360 --mysqld=--loose-group_replication_communication_stack=MySQL
+perl mysql-test-run.pl --timer --debug-server --force --parallel=6 --comment=group_replication_mysql-debug --vardir=var-group_replication_xcom-debug --suite=group_replication  --big-test --testcase-timeout=60 --suite-timeout=360 --mysqld=--loose-group_replication_communication_stack=XCOM
 
 # GR with binlog compression turned on
 perl mysql-test-run.pl --debug-server --timer --force --parallel=6 --comment=group_replication_compression --vardir=var-gr-binlog-compression --suite=group_replication --big-test --testcase-timeout=60 --suite-timeout=360 --mysqld=--binlog-transaction-compression=ON

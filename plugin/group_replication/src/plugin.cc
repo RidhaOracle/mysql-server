@@ -5295,11 +5295,11 @@ static MYSQL_SYSVAR_ENUM(
     ov.communication_stack_var,                            /* var */
     PLUGIN_VAR_OPCMDARG | PLUGIN_VAR_PERSIST_AS_READ_ONLY, /* optional var */
     "Selects the group replication protocol stack to "
-    "use : Legacy XCom or MySQL.This option only takes effect after a group "
-    "replication restart. Default: XCom",
+    "use : Legacy XCom or MySQL. This option only takes effect after a group "
+    "replication restart. Default: MySQL",
     nullptr,                                 /* check func. */
     nullptr,                                 /* update func. */
-    XCOM_PROTOCOL,                           /* default */
+    MYSQL_PROTOCOL,                          /* default */
     &ov.communication_stack_values_typelib_t /* type lib */
 );
 

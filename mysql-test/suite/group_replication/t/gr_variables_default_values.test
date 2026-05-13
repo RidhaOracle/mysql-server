@@ -378,8 +378,8 @@ SET @@SESSION.group_replication_consistency= default;
 --source include/assert.inc
 
 # group_replication_communication_stack
---let $assert_text= Default group_replication_communication_stack is XCom
---let $assert_cond= "[SELECT @@GLOBAL.group_replication_communication_stack]" = "XCom"
+--let $assert_text= Default group_replication_communication_stack is MYSQL
+--let $assert_cond= "[SELECT @@GLOBAL.group_replication_communication_stack]" = "MYSQL"
 --source include/assert.inc
 
 # group_replication_paxos_single_leader
