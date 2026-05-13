@@ -2727,6 +2727,7 @@ void Qmgr::execCM_ADD(Signal *signal) {
       enableComReq->m_senderData = ENABLE_COM_CM_ADD_COMMIT;
       enableComReq->m_enableNodeId = addNodePtr.i;
       enableComReq->m_dbHbSender = cneighbourl;
+      enableComReq->m_heartbeatInterval = hb_check_timer.getDelay();
       sendSignal(TRPMAN_REF, GSN_ENABLE_COMREQ, signal,
                  EnableComReq::SignalLength, JBB);
       break;
@@ -2810,6 +2811,11 @@ void Qmgr::joinedCluster(Signal *signal, NodeRecPtr nodePtr) {
   enableComReq->m_senderData = ENABLE_COM_CM_COMMIT_NEW;
   enableComReq->m_enableNodeId = 0;
   enableComReq->m_dbHbSender = cneighbourl;
+  /*
+   * Same DB heartbeat interval applies to all data nodes in m_nodeIds.
+   * TRPMAN only uses it for the current DB heartbeat sender transporter.
+   */
+  enableComReq->m_heartbeatInterval = hb_check_timer.getDelay();
   enableComReq->m_nodeIds.clear();
   jam();
   for (nodePtr.i = 1; nodePtr.i < MAX_NDB_NODES; nodePtr.i++) {
@@ -2820,6 +2826,7 @@ void Qmgr::joinedCluster(Signal *signal, NodeRecPtr nodePtr) {
       // to open communication to ourself.
       /*-------------------------------------------------------------------*/
       jamLine(nodePtr.i);
+      ndbrequire(getNodeInfo(nodePtr.i).m_type == NodeInfo::DB);
       enableComReq->m_nodeIds.set(nodePtr.i);
     }  // if
   }    // for
@@ -4397,6 +4404,7 @@ void Qmgr::execAPI_REGREQ(Signal *signal) {
       enableComReq->m_senderData = ENABLE_COM_API_REGREQ;
       enableComReq->m_enableNodeId = apiNodePtr.i;
       enableComReq->m_dbHbSender = cneighbourl;
+      enableComReq->m_heartbeatInterval = chbApiDelay[apiNodePtr.i];
       sendSignal(TRPMAN_REF, GSN_ENABLE_COMREQ, signal,
                  EnableComReq::SignalLength, JBB);
       return;
