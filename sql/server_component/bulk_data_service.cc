@@ -2258,6 +2258,8 @@ static bool add_index_columns(const TABLE *table, const KEY &key,
       auto field_index = key_field->field_index();
       Column_meta col_meta;
 
+      fill_column_metadata(key_field, col_meta);
+
       if (key_part.key_part_flag & HA_PART_KEY_SEG) {
         col_meta.m_max_len = key_part.length;
         col_meta.m_is_prefix_key = true;
@@ -2267,8 +2269,6 @@ static bool add_index_columns(const TABLE *table, const KEY &key,
         continue;
       }
 
-      col_meta.m_is_pk = false;
-      fill_column_metadata(key_field, col_meta);
       /* The column index in the secondary index. */
       col_meta.m_index = col_index++;
 

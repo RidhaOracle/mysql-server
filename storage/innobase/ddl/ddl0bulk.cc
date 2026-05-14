@@ -845,7 +845,12 @@ void fill_index_entry(dtuple_t *entry, const dtuple_t *tuple,
       continue;
     }
 
-    if (fld.prefix_len > 0 && data_len > fld.prefix_len) {
+    if (fld.prefix_len > 0) {
+      /* dict_field_t::prefix_len is stored as character prefix length
+      multiplied by mbmaxlen. Even when the byte length is smaller than
+      prefix_len, the value can still exceed the allowed number of characters
+      for multibyte collations, so always normalize via
+      dtype_get_at_most_n_mbchars(). */
       data_len = dtype_get_at_most_n_mbchars(
           col->prtype, col->mbminmaxlen, fld.prefix_len, data_len,
           static_cast<const char *>(dfield_get_data(row_field)));
