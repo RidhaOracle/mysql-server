@@ -26,7 +26,6 @@
 #include <mysql/components/component_implementation.h>
 #include <mysql/components/services/mysql_admin_session.h>
 #include "include/mysql.h"
-#include "include/mysqld_errmsg.h"
 #include "include/sql_common.h"
 #include "my_dbug.h"
 #include "mysql_command_delegates.h"
@@ -577,14 +576,22 @@ MYSQL_DATA *csi_read_rows(MYSQL *mysql,
 MYSQL_RES *csi_use_result(MYSQL *mysql) { return use_result(mysql); }
 
 void csi_fetch_lengths(ulong *to, MYSQL_ROW column, unsigned int field_count) {
-  for (unsigned int i = 0; i < field_count; i++) {
-    if (!*column) {
-      *to = 0; /* Null */
+  /*
+    The DOM consumer stores an extra end pointer after the field pointers.
+    Non-NULL lengths are derived from the distance to the next non-NULL pointer,
+    or to that end pointer for the last non-NULL field.
+  */
+  MYSQL_ROW row_end = column + field_count;
+
+  for (unsigned int field_index = 0; field_index < field_count; ++field_index) {
+    if (column[field_index] == nullptr) {
+      to[field_index] = 0;
       continue;
     }
-    *to = strlen(*column);
-    column++;
-    to++;
+
+    MYSQL_ROW next = column + field_index + 1;
+    while (next != row_end && *next == nullptr) next++;
+    to[field_index] = static_cast<ulong>(*next - column[field_index] - 1);
   }
 }
 

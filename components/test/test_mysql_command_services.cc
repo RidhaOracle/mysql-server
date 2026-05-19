@@ -351,6 +351,15 @@ err:
   return output;
 }
 
+static void append_row_field(std::string &result_set, MYSQL_ROW_H row,
+                             const ulong *lengths, unsigned int column) {
+  if (row[column] == nullptr) {
+    result_set += "NULL";
+    return;
+  }
+  result_set.append(row[column], lengths[column]);
+}
+
 static char *test_mysql_command_services_udf(UDF_INIT *, UDF_ARGS *args,
                                              char *result,
                                              unsigned long *length,
@@ -457,13 +466,13 @@ static char *test_mysql_command_services_udf(UDF_INIT *, UDF_ARGS *args,
           result = nullptr;
           goto err;
         }
-        ulong *length = nullptr;
-        if (cmd_query_result_srv->fetch_lengths(mysql_res, &length)) {
+        ulong *field_lengths = nullptr;
+        if (cmd_query_result_srv->fetch_lengths(mysql_res, &field_lengths)) {
           result = nullptr;
           goto err;
         }
         for (unsigned int j = 0; j < num_column; j++) {
-          result_set += row[j];
+          append_row_field(result_set, row, field_lengths, j);
         }
       }
       /* The caller has the buffer limit, and the size is of MAX_FIELD_WIDTH
@@ -611,10 +620,13 @@ static char *test_mysql_command_services_apis_udf(UDF_INIT *, UDF_ARGS *args,
         result = nullptr;
         goto err;
       }
-      ulong *length = nullptr;
-      cmd_query_result_srv->fetch_lengths(mysql_res, &length);
+      ulong *field_lengths = nullptr;
+      if (cmd_query_result_srv->fetch_lengths(mysql_res, &field_lengths)) {
+        result = nullptr;
+        goto err;
+      }
       for (unsigned int j = 0; j < num_column; j++) {
-        result_set += row[j];
+        append_row_field(result_set, row, field_lengths, j);
       }
     }
     cmd_query_result_srv->more_results(mysql_h);
@@ -669,6 +681,87 @@ static long long test_mysql_command_services_error_code_udf(
 
   // Return the err_no or 0 in case of error
   return static_cast<long long>(err_no);
+}
+
+static char *test_mysql_command_services_row_semantics_udf(
+    UDF_INIT *, UDF_ARGS *args, char *result, unsigned long *length,
+    unsigned char *is_null, unsigned char *error) {
+  *is_null = 0;
+  *error = 1;
+  if (args->arg_count != 0) {
+    return nullptr;
+  }
+
+  MYSQL_H local_mysql_h = nullptr;
+  MYSQL_RES_H mysql_res = nullptr;
+  MYSQL_ROW_H row = nullptr;
+  ulong *field_lengths = nullptr;
+  const char query[] = "SELECT NULL, 'NULL', UNHEX('610062')";
+  unsigned int num_columns = 0;
+  const char binary_value[] = {'a', '\0', 'b'};
+  char binary_length[32];
+  bool string_null_matches = false;
+  bool binary_value_matches = false;
+  std::string result_set;
+
+  auto cleanup = create_scope_guard([&mysql_res, &local_mysql_h] {
+    cmd_query_result_srv->free_result(mysql_res);
+    if (local_mysql_h != nullptr) cmd_factory_srv->close(local_mysql_h);
+  });
+
+  if (cmd_factory_srv->init(&local_mysql_h) || local_mysql_h == nullptr) {
+    return nullptr;
+  }
+  if (cmd_factory_srv->connect(local_mysql_h)) {
+    return nullptr;
+  }
+
+  if (cmd_query_srv->query(local_mysql_h, query, strlen(query))) {
+    return nullptr;
+  }
+
+  if (cmd_query_result_srv->store_result(local_mysql_h, &mysql_res) ||
+      mysql_res == nullptr) {
+    return nullptr;
+  }
+
+  if (cmd_field_info_srv->num_fields(mysql_res, &num_columns) ||
+      num_columns != 3) {
+    return nullptr;
+  }
+
+  if (cmd_query_result_srv->fetch_row(mysql_res, &row) || row == nullptr) {
+    return nullptr;
+  }
+
+  if (cmd_query_result_srv->fetch_lengths(mysql_res, &field_lengths) ||
+      field_lengths == nullptr) {
+    return nullptr;
+  }
+
+  snprintf(binary_length, sizeof(binary_length), "%lu", field_lengths[2]);
+  string_null_matches = row[1] != nullptr && field_lengths[1] == 4 &&
+                        memcmp(row[1], "NULL", 4) == 0;
+  binary_value_matches =
+      row[2] != nullptr && field_lengths[2] == sizeof(binary_value) &&
+      memcmp(row[2], binary_value, sizeof(binary_value)) == 0;
+
+  result_set = "null=";
+  result_set += (row[0] == nullptr) ? "yes" : "no";
+  result_set += ",string_NULL=";
+  result_set += string_null_matches ? "yes" : "no";
+  result_set += ",binary_length=";
+  result_set += binary_length;
+  result_set += ",binary_value=";
+  result_set += binary_value_matches ? "yes" : "no";
+  strncpy(
+      result, result_set.c_str(),
+      (result_set.length() < *length) ? result_set.length() : (*length - 1));
+  *length =
+      (result_set.length() < *length) ? result_set.length() : (*length - 1);
+  result[*length] = '\0';
+  *error = 0;
+  return result;
 }
 
 // Run in thread + failed connect + cleanup
@@ -1257,6 +1350,19 @@ static mysql_service_status_t init() {
             "UDF\n");
     return 1;
   }
+
+  Udf_func_string udf_row_semantics =
+      test_mysql_command_services_row_semantics_udf;
+  if (udf_srv->udf_register("test_mysql_command_services_row_semantics_udf",
+                            STRING_RESULT,
+                            reinterpret_cast<Udf_func_any>(udf_row_semantics),
+                            nullptr, nullptr)) {
+    fprintf(stderr,
+            "Can't register the "
+            "test_mysql_command_services_row_semantics_udf UDF\n");
+    return 1;
+  }
+
   return 0;
 }
 
@@ -1328,6 +1434,11 @@ static mysql_service_status_t deinit() {
             "Can't unregister the "
             "test_mysql_command_session_error_info_success_clears_udf "
             "UDF\n");
+  if (udf_srv->udf_unregister("test_mysql_command_services_row_semantics_udf",
+                              &was_present))
+    fprintf(stderr,
+            "Can't unregister the "
+            "test_mysql_command_services_row_semantics_udf UDF\n");
   return 0; /* success */
 }
 
