@@ -41,6 +41,7 @@ Clone Plugin: Client implementation
 /* Namespace for all clone data types */
 namespace myclone {
 
+#ifndef NDEBUG
 namespace {
 
 uint32_t clone_desc_read4(const uchar *ptr) {
@@ -57,6 +58,7 @@ void clone_desc_write4(uchar *ptr, uint32_t val) {
 }
 
 }  // namespace
+#endif
 
 /** Default timeout is 300 seconds */
 Time_Sec Client::s_reconnect_timeout{300};
