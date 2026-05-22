@@ -2278,14 +2278,17 @@ int Arg_comparator::compare_row() {
   Compare two argument items, or a pair of elements from two argument rows,
   for NULL values.
 
-  @param a First item
-  @param b Second item
+  @param a         First item
+  @param a_is_null True if a is NULL, ie. if the row it belongs to is NULL
+  @param b         Second item
+  @param b_is_null True if b is NULL, ie. if the row it belongs to is NULL
   @param[out] result True if both items are NULL, false otherwise,
                      when return value is true.
 
   @returns true if at least one of the items is NULL
 */
-static bool compare_pair_for_nulls(Item *a, Item *b, bool *result) {
+static bool compare_pair_for_nulls(Item *a, bool a_is_null, Item *b,
+                                   bool b_is_null, bool *result) {
   if (a->result_type() == ROW_RESULT) {
     a->bring_value();
     b->bring_value();
@@ -2296,17 +2299,18 @@ static bool compare_pair_for_nulls(Item *a, Item *b, bool *result) {
     */
     bool have_null_items = false;
     for (uint i = 0; i < a->cols(); i++) {
-      if (compare_pair_for_nulls(a->element_index(i), b->element_index(i),
-                                 result)) {
+      if (compare_pair_for_nulls(
+              a->element_index(i), a_is_null || a->null_value,
+              b->element_index(i), b_is_null || b->null_value, result)) {
         have_null_items = true;
         if (!*result) return true;
       }
     }
     return have_null_items;
   }
-  const bool a_null = a->is_nullable() && a->is_null();
+  const bool a_null = a_is_null || a->is_null();
   if (current_thd->is_error()) return false;
-  const bool b_null = b->is_nullable() && b->is_null();
+  const bool b_null = b_is_null || b->is_null();
   if (current_thd->is_error()) return false;
   if (a_null || b_null) {
     *result = a_null == b_null;
@@ -2324,7 +2328,7 @@ static bool compare_pair_for_nulls(Item *a, Item *b, bool *result) {
 */
 bool Arg_comparator::compare_null_values() {
   bool result;
-  (void)compare_pair_for_nulls(*left, *right, &result);
+  (void)compare_pair_for_nulls(*left, false, *right, false, &result);
   if (current_thd->is_error()) return false;
   return result;
 }
