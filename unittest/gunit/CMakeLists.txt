@@ -204,6 +204,7 @@ SET(SERVER_TESTS
   dd_properties
   dd_schema
   dd_sdi
+  dd_server_version_transition
   dd_string_type
   dd_table
   debug_sync
@@ -418,13 +419,18 @@ ENDIF()
 
 FOREACH(test ${SERVER_TESTS})
   SET(SRC_FILES ${test}-t.cc)
+  SET(TEST_LINK_LIBRARIES gunit_large server_unittest_library)
   IF(test MATCHES "table_cache")
     LIST(APPEND SRC_FILES ../../storage/example/ha_example.cc)
+  ENDIF()
+  IF(test STREQUAL "dd_server_version_transition")
+    SET(TEST_LINK_LIBRARIES gmock_main ${GTEST_LIBRARIES}
+      server_unittest_library)
   ENDIF()
   MYSQL_ADD_EXECUTABLE(${test}-t ${SRC_FILES}
     ENABLE_EXPORTS
     EXCLUDE_FROM_ALL
-    LINK_LIBRARIES gunit_large server_unittest_library
+    LINK_LIBRARIES ${TEST_LINK_LIBRARIES}
     SKIP_INSTALL
     ADD_GCOV_TEST ${test}
   )

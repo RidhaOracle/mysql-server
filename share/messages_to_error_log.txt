@@ -3339,7 +3339,7 @@ ER_DD_UPGRADE_VERSION_NOT_SUPPORTED
 ER_DD_UPGRADE_SCHEMA_UNAVAILABLE
   eng "Upgrading the data dictionary failed, temporary schema name '%-.192s' not available."
 
-ER_DD_MINOR_DOWNGRADE
+OBSOLETE_ER_DD_MINOR_DOWNGRADE
   eng "Data dictionary minor downgrade from version '%u' to '%u'."
 
 ER_DD_MINOR_DOWNGRADE_VERSION_NOT_SUPPORTED
@@ -12257,7 +12257,7 @@ ER_BEYOND_SERVER_UPGRADE_THRESHOLD
   eng "Invalid MySQL server upgrade: Cannot upgrade from %u to %u. Target MySQL server version is lower than the server upgrade threshold %u."
 
 ER_INVALID_SERVER_UPGRADE_NOT_LTS
-  eng "Invalid MySQL server upgrade: Cannot upgrade from %u to %u. Upgrade to next major version is only allowed from the last LTS release, which version %u is not."
+  eng "Invalid MySQL server upgrade: Cannot upgrade from %u to %u. The source and target must be in the same compatibility lineage, unless the source is the immediately preceding LTS for the target."
 
 ER_INVALID_SERVER_DOWNGRADE_NOT_PATCH
   eng "Invalid MySQL server downgrade: Cannot downgrade from %u to %u. Downgrade is only permitted between patch releases."
@@ -13459,8 +13459,20 @@ ER_WARN_TLS_SESSION_WITHOUT_PQC
 # End of 9.7 error messages intended to be written to the server error log.
 #
 
+
 #
-# Start of 10.x error messages intended to be written to the server error log.
+# MySQL moves from semantic-style versioning to calendar-based versioning
+# starting with the 26.7 release base. Upgrade/downgrade compatibility is
+# tracked through compatibility lineage. The first calendar release base, 26.7,
+# belongs to the 9.7 CalVer compatibility lineage. If 28.4 becomes LTS, the
+# 9.7 lineage continues through 28.4. The first Innovation release after that,
+# 28.7, starts the 28.4 compatibility lineage.
+#
+
+#
+# Start of "9.7 cal-ver compatibility lineage (starts from 26.7)" error messages intended
+# to be written to the server error log.
+#
 # Append 9.7 error log messages to the end of the previous section.
 # Messages intended to be sent to _clients_ go in messages_to_clients.txt!
 #
@@ -13520,8 +13532,15 @@ ER_IB_UNEXPECTED_GET_NODE_INFO
 
 ER_IB_MSG_UNDO_TS_NOT_FOUND
   eng "No undo tablespaces found. Cannot continue operation."
+
+ER_DD_DOWNGRADE
+  eng "Data dictionary downgrade from version '%u' to '%u'."
+
+ER_INVALID_SERVER_UPGRADE_SKIPS_LTS_LINEAGE
+  eng "Invalid MySQL server upgrade: Cannot upgrade from %u to %u. Target MySQL server version belongs to a compatibility lineage whose previous LTS is %u, not %u."
+
 #
-# End of 10.x error messages intended to be written to the server error log.
+# End of "9.7 cal-ver compatibility lineage (starts from 26.7)" messages intended to be written to the server error log.
 #
 ################################################################################
 # Error numbers 50000 to 51999 are reserved. Please do not use them for

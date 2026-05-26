@@ -10998,8 +10998,18 @@ ER_JDV_UNEXPECTED_INVALID_VALUE
 #  End of 9.7 error messages (server-to-client).
 #
 
+#
+# MySQL moves from semantic-style versioning to calendar-based versioning
+# starting with the 26.7 release base. Upgrade/downgrade compatibility is
+# tracked through compatibility lineage. The first calendar release base, 26.7,
+# belongs to the 9.7 CalVer compatibility lineage. If 28.4 becomes LTS, the
+# 9.7 lineage continues through 28.4. The first Innovation release after that,
+# 28.7, starts the 28.4 compatibility lineage.
+#
+
 ################################################################################
-# Error numbers starting at 6900: server-to-client messages 10.x
+# Error numbers starting at 6900: server-to-client messages
+# for "9.7 cal-ver compatibility lineage (starts from 26.7)"
 ################################################################################
 
 # Do NOT add messages intended for the error log here;
@@ -11043,7 +11053,7 @@ ER_DA_CANNOT_REPLICATE_WITHOUT_BINLOG
   eng "Cannot replicate from source as it does not have logical log enabled. Check source configuration to enable it."
 
 #
-#  End of 10.x error messages (server-to-client).
+#  End of "9.7 cal-ver compatibility lineage (starts from 26.7)" error messages (server-to-client).
 #
 
 ################################################################################

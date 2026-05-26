@@ -146,6 +146,7 @@ SET(DD_SOURCES
 
   dd/impl/bootstrap/bootstrap_ctx.cc
   dd/impl/bootstrap/bootstrapper.cc
+  dd/impl/bootstrap/server_version_transition.cc
 
   dd/impl/cache/dictionary_client.cc
   dd/impl/cache/local_multi_map.cc

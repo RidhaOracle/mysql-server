@@ -59,6 +59,7 @@
 #include "my_compiler.h"
 #include "my_compress.h"
 #include "my_inttypes.h"
+#include "my_server_version.h"
 #include "mysql/my_loglevel.h"
 
 /* HAVE_PSI_*_INTERFACE */
