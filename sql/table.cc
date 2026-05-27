@@ -6877,7 +6877,7 @@ int Table_ref::fetch_number_of_rows(ha_rows fallback_estimate) {
   - While QB1 is in this window, it is possible, as we saw above, that QB2
   gets optimized. Because it is not safe to have two query blocks
   reading/writing possible keys for a same table at the same time, a locking
-  mechanism is in place: TABLE_SHARE::owner_of_possible_tmp_keys is a record
+  mechanism is in place: TABLE_SHARE::owner_of_tmp_keys is a record
   of which query block entered first the window for this table and hasn't left
   it yet; only that query block is allowed to read/write possible keys for
   this table.
@@ -7202,8 +7202,8 @@ bool Table_ref::generate_keys(THD *thd) {
       return false;
     }
 
-  if (table->s->owner_of_possible_tmp_keys != nullptr &&
-      table->s->owner_of_possible_tmp_keys != query_block)
+  if (table->s->owner_of_tmp_keys != nullptr &&
+      table->s->owner_of_tmp_keys != query_block)
     return false;
 
   uint new_key_parts = 0;
@@ -7272,9 +7272,9 @@ bool Table_ref::generate_keys(THD *thd) {
     }
   }
 
-  if (table->s->keys)
-    table->s->owner_of_possible_tmp_keys = query_block;  // Acquire lock
-
+  if (table->s->keys != 0) {
+    table->s->owner_of_tmp_keys = query_block;  // Acquire lock
+  }
   return false;
 }
 
