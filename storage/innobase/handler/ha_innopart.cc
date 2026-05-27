@@ -4178,7 +4178,7 @@ int ha_innopart::bulk_load_end(THD *thd, void *load_ctx, bool is_error) {
 
   update_thd(thd);
   trx_t *trx = m_prebuilt->trx;
-  trx_start_if_not_started_xa(trx, false, UT_LOCATION_HERE);
+  trx_start_if_not_started(trx, false, UT_LOCATION_HERE);
   TrxInInnoDB trx_in_innodb(trx);
 
   auto saved_table = m_prebuilt->table;
