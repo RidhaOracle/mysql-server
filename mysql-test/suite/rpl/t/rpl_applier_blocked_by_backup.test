@@ -17,6 +17,8 @@
 #
 --source include/have_debug.inc
 --source include/have_debug_sync.inc
+# CSA has a separate test
+--source include/have_mta.inc
 --source include/have_binlog_format_row.inc
 --source include/rpl/init_source_replica.inc
 --source include/rpl/connection_source.inc

@@ -226,7 +226,8 @@ int Replication_thread_api::wait_for_gtid_execution(double timeout) {
     on info tables.
   */
   if (!error) {
-    if (channel_is_applier_waiting(interface_channel) != 1)
+    if (channel_is_applier_waiting(interface_channel) != 1 &&
+        !is_partial_transaction_on_relay_log())
       error = REPLICATION_THREAD_WAIT_TIMEOUT_ERROR;
   }
 
@@ -264,6 +265,9 @@ bool Replication_thread_api::is_own_event_applier(my_thread_id id,
   bool result = false;
   unsigned long *thread_ids = nullptr;
   const char *name = channel_name ? channel_name : interface_channel;
+
+  if (is_csa_event_applier(name, id)) return true;
+  // if CSA and false, check SQL thread
 
   // Fetch all applier thread ids for this channel.
   int number_appliers =

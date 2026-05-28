@@ -1604,3 +1604,7 @@ UPDATE mysql.user SET plugin='caching_sha2_password', authentication_string='$A$
 
 ALTER TABLE procs_priv
   MODIFY Routine_type enum('FUNCTION','PROCEDURE','LIBRARY') NOT NULL;
+
+ALTER TABLE slave_relay_log_info ADD Applier_version INTEGER UNSIGNED NOT NULL DEFAULT 1 COMMENT 'Version of the applier used (either 1 or 2)' AFTER Assign_gtids_to_anonymous_transactions_value;
+ALTER TABLE slave_relay_log_info ADD Applier_worker_count INTEGER UNSIGNED NOT NULL DEFAULT 0 COMMENT 'Number of worker threads utilized by the applier' AFTER Applier_version;
+ALTER TABLE slave_relay_log_info ADD Applier_event_memory_limit INTEGER UNSIGNED NOT NULL DEFAULT 1073741824 COMMENT 'The maximum amount of memory applier channel may use to cache binlog events' AFTER Applier_worker_count;

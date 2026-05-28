@@ -274,6 +274,8 @@ int channel_get_thread_id(const char *channel,
                           enum_channel_thread_types thread_type,
                           unsigned long **thread_id, bool need_lock = true);
 
+bool is_csa_event_applier(const char *channel, unsigned long thread_id);
+
 /**
   Returns last GNO from applier from a given UUID.
 

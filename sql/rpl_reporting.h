@@ -28,6 +28,7 @@
 #include <stdio.h>
 #include <sys/types.h>
 #include <time.h>
+#include <cstring>
 
 #include "my_compiler.h"
 #include "my_inttypes.h"
@@ -130,6 +131,13 @@ class Slave_reporting_capability {
       timestamp[15] = '\0';
     }
 
+    void copy_from(const Error &other) {
+      number = other.number;
+      memcpy(message, other.message, MAX_SLAVE_ERRMSG);
+      memcpy(timestamp, other.timestamp, 64);
+      skr = other.skr;
+    }
+
     /** Error code */
     uint32 number;
     /** Error message */
@@ -141,6 +149,10 @@ class Slave_reporting_capability {
   };
 
   Error const &last_error() const { return m_last_error; }
+  void copy_error_from(const Error &error, char message[MAX_SLAVE_ERRMSG]) {
+    m_last_error.copy_from(error);
+    memcpy(m_last_error.message, message, MAX_SLAVE_ERRMSG);
+  }
   bool is_error() const { return last_error().number != 0; }
 
   /*

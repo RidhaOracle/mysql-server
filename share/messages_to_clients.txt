@@ -11009,6 +11009,33 @@ ER_WARN_SET_OPERATIONS_BUFFER
 
 start-error-number 6900
 
+ER_CRST_UNKNOWN_APPLIER_VERSION
+  eng "Invalid applier version specified in CHANGE REPLICATION SOURCE TO command. Refer to documentation for supported versions."
+
+ER_CRST_APPLIER_WORKER_COUNT_OUT_OF_RANGE
+  eng "Applier thread count out of bounds. Please specify a value between 1 and 1024."
+
+ER_CRST_APPLIER_WORKER_COUNT_ONLY_FOR_CSA
+  eng "Applier worker count can only be configured when using CSA applier version."
+
+ER_CSA_UNSUPPORTED_UNTIL_COND
+  eng "Change Stream Applier accepts the following UNTIL conditions: SQL_BEFORE_GTIDS and SQL_AFTER_GTIDS"
+
+ER_CRST_APPLIER_EVENT_MEMORY_LIMIT_ONLY_FOR_CSA
+  eng "Applier event memory limit can only be configured when using CSA applier version."
+
+ER_WARN_CRST_APPLIER_EVENT_MEMORY_LIMIT_OUT_OF_RANGE
+  eng "Applier event memory limit out of bounds. Actual limit has been set to the max_allowed_packet."
+
+ER_CSA_CRST_DELAYED_APPLIER_NOT_SUPPORTED
+  eng "The Change Stream Applier does not currently support the SOURCE_DELAY option of the CHANGE REPLICATION SOURCE TO command. Please unset SOURCE_DELAY when using CSA."
+
+ER_CSA_CRST_REQUIREMENT_ROW_FORMAT
+  eng "The Change Stream Applier currently supports row-based replication. Please set REQUIRE_ROW_FORMAT to 1 when using CSA."
+
+ER_CSA_CRST_REQUIREMENT_GTID_ONLY
+  eng "The Change Stream Applier currently supports row-based replication with GTIDs. Please set GTID_ONLY to 1 when using CSA."
+
 #
 #  End of 10.x error messages (server-to-client).
 #

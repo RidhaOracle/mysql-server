@@ -886,6 +886,24 @@ void Slave_worker::slave_worker_ends_group(Log_event *ev, int error) {
   curr_group_seen_gtid = false;
 }
 
+THD *Slave_worker::get_transaction_ctx() { return info_thd; }
+
+MDL_context *Slave_worker::get_mdl_context() {
+  return &(info_thd->mdl_context);
+}
+
+Slave_worker::Worker_id Slave_worker::get_worker_id() const { return id; }
+
+Slave_worker::Trx_id Slave_worker::get_trx_id() { return sequence_number(); }
+
+bool Slave_worker::is_same_channel(const Parallel_worker_context *arg) const {
+  const Slave_worker *other = dynamic_cast<const Slave_worker *>(arg);
+  if (other != nullptr) {
+    return c_rli == other->c_rli;
+  }
+  return false;
+}
+
 Slave_committed_queue::Slave_committed_queue(size_t max, uint n)
     : circular_buffer_queue<Slave_job_group>(max),
       inited(false),
@@ -1337,11 +1355,11 @@ void Slave_worker::reset_commit_order_deadlock() {
   m_commit_order_deadlock.store(false);
 }
 
-bool Slave_worker::found_commit_order_deadlock() {
+bool Slave_worker::found_commit_order_deadlock() const {
   return m_commit_order_deadlock.load();
 }
 
-void Slave_worker::report_commit_order_deadlock() {
+void Slave_worker::report_commit_order_deadlock(bool) {
   DBUG_TRACE;
   assert(get_commit_order_manager() != nullptr);
   m_commit_order_deadlock.store(true);
@@ -1356,6 +1374,10 @@ void Slave_worker::prepare_for_retry(Log_event &event) {
     event.worker = this;
     this->rows_query_ev = nullptr;
   }
+}
+
+bool Slave_worker::can_be_retried(THD *thd) {
+  return !(std::get<0>(check_and_report_end_of_retries(thd)));
 }
 
 std::tuple<bool, bool, uint> Slave_worker::check_and_report_end_of_retries(

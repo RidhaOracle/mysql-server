@@ -114,13 +114,22 @@ while ($_rpl_server)
   --eval SET GLOBAL group_replication_bootstrap_group= $_group_replication_bootstrap_group
   --eval SET PERSIST group_replication_ip_allowlist= "$_group_replication_ip_allowlist"
 
+  # Set applier version
+  --source include/rpl/impl/applier_version_configuration.inc
+  --let $applier_version_val = 1
+
+  if (`SELECT "$rpl_applier_version" != ""`)
+  {
+    --let $applier_version_val= $rpl_applier_version
+  }
+
   if (!$skip_recovery_configuration)
   {
     --error 0, ER_REPLICA_CHANNEL_DOES_NOT_EXIST
     RESET REPLICA ALL FOR CHANNEL "group_replication_recovery";
     # Set distributed recovery user.
     --disable_warnings
-    CHANGE REPLICATION SOURCE TO SOURCE_USER="root" FOR CHANNEL "group_replication_recovery";
+    --eval CHANGE REPLICATION SOURCE TO SOURCE_USER="root", APPLIER_VERSION = $applier_version_val FOR CHANNEL "group_replication_recovery";
     --enable_warnings
   }
 
@@ -151,6 +160,15 @@ while ($_rpl_server)
        --eval CHANGE REPLICATION SOURCE TO PRIVILEGE_CHECKS_USER = $rpl_instance_privilege_checks_user FOR CHANNEL "group_replication_applier"
     }
   }
+
+  if ($rpl_applier_version != '') {
+    if (!$skip_recovery_configuration) {
+      --eval CHANGE REPLICATION SOURCE TO APPLIER_VERSION = $applier_version_val FOR CHANNEL "group_replication_recovery"  
+    }
+    --eval CHANGE REPLICATION SOURCE TO APPLIER_VERSION = $applier_version_val FOR CHANNEL "group_replication_applier"
+  }
+
+
 
   --enable_query_log
 

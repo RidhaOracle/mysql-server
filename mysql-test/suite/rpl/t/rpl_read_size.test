@@ -12,6 +12,8 @@
 # handled by the slave. Therefore it is incompatible with
 # compression.
 --source include/not_binlog_transaction_compression_on.inc
+# CSA does not support synchronizing/reporting positions
+--source include/have_mta.inc
 
 # Test in this file is binlog format agnostic, thus no need
 # to rerun it for every format.

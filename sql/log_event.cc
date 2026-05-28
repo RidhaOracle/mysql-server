@@ -64,6 +64,7 @@
 #include "mysql/components/services/log_shared.h"
 #include "mysql/my_loglevel.h"
 #include "mysql/psi/mysql_mutex.h"
+#include "mysql/scheduler/logger_stream.h"
 #include "mysql/serialization/serializer_default.h"
 #include "mysql/serialization/write_archive_binary.h"
 #include "mysql/strings/dtoa.h"
@@ -2867,6 +2868,28 @@ int Log_event::apply_gtid_event(Relay_log_info *rli) {
   return error;
 }
 
+int Log_event::apply_csa_event(Relay_log_info *rli) {
+  DBUG_TRACE;
+
+  worker = rli;
+
+  int error = do_apply_event(rli);
+  if (rli->is_processing_trx()) {
+    // needed to identify DDL's; uses the same logic as in get_slave_worker()
+    if (starts_group() &&
+        get_type_code() == mysql::binlog::event::QUERY_EVENT) {
+      rli->curr_group_seen_begin = true;
+    }
+    if (error == 0 && (ends_group() ||
+                       (get_type_code() == mysql::binlog::event::QUERY_EVENT &&
+                        !rli->curr_group_seen_begin))) {
+      rli->finished_processing();
+      rli->curr_group_seen_begin = false;
+    }
+  }
+  return error;
+}
+
 /**
    Scheduling event to execute in parallel or execute it directly.
    In MTS case the event gets associated with either Coordinator or a
@@ -4384,8 +4407,8 @@ int Query_log_event::do_apply_event(Relay_log_info const *rli,
   if (get_default_db_collation(thd, thd->db().str, &thd->db_charset)) {
     assert(thd->is_error() || thd->killed);
     rli->report(ERROR_LEVEL, thd->get_stmt_da()->mysql_errno(),
-                "Error in get_default_db_collation: %s",
-                thd->get_stmt_da()->message_text());
+                "Error in get_default_db_collation: %s, for db %s",
+                thd->get_stmt_da()->message_text(), thd->db().str);
     thd->is_slave_error = true;
     goto end;
   }
@@ -5426,6 +5449,7 @@ int Format_description_log_event::do_apply_event(Relay_log_info const *rli) {
   */
   if (!thd->rli_fake && !is_artificial_event() && created &&
       thd->get_transaction()->is_active(Transaction_ctx::SESSION)) {
+    assert(!rli->is_csa_enabled());
     /* This is not an error (XA is safe), just an information */
     rli->report(INFORMATION_LEVEL, 0,
                 "Rolling back unfinished transaction (no COMMIT "
@@ -6309,9 +6333,11 @@ int Xid_apply_log_event::do_apply_event(Relay_log_info const *rli) {
   error = do_commit(thd);
   mysql_mutex_lock(&rli_ptr->data_lock);
   if (error) {
-    rli->report(ERROR_LEVEL, thd->get_stmt_da()->mysql_errno(),
-                "Error in Xid_log_event: Commit could not be completed, '%s'",
-                thd->get_stmt_da()->message_text());
+    if (thd->is_error()) {
+      rli->report(ERROR_LEVEL, thd->get_stmt_da()->mysql_errno(),
+                  "Error in Xid_log_event: Commit could not be completed, '%s'",
+                  thd->get_stmt_da()->message_text());
+    }
   } else {
     DBUG_EXECUTE_IF(
         "crash_after_commit_before_update_pos",
@@ -6339,6 +6365,8 @@ int Xid_apply_log_event::do_apply_event(Relay_log_info const *rli) {
      */
     if (!rli_ptr->is_transactional())
       rli_ptr->flush_info(Relay_log_info::RLI_FLUSH_NO_OPTION);
+    if (rli_ptr->tables_to_lock_count != 0 || rli_ptr->rows_query_ev != nullptr)
+      rli_ptr->cleanup_context(thd, false);
   }
 err:
   // This is Bug#24588741 fix:
@@ -13550,6 +13578,7 @@ int Gtid_log_event::do_apply_event(Relay_log_info const *rli) {
       causing data corruption on replication.
     */
     if (thd->server_status & SERVER_STATUS_IN_TRANS) {
+      assert(!rli->is_csa_enabled());
       /* This is not an error (XA is safe), just an information */
       rli->report(INFORMATION_LEVEL, 0, &spec,
                   "Rolling back unfinished transaction (no COMMIT "

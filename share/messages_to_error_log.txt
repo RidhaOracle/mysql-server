@@ -13464,6 +13464,12 @@ ER_WARN_AUDIT_LOG_SYSVAR_DISCARDED
 
 start-error-number 16000
 
+ER_CSA_RPL_RECOVERY_SKIPPED
+  eng "Relay log recovery skipped for Change Stream Applier."
+
+ER_CSA_MSG
+  eng "%s"
+
 #
 # End of 10.x error messages intended to be written to the server error log.
 #

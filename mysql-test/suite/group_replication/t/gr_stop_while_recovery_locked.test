@@ -21,6 +21,9 @@
 #
 ###############################################################################
 
+# This test is disabled when CSA is running, because STOP REPLICA
+# always suceeeds
+--source include/have_mta.inc
 --source include/big_test.inc
 --source include/not_have_privilege_checks_user.inc
 --source include/have_group_replication_plugin.inc

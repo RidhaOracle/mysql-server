@@ -54,6 +54,7 @@
 #include "mysql/plugin.h"
 #include "mysql/psi/mysql_cond.h"
 #include "mysql/psi/mysql_mutex.h"
+#include "mysql/scheduler/logger_stream.h"
 #include "mysql/status_var.h"
 #include "mysql/strings/int2str.h"
 #include "sql/changestreams/apply/replication_thread_status.h"
@@ -171,6 +172,8 @@
 #endif
 #include "scope_guard.h"
 
+#include "sql/changestreams/apply/service/csa_service.h"
+
 struct mysql_cond_t;
 struct mysql_mutex_t;
 
@@ -199,6 +202,8 @@ ulonglong relay_log_space_limit = 0;
 
 const char *relay_log_index = nullptr;
 const char *relay_log_basename = nullptr;
+
+std::unique_ptr<mysql::csa::Csa_service> csa_service;
 
 /*
   MTS load-ballancing parameter.
@@ -631,6 +636,10 @@ int ReplicaInitializer::init_replica() {
     error = 1;
     return error;
   }
+
+  csa_service.reset(new mysql::csa::Csa_service());
+  csa_service->init();
+
   return error;
 }
 
@@ -1072,6 +1081,11 @@ static int find_first_relay_log_with_rotate_from_master(Relay_log_info *rli) {
   int pos;
   char source_log_file[FN_REFLEN];
   my_off_t master_log_pos = 0;
+
+  if (rli->is_csa_enabled()) {
+    LogErr(INFORMATION_LEVEL, ER_CSA_RPL_RECOVERY_SKIPPED);
+    return 0;
+  }
 
   if (channel_map.is_group_replication_channel_name(rli->get_channel())) {
     LogErr(INFORMATION_LEVEL,
@@ -1762,6 +1776,9 @@ int terminate_slave_threads(Master_info *mi, int thread_mask,
   if (thread_mask & (REPLICA_SQL | SLAVE_FORCE_ALL)) {
     DBUG_PRINT("info", ("Terminating SQL thread"));
     mi->rli->abort_slave = true;
+    if (mi->rli->is_csa_enabled()) {
+      get_csa_service().stop(mi->get_channel(), force_all);
+    }
 
     DEBUG_SYNC(current_thd,
                "terminate_replica_threads_after_set_abort_replica");
@@ -6215,7 +6232,9 @@ static void *handle_slave_worker(void *arg) {
 
   if (rli->get_commit_order_manager() != nullptr)
     rli->get_commit_order_manager()->init_worker_context(
-        *w);  // Initialize worker context within Commit_order_manager
+        w->get_worker_id(),
+        w->get_transaction_ctx());  // Initialize worker context within
+                                    // Commit_order_manager
 
   mysql_mutex_lock(&w->jobs_lock);
   w->running_status = Slave_worker::RUNNING;
@@ -7098,6 +7117,8 @@ extern "C" void *handle_slave_sql(void *arg) {
   Relay_log_info::enum_priv_checks_status priv_check_status =
       Relay_log_info::enum_priv_checks_status::SUCCESS;
 
+  auto time_start = std::chrono::system_clock::now();
+
   // needs to call my_thread_init(), otherwise we get a coredump in DBUG_ stuff
   my_thread_init();
   {
@@ -7133,9 +7154,10 @@ extern "C" void *handle_slave_sql(void *arg) {
 
       // Only use replica preserve commit order if more than 1 worker exists
       if (opt_replica_preserve_commit_order && !rli->is_parallel_exec() &&
-          rli->opt_replica_parallel_workers > 1)
-        commit_order_mngr =
-            new Commit_order_manager(rli->opt_replica_parallel_workers);
+          rli->get_applier_worker_count() > 1) {
+        std::size_t com_workers = rli->get_applier_worker_count();
+        commit_order_mngr = new Commit_order_manager(com_workers);
+      }
 
       rli->set_commit_order_manager(commit_order_mngr);
 
@@ -7224,7 +7246,8 @@ extern "C" void *handle_slave_sql(void *arg) {
       }
 
       /* MTS: starting the worker pool */
-      if (slave_start_workers(rli, rli->opt_replica_parallel_workers,
+      if (!rli->is_csa_enabled() &&
+          slave_start_workers(rli, rli->get_applier_worker_count(),
                               &mts_inited) != 0) {
         mysql_cond_broadcast(&rli->start_cond);
         mysql_mutex_unlock(&rli->run_lock);
@@ -7372,62 +7395,71 @@ extern "C" void *handle_slave_sql(void *arg) {
 
       /* Read queries from the IO/THREAD until this thread is killed */
 
-      while (!main_loop_error && !sql_slave_killed(thd, rli)) {
-        Log_event *ev = nullptr;
-        THD_STAGE_INFO(thd, stage_reading_event_from_the_relay_log);
-        assert(rli->info_thd == thd);
-        THD_CHECK_SENTRY(thd);
-        if (saved_skip && rli->slave_skip_counter == 0) {
-          LogErr(INFORMATION_LEVEL, ER_RPL_REPLICA_SKIP_COUNTER_EXECUTED,
-                 (ulong)saved_skip, saved_log_name, (ulong)saved_log_pos,
-                 saved_master_log_name, (ulong)saved_master_log_pos,
-                 rli->get_group_relay_log_name(),
-                 (ulong)rli->get_group_relay_log_pos(),
-                 rli->get_group_master_log_name_info(),
-                 (ulong)rli->get_group_master_log_pos_info());
-          saved_skip = 0;
-        }
-
-        // read next event
-        mysql_mutex_lock(&rli->data_lock);
-        ev = applier_reader.read_next_event();
-        mysql_mutex_unlock(&rli->data_lock);
-
-        // set additional context as needed by the scheduler before execution
-        // takes place
-        if (ev != nullptr && rli->is_parallel_exec() &&
-            rli->current_mts_submode != nullptr) {
-          if (rli->current_mts_submode->set_multi_threaded_applier_context(
-                  *rli, *ev)) {
-            goto err;
+      if (rli->is_csa_enabled()) {
+        time_start = std::chrono::system_clock::now();
+        // run the new applier
+        main_loop_error = csa_service->run(rli);
+        MYSQL_LIB_LOG_INFO()
+            << "Change Stream Applier Service Thread for channel: '"
+            << rli->mi->get_channel() << "' is stopping.";
+      } else {
+        while (!main_loop_error && !sql_slave_killed(thd, rli)) {
+          Log_event *ev = nullptr;
+          THD_STAGE_INFO(thd, stage_reading_event_from_the_relay_log);
+          assert(rli->info_thd == thd);
+          THD_CHECK_SENTRY(thd);
+          if (saved_skip && rli->slave_skip_counter == 0) {
+            LogErr(INFORMATION_LEVEL, ER_RPL_REPLICA_SKIP_COUNTER_EXECUTED,
+                   (ulong)saved_skip, saved_log_name, (ulong)saved_log_pos,
+                   saved_master_log_name, (ulong)saved_master_log_pos,
+                   rli->get_group_relay_log_name(),
+                   (ulong)rli->get_group_relay_log_pos(),
+                   rli->get_group_master_log_name_info(),
+                   (ulong)rli->get_group_master_log_pos_info());
+            saved_skip = 0;
           }
-        }
 
-        // try to execute the event
-        switch (exec_relay_log_event(thd, rli, &applier_reader, ev)) {
-          case SLAVE_APPLY_EVENT_AND_UPDATE_POS_OK:
-            /** success, we read the next event. */
-            /** fall through */
-          case SLAVE_APPLY_EVENT_UNTIL_REACHED:
-            /** this will make the main loop abort in the next iteration */
-            /** fall through */
-          case SLAVE_APPLY_EVENT_RETRY:
-            /** single threaded applier has to retry.
-                Next iteration reads the same event. */
-            break;
+          // read next event
+          mysql_mutex_lock(&rli->data_lock);
+          ev = applier_reader.read_next_event();
+          mysql_mutex_unlock(&rli->data_lock);
 
-          case SLAVE_APPLY_EVENT_AND_UPDATE_POS_APPLY_ERROR:
-            /** fall through */
-          case SLAVE_APPLY_EVENT_AND_UPDATE_POS_UPDATE_POS_ERROR:
-            /** fall through */
-          case SLAVE_APPLY_EVENT_AND_UPDATE_POS_APPEND_JOB_ERROR:
-            main_loop_error = true;
-            break;
+          // set additional context as needed by the scheduler before execution
+          // takes place
+          if (ev != nullptr && rli->is_parallel_exec() &&
+              rli->current_mts_submode != nullptr) {
+            if (rli->current_mts_submode->set_multi_threaded_applier_context(
+                    *rli, *ev)) {
+              goto err;
+            }
+          }
 
-          default:
-            /* This shall never happen. */
-            assert(0); /* purecov: inspected */
-            break;
+          // try to execute the event
+          switch (exec_relay_log_event(thd, rli, &applier_reader, ev)) {
+            case SLAVE_APPLY_EVENT_AND_UPDATE_POS_OK:
+              /** success, we read the next event. */
+              /** fall through */
+            case SLAVE_APPLY_EVENT_UNTIL_REACHED:
+              /** this will make the main loop abort in the next iteration */
+              /** fall through */
+            case SLAVE_APPLY_EVENT_RETRY:
+              /** single threaded applier has to retry.
+                  Next iteration reads the same event. */
+              break;
+
+            case SLAVE_APPLY_EVENT_AND_UPDATE_POS_APPLY_ERROR:
+              /** fall through */
+            case SLAVE_APPLY_EVENT_AND_UPDATE_POS_UPDATE_POS_ERROR:
+              /** fall through */
+            case SLAVE_APPLY_EVENT_AND_UPDATE_POS_APPEND_JOB_ERROR:
+              main_loop_error = true;
+              break;
+
+            default:
+              /* This shall never happen. */
+              assert(0); /* purecov: inspected */
+              break;
+          }
         }
       }
     err:
@@ -7442,8 +7474,13 @@ extern "C" void *handle_slave_sql(void *arg) {
     (void)RUN_HOOK(
         binlog_relay_io, applier_stop,
         (thd, rli->mi, rli->is_error() || !rli->sql_thread_kill_accepted));
+    if (!rli->is_csa_enabled()) {
+      slave_stop_workers(rli, &mts_inited);  // stopping worker pool
+    } else {
+      csa_service->remove(rli);
+      rli->replica_parallel_workers = 0;
+    }
 
-    slave_stop_workers(rli, &mts_inited);  // stopping worker pool
     /* Thread stopped. Print the current replication position to the log */
     if (slave_errno)
       LogErr(ERROR_LEVEL, slave_errno, rli->get_rpl_log_name(),
@@ -9635,7 +9672,13 @@ static bool have_change_replication_source_execute_option(
       lex_mi->privilege_checks_none ||
       lex_mi->require_row_format != LEX_SOURCE_INFO::LEX_MI_UNCHANGED ||
       lex_mi->require_table_primary_key_check !=
-          LEX_SOURCE_INFO::LEX_MI_PK_CHECK_UNCHANGED)
+          LEX_SOURCE_INFO::LEX_MI_PK_CHECK_UNCHANGED ||
+      lex_mi->applier_version !=
+          LEX_SOURCE_INFO::Applier_version::unspecified ||
+      lex_mi->applier_worker_count !=
+          LEX_SOURCE_INFO::applier_worker_count_unspecified ||
+      lex_mi->applier_event_memory_limit !=
+          LEX_SOURCE_INFO::applier_event_memory_limit_unspecified)
     have_execute_option = true;
 
   if (lex_mi->relay_log_name || lex_mi->relay_log_pos)
@@ -9925,7 +9968,8 @@ err:
   @return       false if the execute options were successfully set and true,
                 otherwise.
 */
-static bool change_execute_options(LEX_SOURCE_INFO *lex_mi, Master_info *mi) {
+static bool change_execute_options(THD *thd, LEX_SOURCE_INFO *lex_mi,
+                                   Master_info *mi) {
   DBUG_TRACE;
 
   if (lex_mi->privilege_checks_username != nullptr ||
@@ -9991,6 +10035,49 @@ static bool change_execute_options(LEX_SOURCE_INFO *lex_mi, Master_info *mi) {
   }
 
   if (lex_mi->sql_delay != -1) mi->rli->set_sql_delay(lex_mi->sql_delay);
+
+  if (lex_mi->applier_version !=
+      LEX_SOURCE_INFO::Applier_version::unspecified) {
+    if (lex_mi->applier_version == LEX_SOURCE_INFO::Applier_version::mta) {
+      mi->rli->set_applier_version(cs::apply::Applier_version::mta);
+      ;
+    } else if (lex_mi->applier_version ==
+               LEX_SOURCE_INFO::Applier_version::csa) {
+      mi->rli->set_applier_version(cs::apply::Applier_version::csa);
+    } else {
+      my_error(ER_CRST_UNKNOWN_APPLIER_VERSION, MYF(0));
+      return true;
+    }
+  }
+  if (lex_mi->applier_worker_count !=
+      LEX_SOURCE_INFO::applier_worker_count_unspecified) {
+    if (!mi->rli->is_csa_enabled()) {
+      my_error(ER_CRST_APPLIER_WORKER_COUNT_ONLY_FOR_CSA, MYF(0));
+      return true;
+    }
+    if (lex_mi->applier_worker_count > MTS_MAX_WORKERS ||
+        lex_mi->applier_worker_count < 1) {
+      my_error(ER_CRST_APPLIER_WORKER_COUNT_OUT_OF_RANGE, MYF(0));
+      return true;
+    }
+    mi->rli->set_applier_worker_count(lex_mi->applier_worker_count);
+  }
+  if (lex_mi->applier_event_memory_limit !=
+      LEX_SOURCE_INFO::applier_event_memory_limit_unspecified) {
+    if (!mi->rli->is_csa_enabled()) {
+      my_error(ER_CRST_APPLIER_EVENT_MEMORY_LIMIT_ONLY_FOR_CSA, MYF(0));
+      return true;
+    }
+    if (lex_mi->applier_event_memory_limit < replica_max_allowed_packet) {
+      push_warning(
+          thd, Sql_condition::SL_WARNING,
+          ER_WARN_CRST_APPLIER_EVENT_MEMORY_LIMIT_OUT_OF_RANGE,
+          ER_THD(thd, ER_WARN_CRST_APPLIER_EVENT_MEMORY_LIMIT_OUT_OF_RANGE));
+      mi->rli->set_applier_event_memory_limit(replica_max_allowed_packet);
+      return false;
+    }
+    mi->rli->set_applier_event_memory_limit(lex_mi->applier_event_memory_limit);
+  }
 
   return false;
 }
@@ -10490,6 +10577,53 @@ int evaluate_inter_option_dependencies(const LEX_SOURCE_INFO *lex_mi,
              mi->get_channel());
     return error;
   }
+
+  if (!channel_map.is_group_replication_channel_name(mi->get_channel())) {
+    // Check CSA requirements when CSA is enabled or will be enabled.
+    // Skip checks for group replication channels (controlled separately).
+    bool requested_csa =
+        (lex_mi->applier_version == LEX_SOURCE_INFO::Applier_version::csa);
+    if (requested_csa || (lex_mi->applier_version ==
+                              LEX_SOURCE_INFO::Applier_version::unspecified &&
+                          mi->rli->is_csa_enabled())) {
+      // Does not support delayed applier
+      bool current_sql_delay_set = mi->rli->get_sql_delay() > 0;
+      bool will_set_sql_delay =
+          (lex_mi->sql_delay != -1 && lex_mi->sql_delay > 0);
+      bool will_unset_sql_delay = lex_mi->sql_delay == 0;
+      if ((current_sql_delay_set && !will_unset_sql_delay) ||
+          will_set_sql_delay) {
+        // error if SQL delay is set or will be set (e.g., incompatible with
+        // CSA)
+        error = ER_CSA_CRST_DELAYED_APPLIER_NOT_SUPPORTED;
+        my_error(error, MYF(0), mi->get_channel());
+      }
+
+      // REQUIRE_ROW_FORMAT must be set
+      bool current_row_format_disabled = !mi->rli->is_row_format_required();
+      bool will_disable_row_format =
+          (lex_mi->require_row_format == LEX_SOURCE_INFO::LEX_MI_DISABLE);
+      bool will_enable_row_format =
+          (lex_mi->require_row_format == LEX_SOURCE_INFO::LEX_MI_ENABLE);
+      if ((current_row_format_disabled && !will_enable_row_format) ||
+          will_disable_row_format) {
+        // error
+        error = ER_CSA_CRST_REQUIREMENT_ROW_FORMAT;
+        my_error(error, MYF(0), mi->get_channel());
+      }
+      // GTID_ONLY must be set
+      bool current_gtid_only_disabled = !mi->is_gtid_only_mode();
+      bool will_disable_gtid_only =
+          (lex_mi->m_gtid_only == LEX_SOURCE_INFO::LEX_MI_DISABLE);
+      bool will_enable_gtid_only =
+          (lex_mi->m_gtid_only == LEX_SOURCE_INFO::LEX_MI_ENABLE);
+      if ((current_gtid_only_disabled && !will_enable_gtid_only) ||
+          will_disable_gtid_only) {
+        error = ER_CSA_CRST_REQUIREMENT_GTID_ONLY;
+        my_error(error, MYF(0), mi->get_channel());
+      }
+    }
+  }
   return error;
 }
 
@@ -10640,7 +10774,8 @@ static bool update_change_replication_source_options(
     mi->set_gtid_only_mode(true);
   }
 
-  if (have_execute_option && change_execute_options(lex_mi, mi)) return true;
+  if (have_execute_option && change_execute_options(thd, lex_mi, mi))
+    return true;
 
   if (have_receive_option) {
     if (change_receive_options(thd, lex_mi, mi)) {
@@ -11292,6 +11427,10 @@ bool change_master_cmd(THD *thd) {
 
   replication_replica_enabled =
       (channel_map.get_number_of_configured_channels() > 0);
+
+  res = get_csa_service().initialize_channel_data(
+      mi->get_channel(), mi->rli->get_channel_instance_id(),
+      mi->rli->get_applier_worker_count());
 
 err:
   channel_map.unlock();

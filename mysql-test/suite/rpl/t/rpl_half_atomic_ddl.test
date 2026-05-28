@@ -55,6 +55,7 @@ call mtr.add_suppression("The error means the system cannot");
 --disable_query_log
 call mtr.add_suppression("You need to use --log-bin to make.* work");
 call mtr.add_suppression("Could not find a valid tablespace file for");
+call mtr.add_suppression("Replica SQL for channel '': Change Stream Applier channel stopped because of error.*");
 --enable_query_log
 
 --source include/rpl/connection_source.inc
@@ -197,5 +198,3 @@ while ($loops)
 
 
 --source include/rpl/deinit.inc
-
-

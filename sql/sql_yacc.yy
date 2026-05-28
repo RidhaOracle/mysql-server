@@ -1493,6 +1493,10 @@ CHARSET_INFO *warn_on_deprecated_user_defined_collation(
 %token GRAMMAR_SELECTOR_MASKING_EXPR 1242  /* synthetic token: starts data
                                               masking expression */
 
+%token<lexer.keyword> APPLIER_VERSION_SYM            1243     /* MYSQL */
+%token<lexer.keyword> APPLIER_WORKER_COUNT_SYM       1244     /* MYSQL */
+%token<lexer.keyword> APPLIER_EVENT_MEMORY_LIMIT_SYM 1245     /* MYSQL */
+
 /*
   NOTE! When adding new non-standard keywords, make sure they are added to the
   list ident_keywords_unambiguous lest they become reserved keywords.
@@ -3198,6 +3202,18 @@ source_def:
                 MYSQL_YYABORT;
             }
           }
+        | APPLIER_VERSION_SYM EQ ulong_num
+          {
+            Lex->mi.applier_version = $3;
+          }
+        | APPLIER_WORKER_COUNT_SYM EQ ulong_num
+          {
+            Lex->mi.applier_worker_count = $3;
+          }
+        | APPLIER_EVENT_MEMORY_LIMIT_SYM EQ ulong_num
+          {
+            Lex->mi.applier_event_memory_limit = $3;
+          }
         | source_file_def
         ;
 
@@ -3267,7 +3283,6 @@ assign_gtids_to_anonymous_transactions_def:
             }
           }
         ;
-
 
 source_tls_ciphersuites_def:
           TEXT_STRING_sys_nonewline
@@ -16072,6 +16087,9 @@ ident_keywords_unambiguous:
         | ALLOW_MISSING_FILES_SYM
         | ALWAYS_SYM
         | ANY_SYM
+        | APPLIER_EVENT_MEMORY_LIMIT_SYM
+        | APPLIER_VERSION_SYM
+        | APPLIER_WORKER_COUNT_SYM
         | ARRAY_SYM
         | AT_SYM
         | ATTRIBUTE_SYM

@@ -275,6 +275,9 @@ SET(SERVER_TESTS
   persisted_variables
   print_utils
   protocol_classic
+  rpl_applier_monitor
+  rpl_dependency_adapter_lwm
+  rpl_resource_monitor
   regexp_engine
   regexp_facade
   security_context
@@ -468,11 +471,13 @@ ADD_SUBDIRECTORY(memory)
 ADD_SUBDIRECTORY(containers)
 ADD_SUBDIRECTORY(locks)
 ADD_SUBDIRECTORY(changestreams)
+ADD_SUBDIRECTORY(libs/concurrency)
 ADD_SUBDIRECTORY(libs/gtids)
 ADD_SUBDIRECTORY(libs/iterators)
 ADD_SUBDIRECTORY(libs/math)
 ADD_SUBDIRECTORY(libs/meta)
 ADD_SUBDIRECTORY(libs/ranges)
+ADD_SUBDIRECTORY(libs/scheduler)
 ADD_SUBDIRECTORY(libs/serialization)
 ADD_SUBDIRECTORY(libs/sets)
 ADD_SUBDIRECTORY(libs/strconv)
