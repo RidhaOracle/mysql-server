@@ -247,7 +247,6 @@ bool Csa_service::run(Relay_log_info *rli) {
     channel_monitor.check_applier_progress();
 
     // get the next job
-    concurrency::set_stage(stage_csa_wait_for_trx.m_key);
     auto next = provider->next();
     if (!next) {
       if (provider->is_error() || provider->is_stopped() ||

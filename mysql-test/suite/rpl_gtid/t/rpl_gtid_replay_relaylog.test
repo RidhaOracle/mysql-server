@@ -39,10 +39,7 @@ INSERT INTO t1 VALUES (2);
 --source include/rpl/wait_for_receiver_to_stop.inc
 
 # Extract last relay log file
---let $output_file = $MYSQLTEST_VARDIR/tmp/rpl_gtid_replay_relay_file
---exec tail -n 1 $server_2_datadir/slave-relay-bin.index > $output_file
---let $relay_file1 = `SELECT LOAD_FILE('$output_file') AS Contents;`
---remove_file $output_file
+--let $relay_file1 = `SELECT SUBSTRING_INDEX(TRIM(TRAILING '\n' FROM LOAD_FILE('$server_2_datadir/slave-relay-bin.index')), '\n', -1)`
 
 --let $auto_pos = query_get_value( SHOW REPLICA STATUS, Auto_Position, 1 )
 --let $assert_text= Slave SOURCE_AUTO_POSITION should be enabled for this test
@@ -57,10 +54,7 @@ SET GLOBAL DEBUG= @save_debug;
 --source include/rpl/sync_to_replica.inc
 
 # Extract last relay log file
---let $output_file = $MYSQLTEST_VARDIR/tmp/rpl_gtid_replay_relay_file
---exec tail -n 1 $server_2_datadir/slave-relay-bin.index > $output_file
---let $relay_file2 = `SELECT LOAD_FILE('$output_file') AS Contents;`
---remove_file $output_file
+--let $relay_file2 = `SELECT SUBSTRING_INDEX(TRIM(TRAILING '\n' FROM LOAD_FILE('$server_2_datadir/slave-relay-bin.index')), '\n', -1)`
 
 # Step 3: Replay the incomplete Relaylog's mysqlbinlog output against mysql and see that
 # there are no issues.

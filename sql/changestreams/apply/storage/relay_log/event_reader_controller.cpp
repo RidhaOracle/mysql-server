@@ -213,11 +213,12 @@ bool Event_reader_controller::wait_data_ready(unsigned int return_timeout_ms) {
       ret = m_rli->relay_log.wait_for_update();
     }
 
-    concurrency::set_thd_stage(current_thd, stage_csa_working);
-
     scoped_unlock_binlog_end_pos.reset();
     flag_timeout = is_timeout(ret) && return_timeout_ms;
     is_error = !is_timeout(ret) && ret != 0;
+    if (!flag_timeout) {
+      concurrency::set_thd_stage(current_thd, stage_csa_working);
+    }
     mysql_mutex_lock(&m_rli->data_lock);
   }
   if (is_stopped() || is_error || flag_timeout) {
