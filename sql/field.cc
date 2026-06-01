@@ -4321,8 +4321,8 @@ type_conversion_status Field_float::store(const char *from, size_t len,
     }
     error = conv_error != 0 ? TYPE_WARN_OUT_OF_RANGE : TYPE_WARN_TRUNCATED;
   }
-  Field_float::store(nr);
-  return error;
+  const type_conversion_status store_error = Field_float::store(nr);
+  return std::max(error, store_error);
 }
 
 type_conversion_status Field_float::store(double nr) {
@@ -4497,8 +4497,8 @@ type_conversion_status Field_double::store(const char *from, size_t len,
     }
     error = conv_error != 0 ? TYPE_WARN_OUT_OF_RANGE : TYPE_WARN_TRUNCATED;
   }
-  Field_double::store(nr);
-  return error;
+  const type_conversion_status store_error = Field_double::store(nr);
+  return std::max(error, store_error);
 }
 
 type_conversion_status Field_double::store(double nr) {
