@@ -91,6 +91,8 @@ class Relay_context {
   /// @brief Report error to parent thread
   /// @param trx_id Applier transaction identifier
   void report_error(const std::string &trx_id);
+  /// Enables stop error suppression if this context had no reported error.
+  void enable_stop_error_suppression_if_clean();
   /// Obtain parallel worker context
   /// @return pointer to object containing worker context
   cs::apply::Csa_worker_context *get_parallel_worker_context();

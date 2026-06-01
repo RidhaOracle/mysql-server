@@ -73,6 +73,8 @@ class Session_service {
   virtual void release_session(Relay_context_ptr session, Task_id id) = 0;
   /// Performs clean up of sessions, including rollback
   void clean_sessions();
+  /// Enables stop error suppression for sessions that have no reported error.
+  void enable_stop_error_suppression_for_clean_sessions();
 
   /// Checks whether session service contains a given THD thread id
   /// @param thd_id THD thread identifier to check

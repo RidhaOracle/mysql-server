@@ -2147,6 +2147,10 @@ class Relay_log_info : public Rpl_info {
   uint get_configured_applier_worker_count() const;
   /// Checks if new applier is enabled for this channel RLI
   bool is_csa_enabled() const;
+  /// Enables CSA stop error suppression if no error was reported yet.
+  void enable_csa_stop_error_suppression_if_clean();
+  /// Checks whether CSA stop error suppression is currently enabled.
+  bool is_csa_stop_error_suppression_enabled() const;
   /// Sets channel instance id used in CSA
   /// @param channel_instance_id Channel instance id assigned during creation
   /// of this RLI
@@ -2176,6 +2180,16 @@ class Relay_log_info : public Rpl_info {
   /// @return Coordinator (SQL) thread RLI
   Relay_log_info *get_parent_rli() const;
 
+ protected:
+  /// Downgrades stop-generated CSA session errors for sessions that were clean
+  /// when stop began. Called with err_lock held, so the decision is serialized
+  /// with normal Last_Error publication and clean-stop marking.
+  /// @param level Report level requested by the caller.
+  /// @param err_code Error code requested by the caller.
+  /// @return Effective report level.
+  loglevel get_effective_report_level(loglevel level,
+                                      int err_code) const override;
+
  private:
   /// Used version of the applier, taken into account only when channel starts
   uint m_applier_version{cs::apply::Applier_version::mta};
@@ -2194,6 +2208,8 @@ class Relay_log_info : public Rpl_info {
   Parallel_worker_context *m_csa_worker_context{nullptr};
   /// Coordinator RLI. Used in CSA to attach/detach temporary tables
   Relay_log_info *m_parent_rli{nullptr};
+  /// Downgrade errors produced after a clean CSA stop request.
+  std::atomic<bool> m_csa_stop_error_suppression{false};
 };
 
 /**

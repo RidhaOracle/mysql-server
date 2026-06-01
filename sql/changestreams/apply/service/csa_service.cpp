@@ -310,11 +310,15 @@ bool Csa_service::run(Relay_log_info *rli) {
   if (new_scheduler->is_error() && !csa_channel.m_channel_stopped) {
     res = true;
     MYSQL_LIB_LOG_DEBUG() << "CSA was requested to stop upon applier error";
+    csa_channel.session_service
+        ->enable_stop_error_suppression_for_clean_sessions();
     csa_channel.m_channel_stopped = true;  // prevent job retries
   } else if (provider->is_error()) {
     res = true;
     MYSQL_LIB_LOG_DEBUG()
         << "CSA was requested to stop upon transaction provider error";
+    csa_channel.session_service
+        ->enable_stop_error_suppression_for_clean_sessions();
     csa_channel.m_channel_stopped = true;  // prevent job retries
   } else {                                 // provider stop or applier stop
     MYSQL_LIB_LOG_DEBUG() << "CSA was requested to stop";
@@ -434,6 +438,8 @@ void Csa_service::stop(const char *channel_id, bool force_kill) {
   }
 
   /// No more retries for transactions, applier is stopping
+  csa_channel.session_service
+      ->enable_stop_error_suppression_for_clean_sessions();
   csa_channel.m_channel_stopped = true;
   csa_channel.provider->stop();
   // abort rli should be set to true

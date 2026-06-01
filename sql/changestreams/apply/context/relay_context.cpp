@@ -156,7 +156,10 @@ Relay_context::Relay_context(std::size_t id, Relay_log_info *channel_config_rli)
 }
 
 void Relay_context::report_error(const std::string &trx_id) {
-  // std::string worker_failure(m_rli->last_error().message);
+  if (m_rli->is_csa_stop_error_suppression_enabled()) {
+    return;
+  }
+
   char channel_message[MAX_SLAVE_ERRMSG];
   snprintf(channel_message, MAX_SLAVE_ERRMSG,
            "Change Stream Applier channel stopped because of error(s): "
@@ -181,6 +184,7 @@ void Relay_context::report_error(const std::string &trx_id) {
                   thd->get_stmt_da()->message_text(),
                   thd->get_stmt_da()->message_text());
   }
+
   if (m_rli->last_error().number &&
       (m_rli->last_error().number != ER_QUERY_INTERRUPTED || thd_killed)) {
     // avoid treating error as transient
@@ -211,6 +215,15 @@ void Relay_context::clean() {
 }
 
 void Relay_context::awake(bool force_kill) { m_session.awake(force_kill); }
+
+void Relay_context::enable_stop_error_suppression_if_clean() {
+  auto *thd = m_session.get_thd();
+  if ((thd->is_killed() && !m_session.self_killed()) || thd->is_fatal_error() ||
+      thd->is_slave_error) {
+    return;
+  }
+  m_rli->enable_csa_stop_error_suppression_if_clean();
+}
 
 void Relay_context::set_fde(Format_description_log_event *fde) {
   m_rli->set_fde_ptr(fde);

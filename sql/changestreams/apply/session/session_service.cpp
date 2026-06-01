@@ -63,6 +63,12 @@ void Session_service::clean_sessions() {
   }
 }
 
+void Session_service::enable_stop_error_suppression_for_clean_sessions() {
+  for (const auto &session_entry : m_all_sessions) {
+    session_entry.second->enable_stop_error_suppression_if_clean();
+  }
+}
+
 void Session_service::awake_sessions(bool force_kill) {
   for (const auto &session_entry : m_all_sessions) {
     session_entry.second->awake(force_kill);

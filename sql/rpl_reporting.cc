@@ -151,6 +151,7 @@ void Slave_reporting_capability::va_report(loglevel level, int err_code,
     level = WARNING_LEVEL;
 
   mysql_mutex_lock(&err_lock);
+  level = get_effective_report_level(level, err_code);
   switch (level) {
     case ERROR_LEVEL:
       /*

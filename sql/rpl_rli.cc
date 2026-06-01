@@ -3642,6 +3642,26 @@ bool Relay_log_info::is_csa_enabled() const {
   return m_applier_version == cs::apply::Applier_version::csa;
 }
 
+void Relay_log_info::enable_csa_stop_error_suppression_if_clean() {
+  mysql_mutex_lock(&err_lock);
+  const bool can_suppress = m_last_error.number == 0;
+  m_csa_stop_error_suppression.store(can_suppress, std::memory_order_release);
+  mysql_mutex_unlock(&err_lock);
+}
+
+bool Relay_log_info::is_csa_stop_error_suppression_enabled() const {
+  return m_csa_stop_error_suppression.load(std::memory_order_acquire);
+}
+
+loglevel Relay_log_info::get_effective_report_level(loglevel level, int) const {
+  mysql_mutex_assert_owner(&err_lock);
+
+  if (level == ERROR_LEVEL && is_csa_stop_error_suppression_enabled()) {
+    return INFORMATION_LEVEL;
+  }
+  return level;
+}
+
 void Relay_log_info::set_applier_worker_count(uint number) {
   if (number > 0) {
     m_applier_worker_count = number;
