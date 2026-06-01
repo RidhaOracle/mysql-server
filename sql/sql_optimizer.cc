@@ -5718,9 +5718,16 @@ bool JOIN::extract_const_tables() {
         break;
 
       case extract_empty_table:
-        // Extract tables with zero rows, but only if statistics are exact
+        /*
+          Extract tables with zero rows, but only if
+          1. statistics are exact, and
+          2. it is not a derived table that cannot be safely treated as
+             const (e.g., with stored programs in EXPLAIN mode)
+        */
         if ((table->file->stats.records == 0 || all_partitions_pruned_away) &&
-            (table->file->ha_table_flags() & HA_STATS_RECORDS_IS_EXACT) != 0u)
+            (table->file->ha_table_flags() & HA_STATS_RECORDS_IS_EXACT) !=
+                0u &&                       // 1
+            is_const_optimizable(thd, tl))  // 2
           mark_const_table(tab, nullptr);
         break;
 
