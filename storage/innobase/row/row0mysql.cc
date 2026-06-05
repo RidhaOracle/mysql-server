@@ -3377,11 +3377,11 @@ static dberr_t row_discard_tablespace_end(trx_t *trx, dict_table_t *table,
   }
 
   DBUG_EXECUTE_IF("ib_discard_before_commit_crash",
-                  (void)log_checkpointing->request_sharp_checkpoint();
+                  log_checkpointing->request_sharp_checkpoint();
                   DBUG_SUICIDE(););
 
   DBUG_EXECUTE_IF("ib_discard_after_commit_crash",
-                  (void)log_checkpointing->request_sharp_checkpoint();
+                  log_checkpointing->request_sharp_checkpoint();
                   DBUG_SUICIDE(););
 
   row_mysql_unlock_data_dictionary(trx);

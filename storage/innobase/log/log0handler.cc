@@ -612,13 +612,12 @@ Handler::Capacity_estimate Handler::get_capacity_estimate() {
   const lsn_t soft_logical_capacity =
       log_sys->m_capacity.soft_logical_capacity();
   bool is_safe;
-  const sn_t margins =
+  const sn_t concurrency_margin =
       log_concurrency_margin(m_max_threads, m_reserved_bytes_per_thread,
-                             soft_logical_capacity, is_safe) +
-      log_checkpointing->get_dict_persist_margin();
+                             soft_logical_capacity, is_safe);
 
   Capacity_estimate estimate;
-  estimate.margin_length = log_translate_sn_to_lsn(margins);
+  estimate.margin_length = log_translate_sn_to_lsn(concurrency_margin);
   estimate.max_history_length = soft_logical_capacity - estimate.margin_length;
   return estimate;
 }
@@ -644,8 +643,7 @@ bool Handler::update_free_check_limit() {
     return is_safe;
   }
 
-  const lsn_t free_check_margin = log_translate_sn_to_lsn(
-      concurrency_margin + log_checkpointing->get_dict_persist_margin());
+  const lsn_t free_check_margin = log_translate_sn_to_lsn(concurrency_margin);
   ut_a_lt(free_check_margin, soft_logical_capacity);
   const auto log_free_check_capacity = ut_uint64_align_down(
       soft_logical_capacity - free_check_margin, OS_FILE_LOG_BLOCK_SIZE);

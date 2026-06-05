@@ -1958,7 +1958,7 @@ bool Double_write::create_v1(page_no_t &page_no1,
   mtr.commit();
 
   /* Flush the modified pages to disk and make a checkpoint. */
-  (void)log_checkpointing->request_sharp_checkpoint();
+  log_checkpointing->request_sharp_checkpoint();
 
   /* Remove doublewrite pages from the LRU list. */
   buf_pool_invalidate();

@@ -2210,7 +2210,7 @@ void trx_commit_low(trx_t *trx, mtr_t *mtr) {
 
     DBUG_EXECUTE_IF(
         "ib_crash_during_trx_commit_in_mem", if (trx_is_rseg_updated(trx)) {
-          (void)log_checkpointing->request_sharp_checkpoint();
+          log_checkpointing->request_sharp_checkpoint();
           DBUG_SUICIDE();
         });
     /*--------------*/

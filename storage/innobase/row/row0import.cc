@@ -2888,7 +2888,7 @@ static void row_import_discard_changes(
   DBUG_EXECUTE_IF("ib_import_before_checkpoint_crash", DBUG_SUICIDE(););
 
   /* ignore if current lsn is already checkpointed */
-  (void)log_checkpointing->request_sharp_checkpoint();
+  log_checkpointing->request_sharp_checkpoint();
 
   return (err);
 }

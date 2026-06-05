@@ -891,12 +891,12 @@ int mtr_t::Logging::enable(THD *thd) {
   pages modified before are flushed to disk. Since there could be large
   number of left over pages from LAD operation, we still don't enable
   double-write at this stage. */
-  (void)log_checkpointing->request_sharp_checkpoint();
+  log_checkpointing->request_sharp_checkpoint();
   m_state.store(ENABLED_DBLWR);
 
   /* 3. Take another checkpoint after enabling double write to ensure any page
   being written without double write are already synced to disk. */
-  (void)log_checkpointing->request_sharp_checkpoint();
+  log_checkpointing->request_sharp_checkpoint();
 
   /* 4. Mark that it is safe to recover from crash. */
   log_persist_enable(*log_sys);

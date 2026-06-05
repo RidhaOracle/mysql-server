@@ -65,18 +65,15 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
             |  (it's "reserved" - you may write to it, if you did reservation)
             |  |
             |  +- `concurrency_margin`
-            |  |  (space jointly reserved by threads in wait_for_space)
-            |  |  |
-            |  |  +- `margin_per_thread * max_threads`
-            |  |  |
-            |  |  +- `LOG_FILES_DUMMY_INTAKE_SIZE`
-            |  |  |  (dummy intake which might be required during redo resize)
-            |  |  |
-            |  |  +- `LOG_EXTRA_CONC_MARGIN_PCT / 100.0 * soft_logical_capacity`
-            |  |     (just in case)
-            |  |
-            |  +- `dict_persist_margin`
-            |     (reserved for future dd metadata changes writes on checkpoint)
+            |     (space jointly reserved by threads in wait_for_space)
+            |     |
+            |     +- `margin_per_thread * max_threads`
+            |     |
+            |     +- `LOG_FILES_DUMMY_INTAKE_SIZE`
+            |     |  (dummy intake which might be required during redo resize)
+            |     |
+            |     +- `LOG_EXTRA_CONC_MARGIN_PCT / 100.0 * soft_logical_capacity`
+            |        (just in case)
             |
             +- `log_free_check_capacity`
                (if redo is this long threads should wait in wait_for_space)

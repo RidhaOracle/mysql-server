@@ -5665,7 +5665,7 @@ static dberr_t fil_create_tablespace(space_id_t space_id, const char *name,
     mtr_commit(&mtr);
 
     DBUG_EXECUTE_IF("fil_ibd_create_log",
-                    (void)log_checkpointing->request_sharp_checkpoint(););
+                    log_checkpointing->request_sharp_checkpoint(););
   }
 
 #endif /* !UNIV_HOTBACKUP */

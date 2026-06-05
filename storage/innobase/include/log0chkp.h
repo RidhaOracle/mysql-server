@@ -128,30 +128,14 @@ class Log_checkpointing {
 
   /** Make a checkpoint at the current lsn. Reads current lsn and waits
   until all dirty pages have been flushed up to that lsn. Afterwards
-  requests a checkpoint write and waits until it is finished.
-  @return true iff current lsn was greater than last checkpoint lsn */
-  [[nodiscard]] bool request_sharp_checkpoint();
+  requests a checkpoint write and waits until it is finished. */
+  void request_sharp_checkpoint();
 
  private:
   /** Returns highest requested checkpoint lsn */
   [[nodiscard]] lsn_t get_requested_checkpoint_lsn() {
     return m_requested_checkpoint_lsn.load();
   }
-
- public:
-  /** @} */
-  /** @name The min lsn needed by dict persist */
-  /** @{ */
-
-  /** Updates the field m_min_lsn_needed_by_dict_persist. This is limitation
-  for lsn at which checkpoint might be written, imposed by cached changes to the
-  DD table buffer. It is called from DD code.
-  @param[in]      max_lsn  new value for the limitation */
-  void set_min_lsn_needed_by_dict_persist(lsn_t max_lsn);
-
- private:
-  /** sets m_min_lsn_needed_by_dict_persist to 0. Requires limits_mutex. */
-  void reset_min_lsn_needed_by_dict_persist();
 
   /** @} */
   /** @name Periodical updates */
@@ -209,8 +193,7 @@ class Log_checkpointing {
   /** @name Making checkpoints */
   /** @{ */
  private:
-  /** Figures out minimum of m_available_for_checkpoint_lsn and
-  m_min_lsn_needed_by_dict_persist*/
+  /** Figures out m_available_for_checkpoint_lsn*/
   [[nodiscard]] lsn_t determine_checkpoint_lsn();
 
   /** Considers requesting page cleaners to execute sync flush. */
@@ -238,21 +221,14 @@ class Log_checkpointing {
   /** @{ */
 
  public:
-  /** Updates m_dict_persist_margin and recompute free check limit.
-  @param[in]      margin  new value for m_dict_persist_margin */
-  void set_dict_persist_margin(sn_t margin);
-
-  /** Retrieves the last value passed to `set_dict_persist_margin()` */
-  [[nodiscard]] sn_t get_dict_persist_margin() const;
-
   /** Calls ib::redo::handler->do_not_need_smaller_than(get_checkpoint_lsn()).
   We prefer to have Log_checkpointing be the only place which calls
   do_not_need_smaller_than() so that it is easier to reason about, and to
   ensure that the argument passed is the checkpoint.
   We know that ib::redo::Handler::do_not_need_smaller_than() will recompute
   log_sys->m_free_check_limit_lsn used in wait_for_space(), based on things
-  like checkpoint_lsn, log.m_capacity, get_dict_persist_margin() etc, so
-  we call update_limits() whenever any of them changes. */
+  like checkpoint_lsn, log.m_capacity etc, so we call update_limits() whenever
+  any of them changes. */
   void update_limits();
 
   /** @} */
@@ -382,24 +358,6 @@ class Log_checkpointing {
   Protected by: limits_mutex. */
   atomic_lsn_t m_requested_checkpoint_lsn{};
 
-  /** Maximum lsn allowed for checkpoint by dict_persist or zero.
-  This will be set by dict_persist_to_dd_table_buffer(), which should
-  be always called before really making a checkpoint.
-  If non-zero, up to this lsn value, dynamic metadata changes have been
-  written back to mysql.innodb_dynamic_metadata under dict_persist->mutex
-  protection. All dynamic metadata changes after this lsn have to
-  be kept in redo logs, but not discarded. If zero, just ignore it.
-  Updated by: DD (when persisting dynamic meta data)
-  Updated by: log_checkpointer (reset when checkpoint is written)
-  Protected by: limits_mutex. */
-  lsn_t m_min_lsn_needed_by_dict_persist{};
-
-  /** Margin used in calculation of @see log_sys_t::m_free_check_limit_lsn.
-  Read by: page_cleaners, log_checkpointer
-  Updated by: DD
-  Protected by (updates only): limits_mutex. */
-  atomic_sn_t m_dict_persist_margin{};
-
   /** @} */
 
   /** If should perform checkpoints every innodb_log_checkpoint_every ms, or
@@ -426,9 +384,9 @@ class Log_checkpointing {
 
   /** Mutex which protects fields: m_available_for_checkpoint_lsn,
   m_requested_checkpoint_lsn. It also synchronizes updates of
-  log_sys_t::m_free_check_limit_lsn and m_dict_persist_margin. It protects
-  reads and writes of log_sys_t::m_writer_inside_extra_margin. It also protects
-  the srv_checkpoint_disabled (together with the checkpoint_mutex). */
+  log_sys_t::m_free_check_limit_lsn. It protects reads and writes of
+  log_sys_t::m_writer_inside_extra_margin. It also protects the
+  srv_checkpoint_disabled (together with the checkpoint_mutex). */
   alignas(ut::INNODB_CACHE_LINE_SIZE) mutable ib_mutex_t limits_mutex;
 };
 

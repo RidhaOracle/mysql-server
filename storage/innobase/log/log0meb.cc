@@ -2292,7 +2292,7 @@ long long innodb_redo_log_sharp_checkpoint(
   }
   LogErr(INFORMATION_LEVEL, ER_INNODB_ERROR_LOGGER_MSG,
          "innodb_redo_log_sharp_checkpoint() making checkpoint");
-  (void)log_checkpointing->request_sharp_checkpoint();
+  log_checkpointing->request_sharp_checkpoint();
   return 0;
 }
 

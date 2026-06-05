@@ -950,7 +950,7 @@ bool trx_rseg_adjust_rollback_segments(ulong target_rollback_segments) {
   /* Make sure these rollback segments are checkpointed. */
   if (n_total_created > 0 && !srv_read_only_mode && srv_force_recovery == 0) {
     /* ignore if current lsn is already checkpointed */
-    (void)log_checkpointing->request_sharp_checkpoint();
+    log_checkpointing->request_sharp_checkpoint();
   }
 
   return (true);

@@ -2474,8 +2474,6 @@ dberr_t row_ins_clust_index_entry_low(uint32_t flags, ulint mode,
   }
 #endif /* UNIV_DEBUG */
 
-  bool persist_autoinc = false;
-
   /* Write logs for AUTOINC right after index lock has been got and
   before any further resource acquisitions to prevent deadlock.
   No need to log for temporary tables */
@@ -2486,9 +2484,9 @@ dberr_t row_ins_clust_index_entry_low(uint32_t flags, ulint mode,
         row_get_autoinc_counter(entry, index->table->autoinc_field_no);
 
     if (counter != 0) {
-      /* Always log the counter change first, so it won't
+      /* Always persist the counter change first, so it won't
       be affected by any follow-up failure. */
-      persist_autoinc = dict_table_autoinc_log(index->table, counter, &mtr);
+      dict_table_autoinc_persist(index->table, counter);
     }
   }
 
@@ -2606,7 +2604,7 @@ dberr_t row_ins_clust_index_entry_low(uint32_t flags, ulint mode,
       row_ins_index_entry_big_rec() will write log. */
 
       DBUG_EXECUTE_IF("row_ins_extern_checkpoint",
-                      (void)log_checkpointing->request_sharp_checkpoint(););
+                      log_checkpointing->request_sharp_checkpoint(););
       err = row_ins_index_entry_big_rec(thr_get_trx(thr), entry, big_rec,
                                         offsets, &offsets_heap, index,
                                         thr_get_trx(thr)->mysql_thd);
@@ -2633,12 +2631,6 @@ func_exit:
             << "ib_sdi: row_ins_clust_index_entry_low: " << index->name << " "
             << index->table->name << " return status: " << err;
       });
-
-  /* Persist auto increment value to DD buffer table if requested. Do it after
-  closing the mini transaction and releasing latches. */
-  if (persist_autoinc) {
-    dict_table_persist_to_dd_table_buffer(index->table);
-  }
 
   return err;
 }

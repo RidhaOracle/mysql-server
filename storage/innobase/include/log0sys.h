@@ -583,12 +583,15 @@ struct alignas(ut::INNODB_CACHE_LINE_SIZE) log_t {
   to compute the limitation takes into account maximum size of mtr and
   thread concurrency to include proper margins and avoid issues with
   race condition (in which all threads check the limitation and then
-  all proceed with their mini-transactions). Also extra margin is
-  there for dd table buffer cache (dict_persist_margin).
+  all proceed with their mini-transactions).
   Read by: user threads (log_free_check())
-  Updated by: log_checkpointer (after update of checkpoint_lsn)
-  Updated by: log_writer (after pausing/resuming user threads)
-  Updated by: DD (after update of dict_persist_margin)
+  Updated by: update_free_check_limit() called (indirectly) by:
+  * log_checkpointer (after update of checkpoint_lsn and each iteration)
+  * log_files_governor (on each iteration)
+  * user threads (after innodb_redo_log_capacity and innodb_thread_concurrency
+  changes)
+  Affected (indirectly) by m_writer_inside_extra_margin set by
+  * log_writer (after pausing/resuming user threads)
   Protected by (updates only): limits_mutex. */
   atomic_lsn_t m_free_check_limit_lsn;
 

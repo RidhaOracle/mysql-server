@@ -147,7 +147,7 @@ void dict_table_persist_to_dd_table_buffer(dict_table_t *table);
 @param[in]      buffer          buffer to read
 @param[in]      size            size of data in buffer
 @param[in]      metadata        where we store the metadata from buffer */
-void dict_table_read_dynamic_metadata(const byte *buffer, ulint size,
+void dict_table_read_dynamic_metadata(const byte *buffer, size_t size,
                                       PersistentTableMetadata *metadata);
 
 /** Determine bytes of column prefix to be stored in the undo log. Please
@@ -227,13 +227,15 @@ static inline void dict_table_autoinc_persisted_update(dict_table_t *table,
 static inline void dict_table_autoinc_set_col_pos(dict_table_t *table,
                                                   ulint pos);
 
-/** Write redo logs for autoinc counter that is to be inserted, or to
-update some existing smaller one to bigger.
+/** Makes sure that the persisted autoinc value for the table is at least equal
+to `value`. Note that due to innodb_autoinc_preallocate the actually persisted
+value can be larger than required. Also stores the maximum of the real values
+passed to this function in table->autoinc_persisted, so that it can be persisted
+exactly if needed.
 @param[in,out]  table   InnoDB table object
-@param[in]      value   AUTOINC counter to log
-@param[in,out]  mtr     Mini-transaction
-@return true if auto increment needs to be persisted to DD table buffer. */
-bool dict_table_autoinc_log(dict_table_t *table, uint64_t value, mtr_t *mtr);
+@param[in]      value   AUTOINC counter to persist
+*/
+void dict_table_autoinc_persist(dict_table_t *table, uint64_t value);
 
 /** Check if a table has an autoinc counter column.
 @param[in]      table   table
@@ -1287,10 +1289,6 @@ class DDTableBuffer {
   @param[in]    id      table id
   @return DB_SUCCESS or error code */
   dberr_t remove(table_id_t id);
-
-  /** Truncate the table. We can call it after all the dynamic
-  metadata has been written back to DD table */
-  void truncate();
 
   /** Get the buffered metadata for a specific table, the caller
   has to delete the returned std::string object by ut::delete_

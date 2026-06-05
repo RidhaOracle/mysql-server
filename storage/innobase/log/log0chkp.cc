@@ -48,9 +48,6 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 /* buf_flush_fsync */
 #include "buf0flu.h"
 
-/* dict_persist_to_dd_table_buffer */
-#include "dict0dict.h"
-
 /* log_buffer_ready_for_write_lsn */
 #include "log0buf.h"
 
@@ -260,34 +257,16 @@ void Log_checkpointing::update_available_for_checkpoint_lsn() {
   log_limits_mutex_exit();
 }
 
-void Log_checkpointing::set_min_lsn_needed_by_dict_persist(lsn_t max_lsn) {
-  log_limits_mutex_enter();
-  m_min_lsn_needed_by_dict_persist = max_lsn;
-  log_limits_mutex_exit();
-}
-
-void Log_checkpointing::reset_min_lsn_needed_by_dict_persist() {
-  ut_ad(log_limits_mutex_own());
-  m_min_lsn_needed_by_dict_persist = 0;
-}
-
 lsn_t Log_checkpointing::determine_checkpoint_lsn() {
   ut_ad(log_checkpointer_mutex_own());
 
   log_limits_mutex_enter();
 
   const lsn_t oldest_lsn = m_available_for_checkpoint_lsn;
-  const lsn_t dict_lsn = m_min_lsn_needed_by_dict_persist;
 
   log_limits_mutex_exit();
 
-  ut_a(dict_lsn == 0 || dict_lsn >= get_checkpoint());
-
-  if (dict_lsn == 0) {
-    return oldest_lsn;
-  } else {
-    return std::min(oldest_lsn, dict_lsn);
-  }
+  return oldest_lsn;
 }
 
 dberr_t log_files_next_checkpoint(log_t &log, lsn_t next_checkpoint_lsn) {
@@ -487,8 +466,6 @@ void Log_checkpointing::create_checkpoint() {
   it will try to read a file already reclaimed as no longer needed by consumers)
   */
   log_update_exported_lsns();
-
-  reset_min_lsn_needed_by_dict_persist();
   log_limits_mutex_exit();
 
   os_event_set(m_next_checkpoint_event);
@@ -602,11 +579,11 @@ void Log_checkpointing::request_fuzzy_checkpoint(bool sync) {
   }
 }
 
-bool Log_checkpointing::request_sharp_checkpoint() {
+void Log_checkpointing::request_sharp_checkpoint() {
   const lsn_t lsn = ib::redo::handler->peek_first_unassigned_lsn();
 
   if (lsn <= get_checkpoint()) {
-    return false;
+    return;
   }
 
   log_limits_mutex_enter();
@@ -621,8 +598,6 @@ bool Log_checkpointing::request_sharp_checkpoint() {
   log_limits_mutex_exit();
 
   log_wait_for_checkpoint(lsn);
-
-  return true;
 }
 
 static void log_request_sync_flush() {
@@ -867,33 +842,9 @@ bool Log_checkpointing::should_checkpoint() {
 void Log_checkpointing::consider_checkpoint() {
   ut_ad(log_checkpointer_mutex_own());
 
-  if (!should_checkpoint()) {
-    return;
+  if (should_checkpoint()) {
+    create_checkpoint();
   }
-
-  /* It's clear that a new checkpoint should be written.
-  So do write back the dynamic metadata. Since the checkpointer
-  mutex is low-level one, it has to be released first. */
-  log_checkpointer_mutex_exit();
-
-  if (log_test == nullptr) {
-    dict_persist_to_dd_table_buffer();
-  }
-
-  log_checkpointer_mutex_enter();
-
-  /* We need to re-check if checkpoint should really be
-  written, because we re-acquired the checkpointer_mutex.
-  Some conditions could have changed - e.g. user could
-  acquire the mutex and specify srv_checkpoint_disabled=T.
-  Instead of trying to figure out which conditions could
-  have changed, we follow a simple way and perform a full
-  re-check of all conditions. */
-  if (!should_checkpoint()) {
-    return;
-  }
-
-  create_checkpoint();
 }
 
 void Log_checkpointing::log_checkpointer() { log_checkpointing->do_work(); }
@@ -1003,17 +954,6 @@ void Log_checkpointing::update_limits() {
   if (status != ib::redo::Status::SUCCESS) {
     ib::error(ER_IB_REDO_HANDLER_COULD_NOT_ACK_TO_TRUNCATE_LSN, checkpoint_lsn);
   }
-}
-
-void Log_checkpointing::set_dict_persist_margin(sn_t margin) {
-  log_limits_mutex_enter();
-  m_dict_persist_margin.store(margin);
-  update_limits();
-  log_limits_mutex_exit();
-}
-
-sn_t Log_checkpointing::get_dict_persist_margin() const {
-  return m_dict_persist_margin.load();
 }
 
 bool Log_checkpointing::save_checkpoint_value(lsn_t checkpoint_lsn) {

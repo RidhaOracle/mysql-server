@@ -7671,7 +7671,7 @@ rollback_trx:
     ut_ad(!trx->fts_trx);
 
     DBUG_EXECUTE_IF("innodb_alter_commit_crash_after_commit",
-                    (void)log_checkpointing->request_sharp_checkpoint();
+                    log_checkpointing->request_sharp_checkpoint();
                     ib::redo::must_persist_all(UT_LOCATION_HERE);
                     DBUG_SUICIDE(););
   }
@@ -7843,6 +7843,23 @@ rollback_trx:
       dict_table_autoinc_lock(t);
       dict_table_autoinc_initialize(t, ctx->max_autoinc);
       t->autoinc_persisted = ctx->max_autoinc - 1;
+      /* Alter bumps version of the table in DD and mysql_inplace_alter_table()
+      will call open_table() to "re-open" the table, at which point t->version
+      will be set to match the new (bumped) version from DD.
+      The Persistent Table Metadata in DDTableBuffer has `version` column, and
+      dict_table_apply_dynamic_metadata(t,metadata) will ignore metadata coming
+      from DDTableBuffer if metadata->version doesn't match t->version.
+      Therefore, conceptually, bumping the version invalidates PTM stored for
+      this table in DDTableBuffer.
+      This is very important to set t->autoinc_buffered to 0 to reflect that, as
+      otherwise `ALTER TABLE t AUTO_INCREMENT=MAX(id)- 1M` would leave
+      autoinc_buffered ~1M too large, and thus ~1M subsequent increments would
+      not be persisted properly. That would be perhaps tolerable if the only
+      consequence was just a huge gap in numbering, but because in reality PTM
+      was invalidated, it means the only source of information about autoinc
+      value after restart would be the DD alone, which will keep the
+      MAX(id) - 1M set by ALTER, leading to duplicates after restart. */
+      t->autoinc_buffered = 0;
       dict_table_autoinc_set_col_pos(t, field->field_index());
       dict_table_autoinc_unlock(t);
     }

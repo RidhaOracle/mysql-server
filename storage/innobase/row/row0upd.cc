@@ -2705,54 +2705,43 @@ uint64_t row_upd_get_new_autoinc_counter(const upd_t *update,
 }
 
 /** If the table has autoinc column and the counter is updated to
-some bigger value, we need to log the new autoinc counter. We will
-use the given mtr to do logging for performance reasons.
+some bigger value, we need to persist the new autoinc counter.
 @param[in]      node    Row update node
-@param[in,out]  mtr     Mini-transaction
-@return true if auto increment needs to be persisted to DD table buffer. */
-static bool row_upd_check_autoinc_counter(const upd_node_t *node, mtr_t *mtr) {
+*/
+static void row_upd_check_autoinc_counter(const upd_node_t *node) {
   dict_table_t *table = node->table;
 
   if (!dict_table_has_autoinc_col(table) || table->is_temporary() ||
       node->row == nullptr) {
-    return false;
+    return;
   }
 
   /* If the node->row hasn't been prepared, there must
   no order field change and autoinc field should keep
   as is. Otherwise, we need to check if autoinc field
   would be changed to a bigger number. */
-  uint64_t new_counter;
-
-  new_counter =
+  const uint64_t new_counter =
       row_upd_get_new_autoinc_counter(node->update, table->autoinc_field_no);
 
   if (new_counter == 0) {
-    return false;
+    return;
   }
 
-  uint64_t old_counter;
-  const dict_index_t *index;
-
-  index = table->first_index();
+  const dict_index_t *index = table->first_index();
 
   /* The autoinc field order in row is not the
   same as in clustered index, we need to get
   the column number in the table instead. */
-  old_counter = row_get_autoinc_counter(
+  const uint64_t old_counter = row_get_autoinc_counter(
       node->row, index->get_col_no(table->autoinc_field_no));
-
-  bool persist_autoinc = false;
 
   /* We just check if the updated counter is bigger than
   the old one, which may result in more redo logs, since
   this is safer than checking with the counter in table
   object. */
   if (new_counter > old_counter) {
-    persist_autoinc = dict_table_autoinc_log(table, new_counter, mtr);
+    dict_table_autoinc_persist(table, new_counter);
   }
-
-  return persist_autoinc;
 }
 
 void upd_t::append(const upd_field_t &field) {
@@ -2801,7 +2790,6 @@ void upd_t::append(const upd_field_t &field) {
   btr_pcur_t *pcur;
   btr_cur_t *btr_cur;
   dberr_t err = DB_SUCCESS;
-  bool persist_autoinc = false;
   bool is_old_or_new_rec_extern = false;
   const dtuple_t *rebuilt_old_pk = nullptr;
   trx_t *trx = thr_get_trx(thr);
@@ -2833,7 +2821,7 @@ void upd_t::append(const upd_field_t &field) {
 
   /* Check and log if necessary at the beginning, to prevent any
   further potential deadlock */
-  persist_autoinc = row_upd_check_autoinc_counter(node, mtr);
+  row_upd_check_autoinc_counter(node);
 
   /* Try optimistic updating of the record, keeping changes within
   the page; we do not check locks because we assume the x-lock on the
@@ -2939,12 +2927,6 @@ func_exit:
 
   if (big_rec) {
     dtuple_big_rec_free(big_rec);
-  }
-
-  /* Persist auto increment value to DD buffer table if requested. Do it after
-  closing the mini transaction and releasing latches. */
-  if (persist_autoinc) {
-    dict_table_persist_to_dd_table_buffer(node->table);
   }
 
   return err;

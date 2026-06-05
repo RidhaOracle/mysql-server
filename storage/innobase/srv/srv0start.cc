@@ -1628,10 +1628,6 @@ dberr_t srv_start(bool create_new_db) {
     return srv_init_abort(DB_ERROR);
   }
 
-  /* Must be initialized after dict_persist_init(), so that it observes that
-  log_checkpointing is still nullptr and does not try to call
-  log_checkpointing->set_dict_persist_margin(..) which will try to interact
-  with (not started yet) ib::redo::handler */
   Log_checkpointing::init();
   if (create_new_db) {
     ut_a(buf_are_flush_lists_empty_validate());
@@ -2682,15 +2678,9 @@ static lsn_t srv_shutdown_log() {
   }
 
   if (!srv_read_only_mode) {
-    while (log_checkpointing->request_sharp_checkpoint()) {
-      /* It could happen, that when writing a new checkpoint,
-      DD dynamic metadata was persisted, making some pages
-      dirty (with the persisted data) and writing new redo
-      records to protect those modifications. In such case,
-      current lsn would be higher than lsn and we would need
-      another iteration to ensure, that checkpoint lsn points
-      to the newest lsn. */
-    }
+    log_checkpointing->request_sharp_checkpoint();
+    ut_ad_eq(log_checkpointing->get_checkpoint(),
+             ib::redo::handler->peek_first_nonpersisted_lsn());
     persist_available_and_stop();
   }
 
