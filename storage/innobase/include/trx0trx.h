@@ -998,6 +998,16 @@ struct trx_t {
                         with no gaps; thus it represents
                         the number of modified/inserted
                         rows in a transaction */
+
+  /** This is used to create a skip-list of the undo log pages which we need to
+  read during recovery to reconstruct the full set of table ids modified by
+  this transaction. Whenever this transaction modifies another table for the
+  first time, and we generate an undo log record about it, we note the page
+  number on which it happened. We only care about non-temporary tables, for
+  which changes are described in redo-logged undo logs of two types:
+  [0] = INSERT log, [1] = UPDATE */
+  std::array<page_no_t, 2> undo_page_with_last_new_table_mod{};
+
   space_id_t undo_rseg_space;
   /*!< space id where last undo record
   was written */

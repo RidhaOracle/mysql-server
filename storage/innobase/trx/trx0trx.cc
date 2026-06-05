@@ -193,6 +193,8 @@ static void trx_init(trx_t *trx) {
 
   trx->undo_no = 0;
 
+  trx->undo_page_with_last_new_table_mod = {};
+
   trx->rsegs.m_redo.rseg = nullptr;
 
   trx->rsegs.m_noredo.rseg = nullptr;

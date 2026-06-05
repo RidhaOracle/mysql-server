@@ -1001,6 +1001,14 @@ static trx_undo_rec_t *trx_roll_pop_top_rec_of_trx_low(
 
   trx->undo_no = undo_no;
   trx->undo_rseg_space = undo->rseg->space_id;
+  /* When doing a partial rollback, some of the pages might get freed, and if
+  the transaction then does some more modifications and needs a new page we
+  have to make sure not to link to one of those freed pages. We simply reset
+  the info completely, which is suboptimal, but correct: if 0 ends up written
+  to FIL_PAGE_PREV it will cause a fallback to follow the usual links. If it
+  is updated by the time it is written to FIL_PAGE_PREV, then it will have the
+  correct value. */
+  trx->undo_page_with_last_new_table_mod = {};
 
   undo_rec_copy =
       trx_undo_rec_copy(undo_page, static_cast<uint32_t>(undo_offset), heap);

@@ -129,13 +129,16 @@ static inline trx_undo_rec_t *trx_undo_page_get_first_rec(page_t *undo_page,
                                                           ulint offset);
 
 /** Gets the previous record in an undo log.
- @return undo log record, the page s-latched, NULL if none */
-trx_undo_rec_t *trx_undo_get_prev_rec(
-    trx_undo_rec_t *rec, /*!< in: undo record */
-    page_no_t page_no,   /*!< in: undo log header page number */
-    ulint offset,        /*!< in: undo log header offset on page */
-    bool shared,         /*!< in: true=S-latch, false=X-latch */
-    mtr_t *mtr);         /*!< in: mtr */
+NOTE! In case of shared=false, which is used in scanning for tablespace ids, but
+not in rollback, this function might skip over non-relevant records.
+@param[in]     rec             undo record
+@param[in]     page_no         undo log header page number
+@param[in]     offset          undo log header offset on page
+@param[in]     shared          true=S-latch, false=X-latch
+@param[in,out] mtr             mtr
+@return undo log record, the page s-latched, NULL if none */
+trx_undo_rec_t *trx_undo_get_prev_rec(trx_undo_rec_t *rec, page_no_t page_no,
+                                      ulint offset, bool shared, mtr_t *mtr);
 
 /** Gets the next record in an undo log.
  @return undo log record, the page s-latched, NULL if none */

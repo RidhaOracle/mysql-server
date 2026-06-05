@@ -2168,8 +2168,9 @@ dberr_t trx_undo_report_row_operation(
   so do not bother adding it to the list of modified tables by
   the transaction - this list is only used for maintaining
   INFORMATION_SCHEMA.TABLES.UPDATE_TIME. */
+  bool is_new_non_temp_table = false;
   if (!is_temp_table) {
-    trx->mod_tables.insert(index->table);
+    is_new_non_temp_table = trx->mod_tables.insert(index->table).second;
   }
 
   /* If trx is read-only then only temp-tables can be written. */
@@ -2320,6 +2321,10 @@ dberr_t trx_undo_report_row_operation(
       *roll_ptr =
           trx_undo_build_roll_ptr(op_type == TRX_UNDO_INSERT_OP,
                                   undo_ptr->rseg->space_id, page_no, offset);
+      if (is_new_non_temp_table) {
+        trx->undo_page_with_last_new_table_mod[op_type != TRX_UNDO_INSERT_OP] =
+            page_no;
+      }
       return (DB_SUCCESS);
     }
 

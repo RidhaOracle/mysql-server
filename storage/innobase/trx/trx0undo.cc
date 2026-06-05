@@ -148,7 +148,9 @@ static ulint trx_undo_insert_header_reuse(
 
 #ifndef UNIV_HOTBACKUP
 /** Gets the previous record in an undo log from the previous page.
- @return undo log record, the page s-latched, NULL if none */
+NOTE! In case of shared=false, which is used in scanning for tablespace ids, but
+not in rollback, this function attempts to skip over pages with no new info.
+@return undo log record, the page s-latched, NULL if none */
 static trx_undo_rec_t *trx_undo_get_prev_rec_from_prev_page(
     trx_undo_rec_t *rec, /*!< in: undo record */
     page_no_t page_no,   /*!< in: undo log header page number */
@@ -157,15 +159,27 @@ static trx_undo_rec_t *trx_undo_get_prev_rec_from_prev_page(
     mtr_t *mtr)          /*!< in: mtr */
 {
   space_id_t space;
-  page_no_t prev_page_no;
+  page_no_t prev_page_no = 0;
   page_t *prev_page;
   page_t *undo_page;
 
   undo_page = page_align(rec);
-
-  prev_page_no = flst_get_prev_addr(
-                     undo_page + TRX_UNDO_PAGE_HDR + TRX_UNDO_PAGE_NODE, mtr)
-                     .page;
+  if (!shared) {
+    /* we use this mode when searching for unique table ids, so we can skip
+    pages which do not mention anything new, by following this link.
+    It might be 0:
+    - when upgrading from versions older than MySQL 10.0
+    - if the very first Undo Log Record didn't fit the first page of Undo
+      Segment, and thus the Undo Log "starts from a second page" and we
+      haven't yet seen any earlier modification, so set FIL_PAGE_PREV to 0
+    - if due to partial rollback we've reset the info about the last page */
+    prev_page_no = mach_read_from_4(undo_page + FIL_PAGE_PREV);
+  }
+  if (prev_page_no == 0U) {
+    prev_page_no = flst_get_prev_addr(
+                       undo_page + TRX_UNDO_PAGE_HDR + TRX_UNDO_PAGE_NODE, mtr)
+                       .page;
+  }
 
   if (prev_page_no == FIL_NULL) {
     return (nullptr);
@@ -189,15 +203,8 @@ static trx_undo_rec_t *trx_undo_get_prev_rec_from_prev_page(
   return (trx_undo_page_get_last_rec(prev_page, page_no, offset));
 }
 
-/** Gets the previous record in an undo log.
- @return undo log record, the page s-latched, NULL if none */
-trx_undo_rec_t *trx_undo_get_prev_rec(
-    trx_undo_rec_t *rec, /*!< in: undo record */
-    page_no_t page_no,   /*!< in: undo log header page number */
-    ulint offset,        /*!< in: undo log header offset on page */
-    bool shared,         /*!< in: true=S-latch, false=X-latch */
-    mtr_t *mtr)          /*!< in: mtr */
-{
+trx_undo_rec_t *trx_undo_get_prev_rec(trx_undo_rec_t *rec, page_no_t page_no,
+                                      ulint offset, bool shared, mtr_t *mtr) {
   trx_undo_rec_t *prev_rec;
 
   prev_rec = trx_undo_page_get_prev_rec(rec, page_no, offset);
@@ -976,6 +983,16 @@ buf_block_t *trx_undo_add_page(
                 new_page + TRX_UNDO_PAGE_HDR + TRX_UNDO_PAGE_NODE, mtr);
   undo->size++;
   rseg->incr_curr_size();
+  /* to speed up finding unique tablespace ids modified by the transaction
+  we link the pages which mention something new using FIL_PAGE_PREV, but
+  this is only needed for non-temporary tables (and thus undo spaces). */
+  if (!fsp_is_system_temporary(rseg->space_id)) {
+    ut_a_eq(mach_read_from_4(new_page + FIL_PAGE_PREV), 0);
+    mlog_write_ulint(
+        new_page + FIL_PAGE_PREV,
+        trx->undo_page_with_last_new_table_mod[undo->type != TRX_UNDO_INSERT],
+        MLOG_4BYTES, mtr);
+  }
 
   return (new_block);
 }
