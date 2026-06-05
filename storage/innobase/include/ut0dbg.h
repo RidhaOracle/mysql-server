@@ -38,6 +38,7 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #include "my_dbug.h"
 /* Do not include univ.i because univ.i includes this. */
 
+#include <cstdint>
 #include <cstdio>
 #include <functional>
 #include <sstream>

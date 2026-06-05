@@ -860,9 +860,10 @@ inline uint64_t Log_DDL::next_id() {
 }
 
 inline bool Log_DDL::skip(const dict_table_t *table, THD *thd) {
-  return (recv_recovery_on || thread_local_ddl_log_replay ||
-          (table != nullptr && table->is_temporary()) ||
-          thd_is_bootstrap_thread(thd));
+  ut_a(!recv_recovery_on);
+  return thread_local_ddl_log_replay ||
+         (table != nullptr && table->is_temporary()) ||
+         thd_is_bootstrap_thread(thd);
 }
 
 dberr_t Log_DDL::write_delete_schema_directory_log(

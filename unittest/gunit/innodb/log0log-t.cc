@@ -208,7 +208,6 @@ static bool log_test_init() {
   log_checkpointing->set_checkpoint(flushed_lsn);
   buf_flush_list_added = Buf_flush_list_added_lsns::create();
   buf_flush_list_added->assume_added_up_to(flushed_lsn);
-
   err = log_start(log, flushed_lsn);
   ut_a(err == DB_SUCCESS);
 

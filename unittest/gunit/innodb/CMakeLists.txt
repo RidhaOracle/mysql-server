@@ -49,6 +49,7 @@ SET(TESTS
   ha_innodb
   fts0fts
   log0log
+  log0redo
   mem0mem
   os0file
   os0thread-create

@@ -149,4 +149,4 @@ DROP TABLESPACE encrypt_ts;
 # Restarting server without the manifest file
 # ----------------------------------------------------------------------
 # Restarting server without keyring to restore server state
-# restart: 
+# restart:

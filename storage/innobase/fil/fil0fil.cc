@@ -202,25 +202,24 @@ module. */
 #define mutex_validate(M) 1
 
 /** Process a MLOG_FILE_CREATE redo record.
-@param[in]      page_id         Page id of the redo log record
+@param[in]      space_id        Tablespace id of the redo log record
 @param[in]      flags           Tablespace flags
 @param[in]      name            Tablespace filename */
-static void meb_tablespace_redo_create(const page_id_t &page_id, uint32_t flags,
+static void meb_tablespace_redo_create(space_id_t space_id, uint32_t flags,
                                        const char *name);
 
 /** Process a MLOG_FILE_RENAME redo record.
-@param[in]      page_id         Page id of the redo log record
+@param[in]      space_id        Tablespace id of the redo log record
 @param[in]      from_name       Tablespace from filename
 @param[in]      to_name         Tablespace to filename */
-static void meb_tablespace_redo_rename(const page_id_t &page_id,
+static void meb_tablespace_redo_rename(space_id_t space_id,
                                        const char *from_name,
                                        const char *to_name);
 
 /** Process a MLOG_FILE_DELETE redo record.
-@param[in]      page_id         Page id of the redo log record
+@param[in]      space_id        Tablespace id of the redo log record
 @param[in]      name            Tablespace filename */
-static void meb_tablespace_redo_delete(const page_id_t &page_id,
-                                       const char *name);
+static void meb_tablespace_redo_delete(space_id_t space_id, const char *name);
 
 #endif /* UNIV_HOTBACKUP */
 
@@ -5143,10 +5142,9 @@ dberr_t fil_write_initial_pages(pfs_os_file_t file, const char *path,
 
     page_zip_set_size(&page_zip, page_size.physical());
     page_zip.data = page.get() + page_size.logical();
-    ut_d(page_zip.m_start = 0);
+    page_zip.m_start = 0;
     page_zip.m_end = 0;
     page_zip.n_blobs = 0;
-    page_zip.m_nonempty = false;
 
     buf_flush_init_for_writing(nullptr, page.get(), &page_zip, 0,
                                fsp_is_checksum_disabled(space_id),
@@ -6548,19 +6546,18 @@ static void meb_make_abs_file_path(const std::string &name, uint32_t flags,
 }
 
 /** Process a MLOG_FILE_CREATE redo record.
-@param[in]      page_id         Page id of the redo log record
+@param[in]      space_id        Space id of the redo log record
 @param[in]      flags           Tablespace flags
 @param[in]      name            Tablespace filename */
-static void meb_tablespace_redo_create(const page_id_t &page_id, uint32_t flags,
+static void meb_tablespace_redo_create(space_id_t space_id, uint32_t flags,
                                        const char *name) {
   std::string abs_file_path;
   std::string tablespace_name;
 
-  meb_make_abs_file_path(name, flags, page_id.space(), abs_file_path,
-                         tablespace_name);
+  meb_make_abs_file_path(name, flags, space_id, abs_file_path, tablespace_name);
 
   if (meb_is_intermediate_file(abs_file_path.c_str()) ||
-      fil_space_get(page_id.space()) ||
+      fil_space_get(space_id) ||
       fil_space_get_id_by_name(tablespace_name.c_str()) != SPACE_UNKNOWN ||
       meb_fil_space_get_rem_gen_ts_id_by_name(tablespace_name) !=
           SPACE_UNKNOWN) {
@@ -6576,44 +6573,43 @@ static void meb_tablespace_redo_create(const page_id_t &page_id, uint32_t flags,
     ib::trace_1() << "Ignoring the log record. No need to "
                   << "create the tablespace : " << abs_file_path;
   } else {
-    auto it = recv_spaces.find(page_id.space());
+    auto it = recv_spaces.find(space_id);
 
     if (it == recv_spaces.end() || it->second.m_name != abs_file_path) {
       ib::trace_1() << "Creating the tablespace : " << abs_file_path
-                    << ", space_id : " << page_id.space();
+                    << ", space_id : " << space_id;
 
-      dberr_t ret = fil_ibd_create(page_id.space(), tablespace_name.c_str(),
+      dberr_t ret = fil_ibd_create(space_id, tablespace_name.c_str(),
                                    abs_file_path.c_str(), flags,
                                    FIL_IBD_FILE_INITIAL_SIZE);
 
       if (ret != DB_SUCCESS) {
         ib::fatal(UT_LOCATION_HERE, ER_IB_MSG_326)
             << "Could not create the tablespace : " << abs_file_path
-            << " with space Id : " << page_id.space();
+            << " with space Id : " << space_id;
       }
     }
   }
 }
 
 /** Process a MLOG_FILE_RENAME redo record.
-@param[in]      page_id         Page id of the redo log record
+@param[in]      space_id        Space id of the redo log record
 @param[in]      from_name       Tablespace from filename
 @param[in]      to_name         Tablespace to filename */
-static void meb_tablespace_redo_rename(const page_id_t &page_id,
+static void meb_tablespace_redo_rename(space_id_t space_id,
                                        const char *from_name,
                                        const char *to_name) {
   std::string abs_to_path;
   std::string abs_from_path;
   std::string tablespace_name;
 
-  meb_make_abs_file_path(from_name, 0, page_id.space(), abs_from_path,
+  meb_make_abs_file_path(from_name, 0, space_id, abs_from_path,
                          tablespace_name);
 
-  meb_make_abs_file_path(to_name, 0, page_id.space(), abs_to_path,
-                         tablespace_name);
+  meb_make_abs_file_path(to_name, 0, space_id, abs_to_path, tablespace_name);
 
   char *new_name = nullptr;
-  auto *space = fil_space_get(page_id.space());
+  auto *space = fil_space_get(space_id);
 
   if (meb_is_intermediate_file(from_name) ||
       meb_is_intermediate_file(to_name) ||
@@ -6638,45 +6634,43 @@ static void meb_tablespace_redo_rename(const page_id_t &page_id,
     return;
 
   } else {
-    ib::trace_1() << "Renaming space id : " << page_id.space()
+    ib::trace_1() << "Renaming space id : " << space_id
                   << ", old tablespace name : " << from_name
                   << " to new tablespace name : " << to_name;
 
     new_name = static_cast<char *>(mem_strdup(abs_to_path.c_str()));
   }
 
-  meb_fil_name_process(from_name, page_id.space());
-  meb_fil_name_process(new_name, page_id.space());
+  meb_fil_name_process(from_name, space_id);
+  meb_fil_name_process(new_name, space_id);
 
   if (!fil_op_replay_rename(space, abs_from_path.c_str(),
                             abs_to_path.c_str())) {
     recv_sys->found_corrupt_fs = true;
   }
 
-  meb_fil_name_process(to_name, page_id.space());
+  meb_fil_name_process(to_name, space_id);
 
   ut::free(new_name);
 }
 
 /** Process a MLOG_FILE_DELETE redo record.
-@param[in]      page_id         Page id of the redo log record
+@param[in]      space_id        Space id of the redo log record
 @param[in]      name            Tablespace filename */
-static void meb_tablespace_redo_delete(const page_id_t &page_id,
-                                       const char *name) {
+static void meb_tablespace_redo_delete(space_id_t space_id, const char *name) {
   std::string abs_file_path;
   std::string tablespace_name;
 
-  meb_make_abs_file_path(name, 0, page_id.space(), abs_file_path,
-                         tablespace_name);
+  meb_make_abs_file_path(name, 0, space_id, abs_file_path, tablespace_name);
 
   char *file_name = static_cast<char *>(mem_strdup(name));
 
-  fil_system->meb_name_process(file_name, page_id.space(), true);
+  fil_system->meb_name_process(file_name, space_id, true);
 
-  if (fil_space_get(page_id.space())) {
+  if (fil_space_get(space_id)) {
     ib::trace_1() << "Deleting the tablespace : " << abs_file_path
-                  << ", space_id : " << page_id.space();
-    const auto err = fil_delete_tablespace(page_id.space());
+                  << ", space_id : " << space_id;
+    const auto err = fil_delete_tablespace(space_id);
 
     ut_a_eq(err, DB_SUCCESS);
   }
@@ -7633,7 +7627,6 @@ static dberr_t fil_iterate(const Fil_page_iterator &iter, buf_block_t *block,
                       static_cast<uint32_t>(univ_page_size.logical()), true));
 
       block->page.zip.data = block->frame + UNIV_PAGE_SIZE;
-      ut_d(block->page.zip.m_external = true);
       ut_ad(iter.m_page_size == callback.get_page_size().physical());
 
       /* Zip IO is done in the compressed page buffer. */
@@ -9357,23 +9350,18 @@ void fil_add_moved_space(dd::Object_id dd_object_id, space_id_t space_id,
   fil_system->moved(dd_object_id, space_id, space_name, old_path, new_path,
                     dd_flag_missing);
 }
+#endif /* !UNIV_HOTBACKUP */
 
 const byte *fil_tablespace_redo_create_wrapper(const byte *ptr, const byte *end,
-                                               const page_id_t &page_id,
-                                               ulint parsed_bytes,
-                                               bool parse_only) {
-  const auto space_id = page_id.space();
-
-  if (parse_only) {
-    return fil_tablespace_redo_create(ptr, end, page_id, parsed_bytes,
-                                      parse_only);
-  }
-
+                                               space_id_t space_id) {
+#ifdef UNIV_HOTBACKUP
+  ptr = fil_tablespace_redo_create(ptr, end, space_id, false);
+#else  /* UNIV_HOTBACKUP */
   ut_a(tablespace_scanning != nullptr);
   auto scanned_file = tablespace_scanning->get_tablespace_file_by_id(space_id);
 
   if (!scanned_file) {
-    ptr = fil_tablespace_redo_create(ptr, end, page_id, parsed_bytes, false);
+    ptr = fil_tablespace_redo_create(ptr, end, space_id, false);
 
     scanned_file = tablespace_scanning->get_tablespace_file_by_id(space_id);
     if (!scanned_file) {
@@ -9383,13 +9371,12 @@ const byte *fil_tablespace_redo_create_wrapper(const byte *ptr, const byte *end,
       return ptr;
     }
   } else {
-    ptr = fil_tablespace_redo_create(ptr, end, page_id, parsed_bytes, true);
+    ptr = fil_tablespace_redo_create(ptr, end, space_id, true);
   }
+#endif /* UNIV_HOTBACKUP */
 
   return ptr;
 }
-
-#endif /* !UNIV_HOTBACKUP */
 
 /** Parse a path from a buffer.
 @param[in]      ptr             redo log record
@@ -9450,20 +9437,14 @@ const static byte *parse_path_from_redo(const byte *ptr, const byte *end,
 /** Redo a tablespace create.
 @param[in]      ptr             redo log record
 @param[in]      end             end of the redo log buffer
-@param[in]      page_id         Tablespace Id and first page in file
-@param[in]      parsed_bytes    Number of bytes parsed so far
+@param[in]      space_id        Tablespace Id
 @param[in]      parse_only      Don't apply, parse only
 @return pointer to next redo log record
 @retval nullptr if this log record was truncated */
 const byte *fil_tablespace_redo_create(const byte *ptr, const byte *end,
-                                       const page_id_t &page_id,
-                                       ulint parsed_bytes, bool parse_only) {
-  ut_a(page_id.page_no() == 0);
-
+                                       space_id_t space_id, bool parse_only) {
   /* We never recreate the system tablespace. */
-  ut_a(page_id.space() != TRX_SYS_SPACE);
-
-  ut_a(parsed_bytes != ULINT_UNDEFINED);
+  ut_a(space_id != TRX_SYS_SPACE);
 
   /* Where 6 = flags (uint32_t) + name len (uint16_t). */
   if (end <= ptr + 6) {
@@ -9474,8 +9455,8 @@ const byte *fil_tablespace_redo_create(const byte *ptr, const byte *end,
   ptr += 4;
 
   std::string name, error_str;
-  ptr = parse_path_from_redo(ptr, end, !fsp_is_undo_tablespace(page_id.space()),
-                             name, error_str);
+  ptr = parse_path_from_redo(ptr, end, !fsp_is_undo_tablespace(space_id), name,
+                             error_str);
   if (ptr == nullptr) {
     if (!error_str.empty()) {
       ib::error(ER_IB_MSG_REDO_CREATE_TABLESPACE_INVALID_FILE_NAME)
@@ -9489,26 +9470,22 @@ const byte *fil_tablespace_redo_create(const byte *ptr, const byte *end,
   }
 
 #ifdef UNIV_HOTBACKUP
-  meb_tablespace_redo_create(page_id, flags, name.c_str());
-#else
+  meb_tablespace_redo_create(space_id, flags, name.c_str());
+  if (recv_sys->found_corrupt_fs) {
+    return nullptr;
+  }
+#else  /* UNIV_HOTBACKUP */
   /* Create the tablespace storage if it isn't there */
-  pages_persistence->redo_create_tablespace(page_id.space(), flags,
-                                            name.c_str());
+  pages_persistence->redo_create_tablespace(space_id, flags, name.c_str());
 #endif /* UNIV_HOTBACKUP */
 
   return ptr;
 }
 
 const byte *fil_tablespace_redo_rename(const byte *ptr, const byte *end,
-                                       const page_id_t &page_id,
-                                       ulint parsed_bytes,
-                                       bool parse_only [[maybe_unused]]) {
-  ut_a(page_id.page_no() == 0);
-
-  ut_a(parsed_bytes != ULINT_UNDEFINED);
-
+                                       space_id_t space_id, bool parse_only) {
   /* We never rename the system tablespace. */
-  ut_a(page_id.space() != TRX_SYS_SPACE);
+  ut_a(space_id != TRX_SYS_SPACE);
 
   std::string from_name, to_name, error_str;
 
@@ -9535,11 +9512,11 @@ const byte *fil_tablespace_redo_rename(const byte *ptr, const byte *end,
   }
 
 #ifdef UNIV_HOTBACKUP
-
-  meb_tablespace_redo_rename(page_id, from_name.c_str(), to_name.c_str());
-
-#else  /* !UNIV_HOTBACKUP */
-
+  meb_tablespace_redo_rename(space_id, from_name.c_str(), to_name.c_str());
+  if (recv_sys->found_corrupt_fs) {
+    return nullptr;
+  }
+#else  /* UNIV_HOTBACKUP */
   if (from_name == to_name) {
     ib::error(ER_IB_MSG_360)
         << "MLOG_FILE_RENAME: The from and to name are the"
@@ -9548,26 +9525,19 @@ const byte *fil_tablespace_redo_rename(const byte *ptr, const byte *end,
     return nullptr;
   }
 
-  pages_persistence->redo_rename_tablespace(page_id.space(), from_name.c_str(),
+  pages_persistence->redo_rename_tablespace(space_id, from_name.c_str(),
                                             to_name.c_str());
 #endif /* UNIV_HOTBACKUP */
 
   return ptr;
 }
 
-#ifndef UNIV_HOTBACKUP
 const byte *fil_tablespace_redo_extend_wrapper(const byte *ptr, const byte *end,
-                                               const page_id_t &page_id,
-                                               ulint parsed_bytes,
-                                               bool parse_only) {
-  const auto space_id = page_id.space();
-
-  if (parse_only) {
-    return fil_tablespace_redo_extend(ptr, end, page_id, parsed_bytes,
-                                      parse_only);
-  }
-
-  if (page_id.space() == TRX_SYS_SPACE) {
+                                               space_id_t space_id) {
+#ifdef UNIV_HOTBACKUP
+  ptr = fil_tablespace_redo_extend(ptr, end, space_id, false);
+#else /* UNIV_HOTBACKUP */
+  if (space_id == TRX_SYS_SPACE) {
     /* System tablespace must have been loaded in the fil system at the time
     of server start up. Tablespace scanning of the fil system doesn't expect to
     be probed for the system tablespace. */
@@ -9577,7 +9547,7 @@ const byte *fil_tablespace_redo_extend_wrapper(const byte *ptr, const byte *end,
     if (!tablespace_scanning->is_tablespace_file_found(space_id)) {
       /* No nodes found for this tablespace ID. It's possible that the
       nodes were deleted later. */
-      return fil_tablespace_redo_extend(ptr, end, page_id, parsed_bytes, true);
+      return fil_tablespace_redo_extend(ptr, end, space_id, true);
     }
 
     const auto err = fil_tablespace_open_for_recovery(space_id);
@@ -9588,12 +9558,11 @@ const byte *fil_tablespace_redo_extend_wrapper(const byte *ptr, const byte *end,
       next record without doing anything more here. */
       if (fsp_is_undo_tablespace(space_id) &&
           undo::is_active_truncate_log_present(undo::id2num(space_id))) {
-        return fil_tablespace_redo_extend(ptr, end, page_id, parsed_bytes,
-                                          true);
+        return fil_tablespace_redo_extend(ptr, end, space_id, true);
       }
 
       /* The `fil_tablespace_open_for_recovery()` could have called
-      tablespace_scanning->erase_path(page_id.space()) if the keyring is
+      tablespace_scanning->erase_path(space_id) if the keyring is
       missing. Abort recovery if it happened. It may have been corrupted also,
       in which case we abort it the same way.*/
       if (err == DB_CORRUPTION ||
@@ -9618,20 +9587,16 @@ const byte *fil_tablespace_redo_extend_wrapper(const byte *ptr, const byte *end,
   }
 #endif
 
-  ptr = fil_tablespace_redo_extend(ptr, end, page_id, parsed_bytes, false);
+  ptr = fil_tablespace_redo_extend(ptr, end, space_id, false);
 
   fil_space_close(space_id);
+#endif /* UNIV_HOTBACKUP */
 
   return ptr;
 }
-#endif /* !UNIV_HOTBACKUP */
 
 const byte *fil_tablespace_redo_extend(const byte *ptr, const byte *end,
-                                       const page_id_t &page_id,
-                                       ulint parsed_bytes, bool parse_only) {
-  ut_a(page_id.page_no() == 0);
-  ut_a(parsed_bytes != ULINT_UNDEFINED);
-
+                                       space_id_t space_id, bool parse_only) {
   /* Check for valid offset and size values */
   if (end < ptr + 16) {
     return nullptr;
@@ -9661,13 +9626,13 @@ const byte *fil_tablespace_redo_extend(const byte *ptr, const byte *end,
 #ifndef UNIV_HOTBACKUP
   /* Space must be in fil cache. */
   {
-    fil_space_t *space = fil_space_get(page_id.space());
+    fil_space_t *space = fil_space_get(space_id);
     ut_a(space != nullptr);
     ut_a(!space->files.empty());
   }
 
   /* Open the space */
-  const auto space_open = fil_space_open(page_id.space());
+  const auto space_open = fil_space_open(space_id);
 
   if (!space_open) {
     return nullptr;
@@ -9733,11 +9698,11 @@ const byte *fil_tablespace_redo_extend(const byte *ptr, const byte *end,
   (void)node->fill_range_with_zeros(
       initial_size_in_pages, desired_size_in_pages - initial_size_in_pages);
 
-  auto shard = fil_system->shard_by_id(space->id);
+  auto shard = fil_system->shard_by_id(space_id);
   shard->mutex_acquire();
 
   node->set_cached_node_size(desired_size_in_pages);
-  shard->space_flush(space->id);
+  shard->space_flush(space_id);
 
   shard->mutex_release();
 
@@ -9748,62 +9713,47 @@ const byte *fil_tablespace_redo_extend(const byte *ptr, const byte *end,
   return ptr;
 }
 
-#ifndef UNIV_HOTBACKUP
 const byte *fil_tablespace_redo_delete_wrapper(const byte *ptr, const byte *end,
-                                               const page_id_t &page_id,
-                                               ulint parsed_bytes,
-                                               bool parse_only) {
-  const auto space_id = page_id.space();
-
-  if (parse_only) {
-    return fil_tablespace_redo_delete(ptr, end, page_id, parsed_bytes,
-                                      parse_only);
-  }
-
+                                               space_id_t space_id) {
+#ifdef UNIV_HOTBACKUP
+  ptr = fil_tablespace_redo_delete(ptr, end, space_id, false);
+#else  /* UNIV_HOTBACKUP */
   ut_a(tablespace_scanning != nullptr);
-  const auto scanned_file =
-      tablespace_scanning->get_tablespace_file_by_id(space_id);
 
   recv_sys->deleted.insert(space_id);
   recv_sys->missing_ids.erase(space_id);
 
-  if (!scanned_file) {
+  if (!tablespace_scanning->is_tablespace_file_found(space_id)) {
     /* No files map to this tablespace ID. The drop must
     have succeeded. */
 
-    return fil_tablespace_redo_delete(ptr, end, page_id, parsed_bytes, true);
+    return fil_tablespace_redo_delete(ptr, end, space_id, true);
   }
 
-  ptr = fil_tablespace_redo_delete(ptr, end, page_id, parsed_bytes, false);
+  ptr = fil_tablespace_redo_delete(ptr, end, space_id, false);
 
   bool success = tablespace_scanning->erase_path(space_id);
   ut_a(success);
+#endif /* UNIV_HOTBACKUP */
 
   return ptr;
 }
-#endif /* !UNIV_HOTBACKUP */
 
 /** Redo a tablespace delete.
 @param[in]      ptr             redo log record
 @param[in]      end             end of the redo log buffer
-@param[in]      page_id         Tablespace Id and first page in file
-@param[in]      parsed_bytes    Number of bytes parsed so far
+@param[in]      space_id        Tablespace Id
 @param[in]      parse_only      Don't apply, parse only
 @return pointer to next redo log record
 @retval nullptr if this log record was truncated */
 const byte *fil_tablespace_redo_delete(const byte *ptr, const byte *end,
-                                       const page_id_t &page_id,
-                                       ulint parsed_bytes, bool parse_only) {
-  ut_a(page_id.page_no() == 0);
-
+                                       space_id_t space_id, bool parse_only) {
   /* We never recreate the system tablespace. */
-  ut_a(page_id.space() != TRX_SYS_SPACE);
-
-  ut_a(parsed_bytes != ULINT_UNDEFINED);
+  ut_a(space_id != TRX_SYS_SPACE);
 
   std::string name, error_str;
-  ptr = parse_path_from_redo(ptr, end, !fsp_is_undo_tablespace(page_id.space()),
-                             name, error_str);
+  ptr = parse_path_from_redo(ptr, end, !fsp_is_undo_tablespace(space_id), name,
+                             error_str);
   if (ptr == nullptr) {
     if (!error_str.empty()) {
       ib::info(ER_IB_MSG_362)
@@ -9817,23 +9767,24 @@ const byte *fil_tablespace_redo_delete(const byte *ptr, const byte *end,
   }
 
 #ifdef UNIV_HOTBACKUP
-
-  meb_tablespace_redo_delete(page_id, name.c_str());
-
-#else /* UNIV_HOTBACKUP */
-
-  fil_space_free(page_id.space(), false);
+  meb_tablespace_redo_delete(space_id, name.c_str());
+  if (recv_sys->found_corrupt_fs) {
+    return nullptr;
+  }
+#else  /* UNIV_HOTBACKUP */
+  fil_space_free(space_id, false);
 
   /* Drop the tablespace storage if it is there */
-  pages_persistence->redo_delete_tablespace(page_id.space(), name.c_str());
-
+  pages_persistence->redo_delete_tablespace(space_id, name.c_str());
 #endif /* UNIV_HOTBACKUP */
 
   return ptr;
 }
 
-const byte *fil_tablespace_redo_encryption(const byte *ptr, const byte *end,
-                                           space_id_t space_id, lsn_t lsn) {
+std::optional<bool> fil_tablespace_redo_encryption(const byte *ptr,
+                                                   const byte *end,
+                                                   space_id_t space_id,
+                                                   lsn_t lsn) {
   fil_space_t *space = fil_space_get(space_id);
 
   /* An undo space might be open but not have the ENCRYPTION bit set
@@ -9853,7 +9804,7 @@ const byte *fil_tablespace_redo_encryption(const byte *ptr, const byte *end,
   ptr += 2;
 
   if (end < ptr + len) {
-    return nullptr;
+    return {};
   }
 
   if (len + offset > UNIV_PAGE_SIZE) {
@@ -9861,7 +9812,7 @@ const byte *fil_tablespace_redo_encryption(const byte *ptr, const byte *end,
     the space flags, but it must be at most UNIV_PAGE_SIZE. So if we are here we
     are certain something is wrong. */
     recv_sys->found_corrupt_log = true;
-    return nullptr;
+    return {};
   }
 
   if (len != Encryption::INFO_SIZE) {
@@ -9871,8 +9822,7 @@ const byte *fil_tablespace_redo_encryption(const byte *ptr, const byte *end,
     an encryption info. For now this is sufficient as all MLOG_STRING_WRITEs for
     page 0 of length Encryption::INFO_SIZE are related to encryption. If this
     changes in future, we should properly check the offset, too. */
-    recv_sys->found_corrupt_log = true;
-    return nullptr;
+    return true;
   }
 
   const byte *encryption_ptr = ptr;
@@ -9882,7 +9832,7 @@ const byte *fil_tablespace_redo_encryption(const byte *ptr, const byte *end,
   REDO entry LSN, then skip it because header has latest information.
   Therefore, we don't need to add the log record to the hash table */
   if (space != nullptr && space->m_header_page_flush_lsn > lsn) {
-    return (ptr);
+    return false;
   }
 
   /* If encryption info is 0 filled, then this is erasing encryption info
@@ -9893,7 +9843,7 @@ const byte *fil_tablespace_redo_encryption(const byte *ptr, const byte *end,
     if (memcmp(encryption_ptr, buf, Encryption::INFO_SIZE) == 0) {
       /* NOTE: We don't need to reset encryption info of space here because it
       might be needed. It will be reset when this REDO record is applied. */
-      return ptr;
+      return true;
     }
   }
 
@@ -9904,10 +9854,9 @@ const byte *fil_tablespace_redo_encryption(const byte *ptr, const byte *end,
   if (!Encryption::decode_encryption_info(space_id, e_key, encryption_ptr,
                                           true)) {
     recv_sys->found_corrupt_log = true;
-
     ib::warn(ER_IB_MSG_INCORRECT_REDO_ENCRYPTION_INFO, (ulong)space_id);
 
-    return nullptr;
+    return {};
   }
 
   ut_ad(len == Encryption::INFO_SIZE);
@@ -9916,12 +9865,12 @@ const byte *fil_tablespace_redo_encryption(const byte *ptr, const byte *end,
     Encryption::set_or_generate(Encryption::AES, key, iv,
                                 space->m_encryption_metadata);
     fsp_flags_set_encryption(space->flags);
-    return ptr;
+    return true;
   }
 
   /* Space is not loaded yet. Remember this key in recv_sys and use it later
   to populate space encryption info once it is loaded. */
-  DBUG_EXECUTE_IF("dont_update_key_found_during_REDO_scan", return ptr;);
+  DBUG_EXECUTE_IF("dont_update_key_found_during_REDO_scan", return true;);
 
   if (recv_sys->keys == nullptr) {
     recv_sys->keys =
@@ -9934,7 +9883,7 @@ const byte *fil_tablespace_redo_encryption(const byte *ptr, const byte *end,
       memcpy(recv_key.iv, iv, Encryption::KEY_LEN);
       memcpy(recv_key.ptr, key, Encryption::KEY_LEN);
       recv_key.lsn = lsn;
-      return ptr;
+      return true;
     }
   }
 
@@ -9950,7 +9899,7 @@ const byte *fil_tablespace_redo_encryption(const byte *ptr, const byte *end,
   new_key.lsn = lsn;
   recv_sys->keys->push_back(new_key);
 
-  return ptr;
+  return true;
 }
 
 [[nodiscard]] static bool fil_op_replay_rename(fil_space_t *space,

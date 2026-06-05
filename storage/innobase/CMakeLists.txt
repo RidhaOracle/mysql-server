@@ -205,6 +205,7 @@ SET(INNOBASE_SOURCES
   log/log0pfs.cc
   log/log0pre_8_0_30.cc
   log/log0recv.cc
+  log/log0redo.cc
   log/log0sys_var_handler.cc
   log/log0test.cc
   log/log0write.cc

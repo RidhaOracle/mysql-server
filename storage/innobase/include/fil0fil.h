@@ -56,6 +56,7 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #include <cstdint>
 #include <limits>
 #include <list>
+#include <optional>
 #include <span>
 #include <variant>
 #include <vector>
@@ -2401,15 +2402,13 @@ inline fil_space_t *fil_space_get_sys_space() {
 /** Redo a tablespace create.
 @param[in]      ptr             redo log record
 @param[in]      end             end of the redo log buffer
-@param[in]      page_id         Tablespace Id and first page in file
-@param[in]      parsed_bytes    Number of bytes parsed so far
+@param[in]      space_id        Tablespace Id
 @param[in]      parse_only      Don't apply, parse only
 @return pointer to next redo log record
 @retval nullptr if this log record was truncated */
 [[nodiscard]] const byte *fil_tablespace_redo_create(const byte *ptr,
                                                      const byte *end,
-                                                     const page_id_t &page_id,
-                                                     ulint parsed_bytes,
+                                                     space_id_t space_id,
                                                      bool parse_only);
 
 /** TODO: This is a wrapper for fil_tablespace_redo_create to be called
@@ -2421,27 +2420,22 @@ implementation for read replica, and it needs to be investigated further,
 how to hide these details behind the tablespace interface.
 @param[in]      ptr             redo log record
 @param[in]      end             end of the redo log buffer
-@param[in]      page_id         Tablespace Id and first page in file
-@param[in]      parsed_bytes    Number of bytes parsed so far
-@param[in]      parse_only      Don't apply, parse only
+@param[in]      space_id        Tablespace Id
 @return pointer to next redo log record
 @retval nullptr if this log record was truncated */
 [[nodiscard]] const byte *fil_tablespace_redo_create_wrapper(
-    const byte *ptr, const byte *end, const page_id_t &page_id,
-    ulint parsed_bytes, bool parse_only);
+    const byte *ptr, const byte *end, space_id_t space_id);
 
 /** Redo a tablespace delete.
 @param[in]      ptr             redo log record
 @param[in]      end             end of the redo log buffer
-@param[in]      page_id         Tablespace Id and first page in file
-@param[in]      parsed_bytes    Number of bytes parsed so far
+@param[in]      space_id        Tablespace Id
 @param[in]      parse_only      Don't apply, parse only
 @return pointer to next redo log record
 @retval nullptr if this log record was truncated */
 [[nodiscard]] const byte *fil_tablespace_redo_delete(const byte *ptr,
                                                      const byte *end,
-                                                     const page_id_t &page_id,
-                                                     ulint parsed_bytes,
+                                                     space_id_t space_id,
                                                      bool parse_only);
 
 /** TODO: This is a wrapper for fil_tablespace_redo_delete to be called
@@ -2453,43 +2447,36 @@ implementation for read replica, and it needs to be investigated further,
 how to hide these details behind the tablespace interface.
 @param[in]      ptr             redo log record
 @param[in]      end             end of the redo log buffer
-@param[in]      page_id         Tablespace Id and first page in file
-@param[in]      parsed_bytes    Number of bytes parsed so far
-@param[in]      parse_only      Don't apply, parse only
+@param[in]      space_id        Tablespace Id
 @return pointer to next redo log record
 @retval nullptr if this log record was truncated */
 [[nodiscard]] const byte *fil_tablespace_redo_delete_wrapper(
-    const byte *ptr, const byte *end, const page_id_t &page_id,
-    ulint parsed_bytes, bool parse_only);
+    const byte *ptr, const byte *end, space_id_t space_id);
 
 /** Redo a tablespace rename.
 This function doesn't do anything, simply parses the redo log record.
 @param[in]      ptr             redo log record
 @param[in]      end             end of the redo log buffer
-@param[in]      page_id         Tablespace Id and first page in file
-@param[in]      parsed_bytes    Number of bytes parsed so far
+@param[in]      space_id        Tablespace Id
 @param[in]      parse_only      Don't apply, parse only
 @return pointer to next redo log record
 @retval nullptr if this log record was truncated */
 [[nodiscard]] const byte *fil_tablespace_redo_rename(const byte *ptr,
                                                      const byte *end,
-                                                     const page_id_t &page_id,
-                                                     ulint parsed_bytes,
+                                                     space_id_t space_id,
                                                      bool parse_only);
 
 /** Redo a tablespace extend. if parse_only is false, function expects
 tablespace to be present in fil cache.
 @param[in]      ptr             redo log record
 @param[in]      end             end of the redo log buffer
-@param[in]      page_id         Tablespace Id and first page in file
-@param[in]      parsed_bytes    Number of bytes parsed so far
+@param[in]      space_id        Tablespace Id
 @param[in]      parse_only      Don't apply the log if true
 @return pointer to next redo log record
 @retval nullptr if this log record was truncated */
 [[nodiscard]] const byte *fil_tablespace_redo_extend(const byte *ptr,
                                                      const byte *end,
-                                                     const page_id_t &page_id,
-                                                     ulint parsed_bytes,
+                                                     space_id_t space_id,
                                                      bool parse_only);
 
 /** TODO: This is a wrapper for fil_tablespace_redo_extend to be called
@@ -2501,25 +2488,22 @@ implementation for read replica, and it needs to be investigated further,
 how to hide these details behind the tablespace interface.
 @param[in]      ptr             redo log record
 @param[in]      end             end of the redo log buffer
-@param[in]      page_id         Tablespace Id and first page in file
-@param[in]      parsed_bytes    Number of bytes parsed so far
-@param[in]      parse_only      Don't apply the log if true
+@param[in]      space_id        Tablespace Id
 @return pointer to next redo log record
 @retval nullptr if this log record was truncated */
 [[nodiscard]] const byte *fil_tablespace_redo_extend_wrapper(
-    const byte *ptr, const byte *end, const page_id_t &page_id,
-    ulint parsed_bytes, bool parse_only);
+    const byte *ptr, const byte *end, space_id_t space_id);
 
 /** Parse and process an encryption redo record.
 @param[in]      ptr             redo log record
 @param[in]      end             end of the redo log buffer
 @param[in]      space_id        the tablespace ID
 @param[in]      lsn             lsn for REDO record
-@return log record end, nullptr if not a complete record */
-[[nodiscard]] const byte *fil_tablespace_redo_encryption(const byte *ptr,
-                                                         const byte *end,
-                                                         space_id_t space_id,
-                                                         lsn_t lsn);
+@return true to proceed for applying the log record,
+otherwise skip applying it the log record. Empty optional
+indicates some error in parsing the log record */
+[[nodiscard]] std::optional<bool> fil_tablespace_redo_encryption(
+    const byte *ptr, const byte *end, space_id_t space_id, lsn_t lsn);
 
 /** Lookup the tablespace ID.
 @param[in]      space_id                Tablespace ID to lookup
@@ -2570,8 +2554,9 @@ already be known.
 @return whether the operation was successfully applied
 (the name did not exist, or new_name did not exist and
 name was successfully renamed to new_name)  */
-bool fil_op_replay_rename_for_ddl(space_id_t space_id, const char *old_name,
-                                  const char *new_name);
+[[nodiscard]] bool fil_op_replay_rename_for_ddl(space_id_t space_id,
+                                                const char *old_name,
+                                                const char *new_name);
 
 /** Free the Tablespace_files instance.
 @param[in]      read_only_mode  true if InnoDB is started in read only mode.

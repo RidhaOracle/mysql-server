@@ -7614,19 +7614,19 @@ OBSOLETE_ER_IB_MSG_692
 OBSOLETE_ER_IB_MSG_693
   eng "Waiting for archiver to finish archiving page and log"
 
-ER_IB_MSG_694
+ER_IB_ERR_CORRUPT_LOG_RECORD_FOUND
   eng "############### CORRUPT LOG RECORD FOUND ###############"
 
-ER_IB_MSG_695
-  eng "Log record type %d, page %lu:%lu. Log parsing proceeded successfully up to %llu. Previous log record type %d, is multi %llu Recv offset %zd, prev %llu"
+ER_IB_MSG_LOG_TYPE_PARSED_UP_TO
+  eng "Log record type %d. Log parsing proceeded successfully up to %llu."
 
-ER_IB_MSG_696
-  eng "Hex dump starting %llu bytes before and ending %llu bytes after the corrupted record:"
+ER_IB_MSG_DUMP_BUFFER
+  eng "Hex dump starting %zu bytes before and ending %zu bytes after the corrupted record: %s"
 
-ER_IB_MSG_697
+OBSOLETE_ER_IB_MSG_697
   eng "Set innodb_force_recovery to ignore this error."
 
-ER_IB_MSG_LOG_CORRUPT
+ER_IB_WARN_LOG_CORRUPT
   eng "The redo log file may have been corrupt and it is possible that the log scan did not proceed far enough in recovery! Please run CHECK TABLE on your InnoDB tables to check that they are ok! If mysqld crashes after this recovery; %s"
 
 ER_IB_MSG_UNPROCESSED_REDO_LOG_RECORDS

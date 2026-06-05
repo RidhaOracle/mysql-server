@@ -3266,7 +3266,7 @@ bool btr_cur_update_alloc_zip_func(page_zip_des_t *page_zip, page_cur_t *cursor,
     return (true);
   }
 
-  if (!page_zip->m_nonempty && !page_has_garbage(page)) {
+  if (!page_zip->has_modifications() && !page_has_garbage(page)) {
     /* The page has been freshly compressed, so
     reorganizing it will not help. */
     return (false);

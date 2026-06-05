@@ -184,5 +184,5 @@ DROP TABLESPACE encrypt_ts;
 remove_file $SEARCH_FILE;
 
 --echo # Restarting server without keyring to restore server state
-let $restart_parameters = restart: ;
+let $restart_parameters = restart:;
 --source include/restart_mysqld.inc

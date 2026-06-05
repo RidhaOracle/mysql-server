@@ -809,10 +809,9 @@ void Clone_Snapshot::page_update_for_flush(const page_size_t &page_size,
     auto data_size = page_size.physical();
     page_zip_set_size(&page_zip, data_size);
     page_zip.data = page_data;
-    ut_d(page_zip.m_start = 0);
+    page_zip.m_start = 0;
     page_zip.m_end = 0;
     page_zip.n_blobs = 0;
-    page_zip.m_nonempty = false;
 
     buf_flush_init_for_writing(nullptr, page_data, &page_zip, page_lsn, false,
                                false);

@@ -1333,11 +1333,6 @@ dberr_t srv_start(bool create_new_db) {
 #endif
 #endif
 
-#ifdef UNIV_LOG_LSN_DEBUG
-  ib::info(ER_IB_MSG_1116)
-      << "!!!!!!!! UNIV_LOG_LSN_DEBUG switched on !!!!!!!!!";
-#endif /* UNIV_LOG_LSN_DEBUG */
-
 #if defined(COMPILER_HINTS_ENABLED)
   ib::info(ER_IB_MSG_1117) << "Compiler hints enabled.";
 #endif /* defined(COMPILER_HINTS_ENABLED) */

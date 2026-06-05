@@ -1152,31 +1152,6 @@ static void meb_set_parse_start_lsn(Log_data_block_header block_header,
            (ulonglong)recv_sys->checkpoint_lsn, (ulonglong)start_lsn);
 
   if (recv_sys->parse_start_lsn < recv_sys->checkpoint_lsn) {
-    /* We start to parse log records even before
-    checkpoint_lsn, from the beginning of the log
-    block which contains the checkpoint_lsn.
-
-    That's because the first group of log records
-    in the log block, starts before checkpoint_lsn,
-    and checkpoint_lsn could potentially point to
-    the middle of some log record. We need to find
-    the first group of log records that starts at
-    or after checkpoint_lsn. This could be only
-    achieved by traversing all groups of log records
-    that start within the log block since the first
-    one (to discover their beginnings we need to
-    parse them). However, we don't want to report
-    missing tablespaces for space_id in log records
-    before checkpoint_lsn. Hence we need to ignore
-    those records and that's why we need a counter
-    of bytes to ignore. */
-
-    recv_sys->bytes_to_ignore_before_checkpoint =
-        recv_sys->checkpoint_lsn - recv_sys->parse_start_lsn;
-
-    ut_a(recv_sys->bytes_to_ignore_before_checkpoint <=
-         OS_FILE_LOG_BLOCK_SIZE - LOG_BLOCK_HDR_SIZE);
-
     ut_a(recv_sys->checkpoint_lsn % OS_FILE_LOG_BLOCK_SIZE +
              LOG_BLOCK_TRL_SIZE <
          OS_FILE_LOG_BLOCK_SIZE);
