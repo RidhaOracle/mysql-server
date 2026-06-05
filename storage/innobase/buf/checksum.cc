@@ -38,7 +38,7 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #include "buf0types.h"
 #include "fil0fil.h"
 #include "fil0types.h"
-#include "log0log.h" /* log_get_lsn */
+#include "log0handler_interface.h" /* ib::redo::handler */
 #include "mach0data.h"
 #include "my_dbug.h"
 #include "page0size.h"
@@ -158,7 +158,7 @@ inline void buf_page_lsn_check(bool check_lsn, const byte *read_buf) {
 
     /* Since we are going to reset the page LSN during the import
     phase it makes no sense to spam the log with error messages. */
-    current_lsn = log_get_lsn(*log_sys);
+    current_lsn = ib::redo::handler->peek_first_unassigned_lsn();
 
     if (current_lsn < page_lsn) {
       const space_id_t space_id =

@@ -42,18 +42,6 @@ this program; if not, write to the Free Software Foundation, Inc.,
 
 namespace log_pre_8_0_30 {
 
-bool checkpoint_header_deserialize(const byte *buf, Checkpoint_header &header) {
-  header.m_checkpoint_no = mach_read_from_8(buf + FIELD_CHECKPOINT_NO);
-
-  header.m_checkpoint_lsn = mach_read_from_8(buf + FIELD_CHECKPOINT_LSN);
-
-  header.m_checkpoint_offset = mach_read_from_8(buf + FIELD_CHECKPOINT_OFFSET);
-
-  header.m_log_buf_size = mach_read_from_8(buf + FIELD_CHECKPOINT_LOG_BUF_SIZE);
-
-  return log_header_checksum_is_ok(buf);
-}
-
 std::string file_name(Log_file_id file_id) {
   ut_a(file_id <= FILE_MAX_ID);
   std::ostringstream str;

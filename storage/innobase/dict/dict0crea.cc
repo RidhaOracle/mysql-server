@@ -43,7 +43,7 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #include "fsp0sysspace.h"
 #include "fts0priv.h"
 #include "ha_prototypes.h"
-#include "log0write.h"
+#include "log0helpers.h"
 #include "mach0data.h"
 #include "my_sqlcommand.h"
 #include "mysql/plugin.h"
@@ -166,9 +166,7 @@ dberr_t dict_build_tablespace(trx_t *trx, Tablespace *tablespace) {
   bool ret = fsp_header_init(space, size, &mtr);
   mtr_commit(&mtr);
 
-  DBUG_EXECUTE_IF("fil_ibd_create_log",
-                  log_write_up_to(*log_sys, mtr.commit_lsn(), true);
-                  DBUG_SUICIDE(););
+  DBUG_INJECT_CRASH_WITH_LOG_FLUSH("fil_ibd_create_log");
 
   if (!ret) {
     return (DB_ERROR);
@@ -290,10 +288,7 @@ dberr_t dict_build_tablespace_for_table(dict_table_t *table,
     }
 
     mtr_commit(&mtr);
-
-    DBUG_EXECUTE_IF("fil_ibd_create_log",
-                    log_write_up_to(*log_sys, mtr.commit_lsn(), true);
-                    DBUG_SUICIDE(););
+    DBUG_INJECT_CRASH_WITH_LOG_FLUSH("fil_ibd_create_log");
 
     if (!ret) {
       return (DB_ERROR);

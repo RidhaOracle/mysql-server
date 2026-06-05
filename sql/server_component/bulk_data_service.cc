@@ -1597,8 +1597,8 @@ static int format_row(THD *thd, const TABLE_SHARE *table_share,
     bool success = header.serialize(header_buffer, header_length);
     assert(success);
     if (!success) {
-      LogErr(INFORMATION_LEVEL, ER_IB_MSG_1381,
-             "Bulk Load: Error writing NULL bitmap");
+      LogErr(INFORMATION_LEVEL, ER_BULK_LOADER_INFO,
+             "Error writing NULL bitmap");
       err = ER_INTERNAL_ERROR;
     }
   }

@@ -45,8 +45,8 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #include "fsp0types.h"
 #include "fut0fut.h"
 #include "ha_prototypes.h"
-#include "log0buf.h"
 #include "log0chkp.h"
+#include "log0helpers.h"
 #include "mach0data.h"
 #include "mtr0log.h"
 #include "my_compiler.h"
@@ -953,7 +953,8 @@ void Tablespace::alter_active() {
 void inject_crash(const char *injection_point_name) {
   DBUG_EXECUTE_IF(injection_point_name,
                   ib::info(ER_IB_MSG_INJECT_CRASH, injection_point_name);
-                  log_buffer_flush_to_disk(); DBUG_SUICIDE(););
+                  ib::redo::must_persist_all(UT_LOCATION_HERE);
+                  DBUG_SUICIDE(););
 }
 
 bool Inject_failure_once::should_fail() {

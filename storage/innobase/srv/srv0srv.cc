@@ -70,9 +70,11 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #include "log0buf.h"
 #include "log0chkp.h"
 #include "log0encryption.h"
+#include "log0handler_interface.h"
 #include "log0recv.h"
 #include "log0write.h"
 #include "mem0mem.h"
+#include "os0enc.h"
 #include "os0proc.h"
 #include "os0thread-create.h"
 #include "pars0pars.h"
@@ -88,6 +90,7 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #include "mysql/components/library_mysys/my_system.h" /* my_num_vcpus */
 
 #endif /* !UNIV_HOTBACKUP */
+#include "srv0conc.h"
 #include "srv0srv.h"
 #include "srv0start.h"
 #include "sync0sync.h"
@@ -790,12 +793,12 @@ static const ulint SRV_MASTER_SLOT = 0;
 
 #ifdef HAVE_PSI_STAGE_INTERFACE
 /** Performance schema stage event for monitoring ALTER TABLE progress
-everything after flush log_make_latest_checkpoint(). */
+everything after flush log_checkpointing->request_sharp_checkpoint(). */
 PSI_stage_info srv_stage_alter_table_end = {
     0, "alter table (end)", PSI_FLAG_STAGE_PROGRESS, PSI_DOCUMENT_ME};
 
 /** Performance schema stage event for monitoring ALTER TABLE progress
-log_make_latest_checkpoint(). */
+log_checkpointing->request_sharp_checkpoint(). */
 PSI_stage_info srv_stage_alter_table_flush = {
     0, "alter table (flush)", PSI_FLAG_STAGE_PROGRESS, PSI_DOCUMENT_ME};
 
@@ -1289,7 +1292,9 @@ static void srv_refresh_innodb_monitor_stats(void) {
   btr_cur_n_sea_old = btr_cur_n_sea;
   btr_cur_n_non_sea_old = btr_cur_n_non_sea;
 
-  log_refresh_stats(*log_sys);
+  if (log_sys != nullptr) {
+    log_refresh_stats(*log_sys);
+  }
 
   buf_refresh_io_stats_all();
 
@@ -1833,13 +1838,13 @@ void srv_error_monitor_thread() {
 
   ut_ad(!srv_read_only_mode);
 
-  old_lsn = log_get_lsn(*log_sys);
+  old_lsn = ib::redo::handler->peek_first_unassigned_lsn();
 
 loop:
   /* Try to track a strange bug reported by Harald Fuchs and others,
   where the lsn seems to decrease at times */
 
-  new_lsn = log_get_lsn(*log_sys);
+  new_lsn = ib::redo::handler->peek_first_unassigned_lsn();
 
   if (new_lsn < old_lsn) {
     ib::error(ER_IB_MSG_1046, ulonglong{old_lsn}, ulonglong{new_lsn});
@@ -2456,19 +2461,35 @@ static bool srv_master_do_shutdown_tasks(
   return (n_bytes_merged != 0);
 }
 
+/** Ensure that the first master key exists before taking an outer
+master_key_id_mutex guard.
+@return true iff success. */
+static bool srv_ensure_master_key_exists() {
+  if (Encryption::get_master_key_id() != Encryption::DEFAULT_MASTER_KEY_ID) {
+    return true;
+  }
+
+  byte *master_key = nullptr;
+  uint32_t master_key_id = Encryption::DEFAULT_MASTER_KEY_ID;
+
+  Encryption::get_master_key(&master_key_id, &master_key);
+
+  if (master_key == nullptr) {
+    return false;
+  }
+
+  my_free(master_key);
+  return true;
+}
+
 /* Enable REDO tablespace encryption */
 bool srv_enable_redo_encryption() {
+  ut_ad(ib::redo::handler->get_capabilities().supports_encryption);
+
   log_t &log = *log_sys;
 
-  /* While enabling encryption, make sure not to overwrite the existing
-  redo log encryption key (if it has already been generated).
-
-  Note that we can safely check log.m_encryption_metadata without acquiring
-  any of mutexes which are enlisted as required to protect updates of this
-  field. That's because srv_enable_redo_encryption() is called either in
-  startup phase, or during update of innodb_redo_log_encrypt. Server ensures
-  that sysvars are not being updated concurrently and that they are not being
-  updated during startup phase. */
+  /* Fast path. This is rechecked under master_key_id_mutex before generating
+  redo log encryption metadata. */
   if (log_can_encrypt(log)) {
     return false;
   }
@@ -2479,9 +2500,21 @@ bool srv_enable_redo_encryption() {
     return true;
   }
 
-  /* Start to encrypt the redo log block from now on. */
-  if (log_encryption_generate_metadata(log) != DB_SUCCESS) {
+  if (!srv_ensure_master_key_exists()) {
     ib::error(ER_IB_MSG_LOG_FILES_ENCRYPTION_INIT_FAILED);
+    return true;
+  }
+
+  /* Runtime callers can run concurrently during sysvar validation. Serialize
+  redo metadata generation with concurrent validations and key rotation. */
+  extern ib_mutex_t master_key_id_mutex;
+  IB_mutex_guard redo_encrypt_guard(&master_key_id_mutex, UT_LOCATION_HERE);
+
+  if (log_can_encrypt(log)) {
+    return false;
+  }
+
+  if (log_encryption_generate_metadata() != DB_SUCCESS) {
     return true;
   }
 
@@ -3225,3 +3258,34 @@ void set_srv_redo_log(bool enable) {
   srv_redo_log = enable;
   mutex_exit(&srv_innodb_monitor_mutex);
 }
+#ifndef UNIV_HOTBACKUP
+bool srv_reconfigure_log_handler() {
+  /* The max_threads should be the number of these threads which use mtrs:
+    - user transaction threads - which we upper bound by srv_thread_concurrency
+    - background threads - which we upper bound by
+      LOG_BACKGROUND_THREADS_USING_RW_MTRS.
+
+  Both of these estimates are wrong:
+  The srv_thread_concurrency = 0 by default which means unlimited thread
+  concurrency, not 0 user threads.
+  The number of Undo Log Purge threads is configurable, and IO-completers can
+  apply Changes Buffered in IBUF, and there might be more than
+  LOG_BACKGROUND_THREADS_USING_RW_MTRS of them.
+
+  The value of reserved_bytes_per_thread should be the limit on how much
+  data a thread can produce via mtr's, between calls to wait_for_space().
+  Alas, we do not enforce this limit via asserts, nor in tests, only by code
+  review, so occasionally we violate this requirement too.
+
+  This violation of contract on our side, makes wait_for_space() and has_space()
+  insufficient to guarantee deadlock-freedom and wait-free write_mtr(..). But
+  changing these would not be backward compatible (some configs which used to be
+  deemed safe would no longer be, and server would refuse to start).
+  Using this mechanism, even with too small values, is better than nothing, and
+  ib::redo::Handler compensates by adding some extra margins, too.
+  */
+  return ib::redo::handler->reconfigure(
+      srv_thread_concurrency + LOG_BACKGROUND_THREADS_USING_RW_MTRS,
+      LOG_CHECKPOINT_FREE_PER_THREAD * UNIV_PAGE_SIZE);
+}
+#endif /* !UNIV_HOTBACKUP */

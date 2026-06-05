@@ -34,6 +34,7 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #include "clone0clone.h"
 #include "dict0dict.h"
 #include "fsp0sysspace.h"
+#include "log0chkp.h"  // limits_mutex
 #include "sql/binlog.h"
 #include "sql/clone_handler.h"
 #include "sql/handler.h"
@@ -242,6 +243,12 @@ int Clone_Snapshot::init_file_copy(Snapshot_State new_state) {
 
   m_monitor.change_phase();
   return 0;
+}
+
+void Clone_Snapshot::init_disk_estimate() {
+  /* Initial size is set to the redo file size on disk. */
+  IB_mutex_guard latch{&(log_checkpointing->limits_mutex), UT_LOCATION_HERE};
+  m_data_bytes_disk = log_sys->m_capacity.current_physical_capacity();
 }
 
 int Clone_Snapshot::init_page_copy(Snapshot_State new_state, byte *page_buffer,

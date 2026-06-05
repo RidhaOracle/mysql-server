@@ -55,7 +55,7 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #include "dict0dd.h"
 #include "fut0fut.h"
 #include "ibuf0ibuf.h"
-#include "log0buf.h"
+#include "log0helpers.h"
 #include "srv0srv.h"
 #endif /* !UNIV_HOTBACKUP */
 #include "clone0api.h"
@@ -4354,9 +4354,8 @@ static void process_all_pages(THD *thd, fil_space_t *space,
 static void encrypt_end(fil_space_t *space) {
   DBUG_TRACE;
   /* Crash before resetting progress on page 0 */
-  DBUG_EXECUTE_IF("alter_encrypt_tablespace_crash_before_resetting_progress",
-                  log_buffer_flush_to_disk();
-                  DBUG_SUICIDE(););
+  DBUG_INJECT_CRASH_WITH_LOG_FLUSH(
+      "alter_encrypt_tablespace_crash_before_resetting_progress");
 
   /* Erase Operation type and encryption progress from page 0 */
   mtr_t mtr;
@@ -4516,9 +4515,8 @@ static dberr_t decrypt_end(fil_space_t *space) {
   DBUG_TRACE;
   ut_ad(!FSP_FLAGS_GET_ENCRYPTION(space->flags));
 
-  DBUG_EXECUTE_IF("alter_encrypt_tablespace_crash_before_updating_flags",
-                  log_buffer_flush_to_disk();
-                  DBUG_SUICIDE(););
+  DBUG_INJECT_CRASH_WITH_LOG_FLUSH(
+      "alter_encrypt_tablespace_crash_before_updating_flags");
 
   dberr_t err = DB_SUCCESS;
   {
@@ -4555,9 +4553,8 @@ static dberr_t decrypt_end(fil_space_t *space) {
   }
 
   /* Crash before resetting progress on page 0 */
-  DBUG_EXECUTE_IF("alter_encrypt_tablespace_crash_before_resetting_progress",
-                  log_buffer_flush_to_disk();
-                  DBUG_SUICIDE(););
+  DBUG_INJECT_CRASH_WITH_LOG_FLUSH(
+      "alter_encrypt_tablespace_crash_before_resetting_progress");
 
   fsp_header_write_encryption_progress(space->id, space->flags, 0, 0, true,
                                        &mtr);
@@ -4703,9 +4700,8 @@ dberr_t fsp_alter_encrypt_tablespace(THD *thd, space_id_t space_id,
                                   static_cast<uint32>(space->flags));
 
   /* Crash before flushing page 0 on disk */
-  DBUG_EXECUTE_IF("alter_encrypt_tablespace_crash_before_flushing_page_0",
-                  log_buffer_flush_to_disk();
-                  DBUG_SUICIDE(););
+  DBUG_INJECT_CRASH_WITH_LOG_FLUSH(
+      "alter_encrypt_tablespace_crash_before_flushing_page_0");
 
   /* Flush page 0 here because MEB backup needs to read the key from page 0
   before redo log is applied. This is not needed for innodb recovery and
@@ -4716,9 +4712,8 @@ dberr_t fsp_alter_encrypt_tablespace(THD *thd, space_id_t space_id,
                                 false);
 
   /* Crash after flushing page 0 on disk */
-  DBUG_EXECUTE_IF("alter_encrypt_tablespace_crash_after_flushing_page_0",
-                  log_buffer_flush_to_disk();
-                  DBUG_SUICIDE(););
+  DBUG_INJECT_CRASH_WITH_LOG_FLUSH(
+      "alter_encrypt_tablespace_crash_after_flushing_page_0");
   return err;
 }
 

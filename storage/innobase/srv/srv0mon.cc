@@ -41,6 +41,7 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #include "lock0lock.h"
 #include "log0buf.h"
 #include "log0chkp.h"
+#include "log0handler_interface.h"
 #include "log0write.h"
 #include "mach0data.h"
 #include "os0file.h"
@@ -1948,15 +1949,18 @@ void srv_mon_process_existing_counter(
       break;
 
     case MONITOR_OVLD_LSN_FLUSHDISK:
-      value = static_cast<mon_type_t>(log_sys->flushed_to_disk_lsn.load());
+      value = static_cast<mon_type_t>(
+          ib::redo::handler->peek_first_nonpersisted_lsn());
       break;
 
     case MONITOR_OVLD_LSN_CURRENT:
-      value = static_cast<mon_type_t>(log_get_lsn(*log_sys));
+      value = static_cast<mon_type_t>(
+          ib::redo::handler->peek_first_unassigned_lsn());
       break;
 
     case MONITOR_OVLD_LSN_ARCHIVED: {
-      auto arch_lsn = arch_log_sys->get_archived_lsn();
+      auto arch_lsn =
+          arch_log_sys == nullptr ? 0 : arch_log_sys->get_archived_lsn();
       if (arch_lsn == LSN_MAX) {
         value = 0;
       } else {
@@ -1977,19 +1981,19 @@ void srv_mon_process_existing_counter(
       break;
 
     case MONITOR_OVLD_LSN_CHECKPOINT:
-      value = (mon_type_t)log_sys->last_checkpoint_lsn.load();
+      value = (mon_type_t)log_checkpointing->get_checkpoint();
       break;
 
     case MONITOR_OVLD_LSN_CHECKPOINT_AGE:
-      value = (mon_type_t)log_get_checkpoint_age(*log_sys);
+      value = (mon_type_t)log_get_checkpoint_age();
       break;
 
     case MONITOR_OVLD_MAX_AGE_ASYNC:
-      value = log_sys->m_capacity.adaptive_flush_min_age();
+      value = log_checkpointing->adaptive_flush_min_age();
       break;
 
     case MONITOR_OVLD_MAX_AGE_SYNC:
-      value = log_sys->m_capacity.adaptive_flush_max_age();
+      value = log_checkpointing->adaptive_flush_max_age();
       break;
     case MONITOR_OVLD_ADAPTIVE_HASH_SEARCH:
       value = btr_cur_n_sea;

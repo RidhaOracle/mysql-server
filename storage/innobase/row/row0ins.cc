@@ -2606,7 +2606,7 @@ dberr_t row_ins_clust_index_entry_low(uint32_t flags, ulint mode,
       row_ins_index_entry_big_rec() will write log. */
 
       DBUG_EXECUTE_IF("row_ins_extern_checkpoint",
-                      log_make_latest_checkpoint(););
+                      (void)log_checkpointing->request_sharp_checkpoint(););
       err = row_ins_index_entry_big_rec(thr_get_trx(thr), entry, big_rec,
                                         offsets, &offsets_heap, index,
                                         thr_get_trx(thr)->mysql_thd);

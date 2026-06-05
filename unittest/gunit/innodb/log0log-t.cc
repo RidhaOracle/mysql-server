@@ -32,11 +32,12 @@
 
 #include <gtest/gtest.h>
 
-#include "buf0flu.h"
+#include "buf0flu.h"   /* buf_flush_list_wait_to_add, and other buf_flush_* */
 #include "clone0api.h" /* clone_init(), clone_free() */
 #include "fil0fil.h"
 #include "log0buf.h"
 #include "log0chkp.h"
+#include "log0handler.h"
 #include "log0recv.h"
 #include "log0test.h"
 #include "log0write.h"
@@ -179,7 +180,8 @@ static bool log_test_init() {
   if (!log_test_general_init()) {
     return false;
   }
-
+  ut_a(log_checkpointing == nullptr);
+  Log_checkpointing::init();
   Log_files_context log_files_ctx{srv_log_group_home_dir,
                                   Log_files_ruleset::CURRENT};
 
@@ -191,16 +193,22 @@ static bool log_test_init() {
 
   lsn_t flushed_lsn = LOG_START_LSN + LOG_BLOCK_HDR_SIZE;
 
-  dberr_t err = log_sys_init(true, flushed_lsn, flushed_lsn);
+  dberr_t err = log_sys_init(true);
+  ut_a(err == DB_SUCCESS);
+  log_t &log = *log_sys;
+  /* This has no side effects, and is needed for log_checkpointer */
+  ib::redo::handler = new ib::redo::Handler{};
+  err = log_files_create(log, flushed_lsn);
   ut_a(err == DB_SUCCESS);
 
   ut_a(log_sys != nullptr);
-  log_t &log = *log_sys;
 
   fil_open_system_tablespace_files();
-
+  log_checkpointing->set_checkpoint(flushed_lsn);
   buf_flush_list_added = Buf_flush_list_added_lsns::create();
-  err = log_start(log, flushed_lsn, flushed_lsn);
+  buf_flush_list_added->assume_added_up_to(flushed_lsn);
+
+  err = log_start(log, flushed_lsn);
   ut_a(err == DB_SUCCESS);
 
   log_start_background_threads(log);
@@ -216,19 +224,13 @@ static bool log_test_recovery() {
   /** DBLWR directory is the current directory. */
   recv_sys_init();
 
-  lsn_t flushed_lsn = LOG_START_LSN + LOG_BLOCK_HDR_SIZE;
-  lsn_t new_files_lsn;
-
-  dberr_t err = log_sys_init(false, flushed_lsn, new_files_lsn);
+  dberr_t err = log_sys_init(false);
   ut_a(err == DB_SUCCESS);
-
-  EXPECT_EQ(0, new_files_lsn);
-
   ut_a(log_sys != nullptr);
-  log_t &log = *log_sys;
 
+  /* Following events are not set for the test log system. Hence we need to set
+  them explicitly */
   std::atomic<bool> stop_flushing = false;
-
   std::thread flush_thread([&stop_flushing] {
     while (!stop_flushing) {
       os_event_wait(recv_sys->flush_start);
@@ -237,7 +239,7 @@ static bool log_test_recovery() {
     }
   });
 
-  err = recv_recovery_from_checkpoint_start(log, LOG_START_LSN);
+  err = recv_recovery_from_checkpoint_start(LOG_START_LSN);
 
   srv_is_being_started = false;
 
@@ -520,7 +522,7 @@ static void log_test_close() {
 
   if (log_test->verbosity() > 0) {
     std::cout << "Finally: lsn = " << log_get_lsn(log)
-              << " checkpoint = " << log.last_checkpoint_lsn
+              << " checkpoint = " << log_checkpointing->get_checkpoint()
               << " oldest_modification_approx = "
               << log_test->oldest_modification_approx() << std::endl;
   }
@@ -571,8 +573,10 @@ static void log_test_close() {
     }
   }
 
-  log_sys_close();
-
+  /* As a side effect, this calls log_sys_close() */
+  delete ib::redo::handler;
+  ib::redo::handler = nullptr;
+  Log_checkpointing::deinit();
   log_test_general_close();
 
   buf_flush_list_added.reset(nullptr);

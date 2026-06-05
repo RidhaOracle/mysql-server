@@ -7632,10 +7632,10 @@ ER_IB_MSG_LOG_CORRUPT
 ER_IB_MSG_UNPROCESSED_REDO_LOG_RECORDS
   eng "%zu pages with log records were left unprocessed!"
 
-ER_IB_MSG_LOG_FORMAT_OLD_AND_LOG_CORRUPTED
+OBSOLETE_ER_IB_MSG_LOG_FORMAT_OLD_AND_LOG_CORRUPTED
   eng "Upgrade after a crash is not supported. This redo log was created with %s, and it appears corrupted. Please follow the instructions at %s"
 
-ER_IB_MSG_LOG_FORMAT_OLD_AND_NO_CLEAN_SHUTDOWN
+OBSOLETE_ER_IB_MSG_LOG_FORMAT_OLD_AND_NO_CLEAN_SHUTDOWN
   eng "Upgrade is not supported after a crash or shutdown with innodb_fast_shutdown = 2. This redo log was created with %s, and it appears logically non empty. Please follow the instructions at %s"
 
 OBSOLETE_ER_IB_MSG_702
@@ -8952,7 +8952,7 @@ ER_IB_MSG_LOG_FILES_DIFFERENT_SIZES
 ER_IB_MSG_1139
   eng "Use --innodb-directories to find the tablespace files. If that fails then use --innodb-force-recovery=1 to ignore this and to permanently lose all changes to the missing tablespace(s)"
 
-ER_IB_MSG_RECOVERY_CORRUPT
+OBSOLETE_ER_IB_MSG_RECOVERY_CORRUPT
   eng "The redo log file may have been corrupt and it is possible that the log scan or parsing did not proceed far enough in recovery. Please run CHECK TABLE on your InnoDB tables to check that they are ok! It may be safest to recover your InnoDB database from a backup!"
 
 OBSOLETE_ER_IB_MSG_LOG_FILES_RESIZE_ON_START_IN_READ_ONLY_MODE
@@ -8961,7 +8961,7 @@ OBSOLETE_ER_IB_MSG_LOG_FILES_RESIZE_ON_START_IN_READ_ONLY_MODE
 ER_IB_MSG_1142
   eng "Cannot open DD tablespace."
 
-ER_IB_MSG_LOG_FILES_REWRITING
+OBSOLETE_ER_IB_MSG_LOG_FILES_REWRITING
   eng "Starting to delete and rewrite redo log files."
 
 OBSOLETE_ER_IB_MSG_1144
@@ -9316,7 +9316,7 @@ ER_IB_MSG_1260
   eng "%s"
 
 ER_IB_MSG_1261
-  eng "%s"
+  eng "Starting to parse redo log at lsn = %llu, whereas checkpoint_lsn = %llu and start_lsn = %llu"
 
 ER_IB_MSG_1262
   eng "%s"
@@ -11008,8 +11008,8 @@ ER_IB_ERR_ZLIB_DATA_ERROR
 ER_IB_ERR_ZLIB_UNKNOWN_ERROR
   eng "%s"
 
-ER_IB_MSG_1381
-  eng "%s"
+ER_IB_MSG_HOLDING_LATCHES_WAITING_FOR_SPACE
+  eng "ib::redo::handler->wait_for_space() was called while holding an un-listed latch."
 
 ER_IB_ERR_INDEX_RECORDS_WRONG_ORDER
   eng "%s"
@@ -11693,7 +11693,7 @@ OBSOLETE_ER_IB_MSG_LOG_PARAMS_N_FILES_UNUSED
 ER_IB_MSG_LOG_UPGRADE_FORCED_RECV
   eng "Cannot upgrade format (v%lu) of redo log files when innodb-force-recovery > 0."
 
-ER_IB_MSG_LOG_UPGRADE_IN_READ_ONLY_MODE
+OBSOLETE_ER_IB_MSG_LOG_UPGRADE_IN_READ_ONLY_MODE
   eng "Cannot upgrade format (v%lu) of redo log files in read-only mode (--innodb-read-only)."
 
 ER_IB_MSG_LOG_UPGRADE_CLONED_DB
@@ -11702,7 +11702,7 @@ ER_IB_MSG_LOG_UPGRADE_CLONED_DB
 ER_IB_MSG_LOG_UPGRADE_UNINITIALIZED_FILES
   eng "Cannot upgrade format (v%lu) of redo log files because they are marked as uninitialized. Please use an older version of MySQL - recover and shutdown (with innodb-fast-shutdown < 2)."
 
-ER_IB_MSG_LOG_UPGRADE_CORRUPTION__UNEXPECTED
+OBSOLETE_ER_IB_MSG_LOG_UPGRADE_CORRUPTION__UNEXPECTED
   eng "Cannot upgrade format (v%lu) of redo log files when the redo log is corrupted. Please use an older version of MySQL - recover and shutdown (with innodb-fast-shutdown < 2)."
 
 OBSOLETE_ER_IB_MSG_LOG_UPGRADE_NON_PERSISTED_DD_METADATA
@@ -11742,7 +11742,7 @@ ER_IB_MSG_LOG_FILES_RESIZE_FINISHED
   eng "Redo log has been resized to %lluM."
 
 ER_IB_MSG_LOG_FILES_UPGRADE
-  eng "Upgrading redo log: %lluM, LSN=%llu."
+  eng "Upgrading redo log: Old log was logically empty: ended right after checkpoint at LSN=%llu. Removing it and recreating a new redo log file with size %lluM."
 
 ER_IB_MSG_LOG_FILE_MARK_CURRENT_AS_INCOMPLETE
   eng "Marked the current redo log file %s as incomplete."
@@ -13469,6 +13469,24 @@ ER_CSA_RPL_RECOVERY_SKIPPED
 
 ER_CSA_MSG
   eng "%s"
+
+ER_IB_MSG_TABLESPACE_NOT_OPENED
+  eng "Tablespace with id '%u' can not be opened. Recovery can't continue."
+
+ER_IB_MSG_REDO_PARSE_START_NOT_FOUND
+  eng "Could not find the start point for REDO parsing. REDO log may be corrupted. Recovery can't continue."
+
+ER_IB_MSG_PARSE_START_AND_CHECKPOINT
+  eng "Starting to parse redo log at lsn = %llu, whereas checkpoint_lsn = %llu"
+
+ER_IB_ERR_INNODB_REDO_HANDLER_FAILURE
+  eng "The %s failed because of %s reporting an error: %s."
+
+ER_IB_REDO_HANDLER_NO_ENCRYPTION_SUPPORT
+  eng "The Redo Log Handler doesn't support Redo log encryption."
+
+ER_IB_REDO_HANDLER_COULD_NOT_ACK_TO_TRUNCATE_LSN
+  eng "The Redo Log Handler could not acknowledge to truncate logs smaller than lsn = %llu. It indicates that server may run out of the redo log capacity in future."
 
 #
 # End of 10.x error messages intended to be written to the server error log.

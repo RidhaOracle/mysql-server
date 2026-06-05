@@ -54,8 +54,9 @@ The tablespace memory cache */
 #include "hash0hash.h"
 #include "log0buf.h"
 #include "log0chkp.h"
+#include "log0handler_interface.h"
+#include "log0helpers.h"
 #include "log0recv.h"
-#include "log0write.h"
 #include "mach0data.h"
 #include "mem0mem.h"
 #include "mtr0log.h"
@@ -3705,12 +3706,6 @@ void Fil_system::open_all_system_tablespaces() {
   }
 }
 
-/** Opens all system tablespace data files. They stay open until the
-database server shutdown. This should be called at a server startup
-after the space objects for the log and the system tablespace have
-been created. The purpose of this operation is to make sure we never
-run out of file descriptors if we need to read from the insert buffer
-or to write to the log. */
 void fil_open_system_tablespace_files() {
   fil_system->open_all_system_tablespaces();
 }
@@ -4512,7 +4507,9 @@ dberr_t Fil_shard::space_delete(space_id_t space_id, buf_remove_t buf_remove) {
     /* Even if we got killed shortly after deleting the
     tablespace file, the record must have already been
     written to the redo log. */
-    log_write_up_to(*log_sys, mtr.commit_lsn(), true);
+    ib::redo::must_succeed(
+        ib::redo::handler->persist_smaller_than(mtr.commit_lsn()),
+        UT_LOCATION_HERE);
 
     DBUG_EXECUTE_IF("space_delete_crash", DBUG_SUICIDE(););
 #endif /* UNIV_HOTBACKUP */
@@ -5667,7 +5664,8 @@ static dberr_t fil_create_tablespace(space_id_t space_id, const char *name,
 
     mtr_commit(&mtr);
 
-    DBUG_EXECUTE_IF("fil_ibd_create_log", log_make_latest_checkpoint(););
+    DBUG_EXECUTE_IF("fil_ibd_create_log",
+                    (void)log_checkpointing->request_sharp_checkpoint(););
   }
 
 #endif /* !UNIV_HOTBACKUP */
@@ -8317,7 +8315,9 @@ static dberr_t fil_iterate(const Fil_page_iterator &iter, buf_block_t *block,
       buf_block_set_file_page(block, page_id_t(space_id, page_no++));
 
       /* We are going to modify the page. Add to page tracking system. */
-      arch_page_sys->track_page(&block->page, LSN_MAX, LSN_MAX, true);
+      if (arch_page_sys != nullptr) {
+        arch_page_sys->track_page(&block->page, LSN_MAX, LSN_MAX, true);
+      }
 
       if ((err = callback(page_off, block)) != DB_SUCCESS) {
         return err;
@@ -10318,7 +10318,6 @@ const byte *fil_tablespace_redo_extend(const byte *ptr, const byte *end,
     }
 
     err = fil_tablespace_open_for_recovery(page_id.space());
-
     if (err != DB_SUCCESS) {
       /* fil_tablespace_open_for_recovery may fail if the tablespace being
       opened is an undo tablespace which is also marked for truncation.
@@ -10328,7 +10327,9 @@ const byte *fil_tablespace_redo_extend(const byte *ptr, const byte *end,
           undo::is_active_truncate_log_present(undo::id2num(page_id.space()))) {
         return ptr;
       }
-      return nullptr;
+
+      ib::fatal(UT_LOCATION_HERE, ER_IB_MSG_TABLESPACE_NOT_OPENED,
+                page_id.space());
     }
 
     /* Open the space */

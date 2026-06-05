@@ -79,8 +79,8 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #include "ha_innodb.h"
 #include "handler0alter.h"
 #include "lex_string.h"
-#include "log0buf.h"
 #include "log0chkp.h"
+#include "log0helpers.h"
 
 #include "log0ddl.h"
 #include "mem0mem.h"
@@ -7667,14 +7667,13 @@ rollback_trx:
     /* Test what happens on crash here.
     The data dictionary transaction should be
     rolled back, restoring the old table. */
-    DBUG_EXECUTE_IF("innodb_alter_commit_crash_before_commit",
-                    log_buffer_flush_to_disk();
-                    DBUG_SUICIDE(););
+    DBUG_INJECT_CRASH_WITH_LOG_FLUSH("innodb_alter_commit_crash_before_commit");
     ut_ad(!trx->fts_trx);
 
     DBUG_EXECUTE_IF("innodb_alter_commit_crash_after_commit",
-                    log_make_latest_checkpoint();
-                    log_buffer_flush_to_disk(); DBUG_SUICIDE(););
+                    (void)log_checkpointing->request_sharp_checkpoint();
+                    ib::redo::must_persist_all(UT_LOCATION_HERE);
+                    DBUG_SUICIDE(););
   }
 
   /* Update the in-memory structures, close some handles, release

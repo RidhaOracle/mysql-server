@@ -813,11 +813,11 @@ extern mysql_pfs_key_t bulk_alloc_thread_key;
 
 #ifdef HAVE_PSI_STAGE_INTERFACE
 /** Performance schema stage event for monitoring ALTER TABLE progress
-everything after flush log_make_latest_checkpoint(). */
+everything after flush log_checkpointing->request_sharp_checkpoint(). */
 extern PSI_stage_info srv_stage_alter_table_end;
 
 /** Performance schema stage event for monitoring ALTER TABLE progress
-log_make_latest_checkpoint(). */
+log_checkpointing->request_sharp_checkpoint(). */
 extern PSI_stage_info srv_stage_alter_table_flush;
 
 /** Performance schema stage event for monitoring ALTER TABLE progress
@@ -1092,6 +1092,12 @@ void undo_spaces_deinit();
 /** Set redo log variable for performance schema global status.
 @param[in]      enable  true => redo log enabled, false => redo log disabled */
 void set_srv_redo_log(bool enable);
+
+/** Wrapper for
+ib::redo::handler->reconfigure(max_threads, reserved_bytes_per_thread)
+which passes the appropriate arguments
+@return the value returned by @see ib::redo::Handler_interface::reconfigure */
+[[nodiscard]] bool srv_reconfigure_log_handler();
 
 #ifdef UNIV_DEBUG
 struct SYS_VAR;

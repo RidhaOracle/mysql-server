@@ -65,8 +65,9 @@ constexpr uint32_t IBUF_BITMAP = PAGE_DATA;
 #include "fsp0sysspace.h"
 #include "fut0lst.h"
 #include "lock0lock.h"
-#include "log0buf.h"
 #include "log0chkp.h"
+#include "log0handler_interface.h"
+#include "log0helpers.h"
 #include "log0recv.h"
 #include "que0que.h"
 #include "rem0cmp.h"
@@ -3582,7 +3583,7 @@ static void ibuf_insert_to_index_page(
                                   mtr);
 
       DBUG_EXECUTE_IF("crash_after_log_ibuf_upd_inplace",
-                      log_buffer_flush_to_disk();
+                      ib::redo::must_persist_all(UT_LOCATION_HERE);
                       ib::info(ER_IB_MSG_615) << "Wrote log record for ibuf"
                                                  " update in place operation";
                       DBUG_SUICIDE(););
@@ -3840,7 +3841,7 @@ static bool ibuf_restore_pos(space_id_t space_id, page_no_t page_no,
     btr_cur_set_deleted_flag_for_ibuf(pcur->get_rec(), nullptr, true, mtr);
 
     ibuf_mtr_commit(mtr);
-    log_buffer_flush_to_disk();
+    ib::redo::must_persist_all(UT_LOCATION_HERE);
     DBUG_SUICIDE();
   }
 #endif /* UNIV_DEBUG || UNIV_IBUF_DEBUG */

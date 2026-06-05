@@ -492,15 +492,13 @@ lsn_t buf_pool_get_oldest_modification_lwm(void) {
     return (0);
   }
 
-  ut_a(lsn % OS_FILE_LOG_BLOCK_SIZE >= LOG_BLOCK_HDR_SIZE);
-
-  const log_t &log = *log_sys;
+  ut_a(log_is_data_lsn(lsn));
 
   const lsn_t lag = buf_flush_list_added->order_lag();
 
   ut_a(lag % OS_FILE_LOG_BLOCK_SIZE == 0);
 
-  const lsn_t checkpoint_lsn = log_get_checkpoint_lsn(log);
+  const lsn_t checkpoint_lsn = log_checkpointing->get_checkpoint();
 
   ut_a(checkpoint_lsn != 0);
 

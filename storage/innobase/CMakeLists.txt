@@ -194,11 +194,14 @@ SET(INNOBASE_SOURCES
   log/log0files_finder.cc
   log/log0files_governor.cc
   log/log0files_io.cc
+  log/log0free_check.cc
+  log/log0handler.cc
   log/log0log.cc
   log/log0meb.cc
   log/log0pfs.cc
   log/log0pre_8_0_30.cc
   log/log0recv.cc
+  log/log0sys_var_handler.cc
   log/log0test.cc
   log/log0write.cc
   mach/mach0data.cc

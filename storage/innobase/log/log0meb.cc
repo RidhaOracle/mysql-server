@@ -1669,16 +1669,19 @@ static bool redo_log_archive_flush(THD *thd) {
   return false;
 }
 
+/* Protected by limits_mutex */
 static std::unique_ptr<Log_user_consumer> log_meb_consumer;
+/* Protected by limits_mutex */
 static innodb_session_t *log_meb_consumer_session;
 
 static bool redo_log_consumer_register(innodb_session_t *session) {
   log_t &log = *log_sys;
 
-  IB_mutex_guard checkpointer_latch{&(log.checkpointer_mutex),
+  IB_mutex_guard checkpointer_latch{&(log_checkpointing->checkpoint_mutex),
                                     UT_LOCATION_HERE};
 
-  IB_mutex_guard files_latch{&(log.m_files_mutex), UT_LOCATION_HERE};
+  IB_mutex_guard limits_latch{&log_checkpointing->limits_mutex,
+                              UT_LOCATION_HERE};
 
   if (session == nullptr || log_meb_consumer_session != nullptr) {
     return true;
@@ -1688,7 +1691,7 @@ static bool redo_log_consumer_register(innodb_session_t *session) {
 
   log_meb_consumer = std::make_unique<Log_user_consumer>("MEB");
 
-  log_meb_consumer->set_consumed_lsn(log_get_checkpoint_lsn(log));
+  log_meb_consumer->set_consumed_lsn(log_checkpointing->get_checkpoint());
 
   log_consumer_register(log, log_meb_consumer.get());
 
@@ -1700,7 +1703,8 @@ static bool redo_log_consumer_register(innodb_session_t *session) {
 static bool redo_log_consumer_unregister(innodb_session_t *session) {
   log_t &log = *log_sys;
 
-  IB_mutex_guard files_latch{&(log.m_files_mutex), UT_LOCATION_HERE};
+  IB_mutex_guard limits_latch{&log_checkpointing->limits_mutex,
+                              UT_LOCATION_HERE};
 
   if (session == nullptr || log_meb_consumer_session != session) {
     return true;
@@ -1717,7 +1721,8 @@ static bool redo_log_consumer_unregister(innodb_session_t *session) {
 }
 
 static bool redo_log_consumer_advance(innodb_session_t *session, lsn_t lsn) {
-  IB_mutex_guard files_latch{&(log_sys->m_files_mutex), UT_LOCATION_HERE};
+  IB_mutex_guard limits_latch{&log_checkpointing->limits_mutex,
+                              UT_LOCATION_HERE};
 
   if (session == nullptr || log_meb_consumer_session != session) {
     return true;
@@ -1778,9 +1783,12 @@ void redo_log_archive_session_end(innodb_session_t *session) {
       }
     }
   }
-
+  if (!ib::redo::handler->get_capabilities().supports_meb) {
+    return;
+  }
   {
-    IB_mutex_guard files_latch{&(log_sys->m_files_mutex), UT_LOCATION_HERE};
+    IB_mutex_guard limits_latch{&log_checkpointing->limits_mutex,
+                                UT_LOCATION_HERE};
 
     if (log_meb_consumer_session != session) {
       return;
@@ -2284,7 +2292,7 @@ long long innodb_redo_log_sharp_checkpoint(
   }
   LogErr(INFORMATION_LEVEL, ER_INNODB_ERROR_LOGGER_MSG,
          "innodb_redo_log_sharp_checkpoint() making checkpoint");
-  log_make_latest_checkpoint(*log_sys);
+  (void)log_checkpointing->request_sharp_checkpoint();
   return 0;
 }
 

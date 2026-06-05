@@ -132,6 +132,7 @@ struct IB_mutex_guard {
                                constructor of IB_mutex_guard is called */
   IB_mutex_guard(ib_mutex_t *in_mutex, const ut::Location &location)
       : m_mutex(in_mutex) {
+    ut_ad(!in_mutex->is_owned());
     mutex_enter_inline(in_mutex, location);
   }
 
@@ -149,6 +150,7 @@ struct IB_mutex_guard {
   ib_mutex_t *m_mutex;
 
   void clear() {
+    ut_ad(m_mutex->is_owned());
     mutex_exit(m_mutex);
     m_mutex = nullptr;
   }

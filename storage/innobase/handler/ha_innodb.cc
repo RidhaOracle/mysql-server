@@ -137,6 +137,8 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #include "log0buf.h"
 #include "log0chkp.h"
 #include "log0encryption.h"
+#include "log0handler_interface.h"
+#include "log0helpers.h"
 #include "log0meb.h"
 #include "log0pfs.h"
 #include "log0pre_8_0_30.h"
@@ -214,6 +216,7 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #include <mutex>
 #include <sstream>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #ifdef HAVE_UNISTD_H
@@ -4368,13 +4371,59 @@ static bool innobase_is_supported_system_table(const char *, const char *,
   return is_sql_layer_system_table;
 }
 
+/* Reencrypt encryption key for REDO log with new master key.
+@return false on success, true on failure. */
+[[nodiscard]] static bool log_encryption_rotate() {
+  using Status = ib::redo::Status;
+  using Metadata_key = ib::redo::Metadata_key;
+  using Metadata_value = ib::redo::Handler_interface::Metadata_value;
+
+  Status status = Status::SUCCESS;
+  /* Read the header block with Encryption info */
+  Metadata_value header_block{0};
+  status = ib::redo::handler->get_metadata(Metadata_key::HEADER, header_block);
+
+  if (status == Status::METADATA_IS_MISSING ||
+      (status == Status::SUCCESS && header_block == Metadata_value{})) {
+    /* No encryption info found. Skip. */
+    ut_ad(!srv_redo_log_encrypt);
+    return false;
+  }
+
+  if (status != Status::SUCCESS) {
+    return true;
+  }
+
+  auto log_encryption_info =
+      header_block.data() + LOG_HEADER_ENCRYPTION_INFO_OFFSET;
+  Encryption_metadata encryption_metadata;
+  /* Decrypt the encryption information */
+  if (!Encryption::decode_encryption_info(encryption_metadata,
+                                          log_encryption_info, true)) {
+    return true;
+  }
+
+  /* Re-encrypt the encryption information with new master key */
+  if (!Encryption::fill_encryption_info(encryption_metadata, true,
+                                        log_encryption_info)) {
+    return true;
+  }
+
+  /* Write back the updated encryption info */
+  if (ib::redo::handler->store_metadata(Metadata_key::HEADER, header_block) !=
+      Status::SUCCESS) {
+    return true;
+  }
+
+  return false;
+}
+
 /** Rotate the encrypted tablespace keys according to master key
 rotation.
 @return false on success, true on failure */
 bool innobase_encryption_key_rotation() {
   byte *master_key = nullptr;
   bool ret = false;
-  dberr_t err;
 
   /* Pause here to try other locks while this thread holds the backup locks. */
   DEBUG_SYNC_C("ib_pause_encryption_rotate");
@@ -4387,13 +4436,11 @@ bool innobase_encryption_key_rotation() {
   /* Take mutex as master_key_id is going to be changed. */
   mutex_enter(&master_key_id_mutex);
 
-  /* Check if keyring loaded and the currently master key
-  can be fetched. */
+  /* Check if keyring loaded and the currently master key can be fetched. */
   if (Encryption::get_master_key_id() != Encryption::DEFAULT_MASTER_KEY_ID) {
     uint32_t master_key_id;
 
     Encryption::get_master_key(&master_key_id, &master_key);
-
     if (master_key == nullptr) {
       my_error(ER_CANNOT_FIND_KEY_IN_KEYRING, MYF(0));
       ret = true;
@@ -4406,7 +4453,6 @@ bool innobase_encryption_key_rotation() {
 
   /* Generate the new master key. */
   Encryption::create_master_key(&master_key);
-
   if (master_key == nullptr) {
     my_error(ER_CANNOT_FIND_KEY_IN_KEYRING, MYF(0));
     ret = true;
@@ -4420,8 +4466,10 @@ bool innobase_encryption_key_rotation() {
     goto error_exit;
   }
 
-  err = log_encryption_on_master_key_changed(*log_sys);
-  ret = (err != DB_SUCCESS);
+  /* Update the REDO log Encryption */
+  if (ib::redo::handler->get_capabilities().supports_encryption) {
+    ret = log_encryption_rotate();
+  }
 
   /* If rotation failure, return error */
   if (ret) {
@@ -4447,6 +4495,10 @@ static bool innobase_redo_set_state(THD *thd, bool enable) {
   if (srv_read_only_mode) {
     my_error(ER_INNODB_READ_ONLY, MYF(0));
     return (true);
+  }
+  if (!ib::redo::handler->get_capabilities().supports_disabling) {
+    my_error(ER_CHECK_NOT_IMPLEMENTED, MYF(0), "disabling redo log");
+    return true;
   }
 
   int err = 0;
@@ -5871,8 +5923,11 @@ static bool innobase_flush_logs(handlerton *hton, bool binlog_group_flush) {
   Sync it to disc if we are in FLUSH LOGS, or if
   innodb_flush_log_at_trx_commit=1
   (write and sync at each commit). */
-  log_buffer_flush_to_disk(!binlog_group_flush ||
-                           srv_flush_log_at_trx_commit == 1);
+  using Durability = ib::redo::Handler_interface::Durability;
+  ib::redo::must_persist_all(
+      UT_LOCATION_HERE, !binlog_group_flush || srv_flush_log_at_trx_commit == 1
+                            ? Durability::FULLY_PERSISTED
+                            : Durability::OUTLIVE_PROCESS);
 
   return false;
 }
@@ -21631,6 +21686,10 @@ is registered as a callback with MySQL.
 @return error code */
 static int validate_innodb_redo_log_encrypt(THD *thd, SYS_VAR *var, void *save,
                                             struct st_mysql_value *value) {
+  if (!ib::redo::handler->get_capabilities().supports_encryption) {
+    return 1;
+  }
+
   /* Call the default check function first. */
   auto error = check_func_bool(thd, var, save, value);
   if (error != 0) {
@@ -21648,7 +21707,7 @@ static int validate_innodb_redo_log_encrypt(THD *thd, SYS_VAR *var, void *save,
 
   /* If encryption is to be disabled. This will just make sure I/O doesn't
   write REDO encrypted from now on. */
-  if (target == false) {
+  if (!target) {
     *static_cast<bool *>(save) = false;
     return (0);
   }
@@ -21876,8 +21935,7 @@ static void log_flush_now_set(THD *, SYS_VAR *, void *, const void *save) {
   if (!*(bool *)save) {
     return;
   }
-
-  log_buffer_flush_to_disk(true);
+  ib::redo::must_persist_all(UT_LOCATION_HERE);
 }
 
 /** Force InnoDB to do sharp checkpoint. This forces a flush of all
@@ -21889,13 +21947,13 @@ static void checkpoint_now_set(THD *, SYS_VAR *, void *, const void *save) {
     It seems to be very risky feature. Fortunately it is used
     only inside mtr tests. */
 
-    while (log_make_latest_checkpoint(*log_sys)) {
+    while (log_checkpointing->request_sharp_checkpoint()) {
       /* Creating checkpoint could itself result in
       new log records. Hence we repeat until:
-              last_checkpoint_lsn = log_get_lsn(). */
+        last_checkpoint_lsn = ib::redo::handler->peek_first_unassigned_lsn(). */
     }
 
-    dberr_t err = fil_write_flushed_lsn(log_sys->last_checkpoint_lsn.load());
+    dberr_t err = fil_write_flushed_lsn(log_checkpointing->get_checkpoint());
 
     ut_a(err == DB_SUCCESS);
   }
@@ -21914,14 +21972,15 @@ static void checkpoint_fuzzy_now_set(THD *, SYS_VAR *, void *,
     It seems to be very risky feature. Fortunately it is used
     only inside mtr tests. */
 
-    log_request_checkpoint(*log_sys, true);
+    log_checkpointing->request_fuzzy_checkpoint(true);
   }
 }
 
 /** Updates srv_checkpoint_disabled - allowing or disallowing checkpoints.
 This is called when user invokes SET GLOBAL innodb_checkpoints_disabled=0/1.
 After checkpoints are disabled, there will be no write of a checkpoint,
-until checkpoints are re-enabled (log_sys->checkpointer_mutex protects that)
+until checkpoints are re-enabled (log_checkpointing->checkpointer_mutex
+protects that)
 @param[in]      save              immediate result from check function */
 static void checkpoint_disabled_update(THD *, SYS_VAR *, void *,
                                        const void *save) {
@@ -21932,15 +21991,13 @@ static void checkpoint_disabled_update(THD *, SYS_VAR *, void *,
   is acquired, current value of srv_checkpoint_disabled is checked,
   and if checkpoints are disabled, we cancel writing the checkpoint. */
 
-  log_t &log = *log_sys;
-
-  log_checkpointer_mutex_enter(log);
-  log_limits_mutex_enter(log);
+  log_checkpointer_mutex_enter();
+  log_limits_mutex_enter();
 
   srv_checkpoint_disabled = *static_cast<const bool *>(save);
 
-  log_limits_mutex_exit(log);
-  log_checkpointer_mutex_exit(log);
+  log_limits_mutex_exit();
+  log_checkpointer_mutex_exit();
 }
 
 /** Force a dirty pages flush now.
@@ -22031,78 +22088,39 @@ value. This function is registered as a callback with MySQL.
 @param[in]  save      immediate result from check function */
 static void innodb_log_write_ahead_size_update(THD *thd, SYS_VAR *, void *,
                                                const void *save) {
-  ulong val = INNODB_LOG_WRITE_AHEAD_SIZE_MIN;
-  ulong in_val = *static_cast<const ulong *>(save);
-
-  while (val < in_val) {
-    val = val * 2;
-  }
-  if (val > INNODB_LOG_WRITE_AHEAD_SIZE_MAX) {
-    val = INNODB_LOG_WRITE_AHEAD_SIZE_MAX;
-  }
-
-  if (val > UNIV_PAGE_SIZE) {
-    val = UNIV_PAGE_SIZE;
-    push_warning_printf(thd, Sql_condition::SL_WARNING, ER_WRONG_ARGUMENTS,
-                        "innodb_log_write_ahead_size cannot"
-                        " be set higher than innodb_page_size.");
-  } else if (val != in_val) {
-    push_warning_printf(thd, Sql_condition::SL_WARNING, ER_WRONG_ARGUMENTS,
-                        "innodb_log_write_ahead_size should be"
-                        " set to power of 2, in range [%lu," ULINTPF "]",
-                        INNODB_LOG_WRITE_AHEAD_SIZE_MIN,
-                        INNODB_LOG_WRITE_AHEAD_SIZE_MAX);
-  }
-
-  if (val != in_val) {
-    push_warning_printf(thd, Sql_condition::SL_WARNING, ER_WRONG_ARGUMENTS,
-                        "Setting innodb_log_write_ahead_size"
-                        " to %lu",
-                        val);
-  }
-
-  log_write_ahead_resize(*log_sys, val);
+  const ulong val = *static_cast<const ulong *>(save);
+  (void)ib::redo::handler->config_handler().update_var(
+      thd, "innodb_log_write_ahead_size", static_cast<uint64_t>(val));
 }
 
 /** Update the system variable innodb_log_buffer_size using the "saved"
 value. This function is registered as a callback with MySQL.
+@param[in]      thd       thread handle
 @param[in]      save      immediate result from check function */
-static void innodb_log_buffer_size_update(THD *, SYS_VAR *, void *,
+static void innodb_log_buffer_size_update(THD *thd, SYS_VAR *, void *,
                                           const void *save) {
   const ulong val = *static_cast<const ulong *>(save);
-
-  ib::info(ER_IB_MSG_1255) << "Setting innodb_log_buffer_size to " << val;
-
-  if (!log_buffer_resize(*log_sys, val)) {
-    /* This could happen if we tried to decrease size of the
-    log buffer but we had more data in the log buffer than
-    the new size. We could have asked for writing the data to
-    disk, after x-locking the log buffer, but this could lead
-    to deadlock if there was no space in log files and checkpoint
-    was required (because checkpoint writes new redo records
-    when persisting dd table buffer). That's why we don't ask
-    for writing to disk. */
-
-    ib::error(ER_IB_MSG_1256) << "Failed to change size of the log buffer."
-                                 " Try flushing the log buffer first.";
-  }
+  constexpr std::string_view var_name = "innodb_log_buffer_size";
+  ib::info(ER_IB_MSG_1255) << "Setting " << var_name << " to " << val;
+  /* May return false if new value is less than currently held data in the log
+  buffer */
+  (void)ib::redo::handler->config_handler().update_var(
+      thd, var_name, static_cast<uint64_t>(val));
 }
 
 /** Update the innodb_log_writer_threads parameter.
-@param[out]     var_ptr   current value
+@param[in]      thd       thread handle
+@param[in]      var_ptr   current value
 @param[in]      save      immediate result from check function */
-static void innodb_log_writer_threads_update(THD *, SYS_VAR *, void *var_ptr,
+static void innodb_log_writer_threads_update(THD *thd, SYS_VAR *, void *var_ptr,
                                              const void *save) {
   ulong &current_value = *static_cast<ulong *>(var_ptr);
   const ulong &new_value = *static_cast<const ulong *>(save);
   ut_ad_le(new_value, 1);
-
   current_value = new_value;
-  srv_log_writer_threads = static_cast<bool>(new_value);
 
-  /* pause/resume the log writer threads based on innodb_log_writer_threads
-  value. */
-  log_control_writer_threads(*log_sys);
+  (void)ib::redo::handler->config_handler().update_var(
+      thd, "innodb_log_writer_threads", static_cast<bool>(new_value));
 }
 
 /** Update the system variable innodb_redo_log_capacity using the "saved"
@@ -22111,38 +22129,11 @@ value. This function is registered as a callback with MySQL.
 @param[in]  save      immediate result from check function */
 static void innodb_redo_log_capacity_update(THD *thd, SYS_VAR *, void *,
                                             const void *save) {
-  const auto new_value = *static_cast<const ulonglong *>(save);
-
-  ut_a(LOG_CAPACITY_MIN <= new_value);
-  ut_a(new_value <= LOG_CAPACITY_MAX);
-  ut_a(new_value % MB == 0);
-
-  if (srv_read_only_mode) {
-    my_error(ER_CANT_CHANGE_SYS_VAR_IN_READ_ONLY_MODE, MYF(0),
-             "innodb-redo-log-capacity");
-    return;
-  }
-
-  srv_redo_log_capacity = new_value;
-
-  if (new_value == srv_redo_log_capacity_used) {
-    return;
-  }
-
-  srv_redo_log_capacity_used = new_value;
-
-  ib::info(ER_IB_MSG_LOG_FILES_CAPACITY_CHANGED,
-           srv_redo_log_capacity_used / MB);
-
-  log_files_resize_requested(*log_sys);
-
-  if (!log_sys->concurrency_margin_is_safe.load()) {
-    push_warning_printf(thd, Sql_condition::SL_WARNING, ER_WRONG_ARGUMENTS,
-                        "Current innodb_redo_log_capacity"
-                        " is too small for safety of redo log files."
-                        " Consider increasing it or decreasing"
-                        " innodb_thread_concurrency.");
-  }
+  const ulonglong val = *static_cast<const ulonglong *>(save);
+  /* May return false if server is in read only mode or new value is same as
+  existing value `srv_redo_log_capacity_used` */
+  (void)ib::redo::handler->config_handler().update_var(
+      thd, "innodb_redo_log_capacity", static_cast<uint64_t>(val));
 }
 
 /** Update the system variable innodb_thread_concurrency using the "saved"
@@ -22154,10 +22145,7 @@ static void innodb_thread_concurrency_update(THD *thd, SYS_VAR *, void *,
   srv_thread_concurrency = *static_cast<const ulong *>(save);
 
   ib::info(ER_IB_MSG_THREAD_CONCURRENCY_CHANGED, srv_thread_concurrency);
-
-  log_files_thread_concurrency_updated(*log_sys);
-
-  if (!log_sys->concurrency_margin_is_safe.load()) {
+  if (!srv_reconfigure_log_handler()) {
     push_warning_printf(thd, Sql_condition::SL_WARNING, ER_WRONG_ARGUMENTS,
                         "Current innodb_thread_concurrency"
                         " is too big for safety of redo log files."

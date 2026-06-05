@@ -777,11 +777,7 @@ class Clone_Snapshot {
   int init_file_copy(Snapshot_State new_state);
 
   /** Initialize disk byte estimate. */
-  void init_disk_estimate() {
-    /* Initial size is set to the redo file size on disk. */
-    IB_mutex_guard latch{&(log_sys->limits_mutex), UT_LOCATION_HERE};
-    m_data_bytes_disk = log_sys->m_capacity.current_physical_capacity();
-  }
+  void init_disk_estimate();
 
   /** Initialize snapshot state for page copy
   @param[in]    new_state       state to move for apply

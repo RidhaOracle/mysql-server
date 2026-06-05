@@ -2310,7 +2310,7 @@ PageConverter::PageConverter(row_import *cfg, trx_t *trx)
       m_heap(nullptr) UNIV_NOTHROW {
   m_index = m_cfg->m_indexes;
 
-  m_current_lsn = log_sys->flushed_to_disk_lsn;
+  m_current_lsn = ib::redo::handler->peek_first_nonpersisted_lsn();
   ut_a(m_current_lsn > 0);
 
   m_offsets = m_offsets_;
@@ -2887,7 +2887,8 @@ static void row_import_discard_changes(
 
   DBUG_EXECUTE_IF("ib_import_before_checkpoint_crash", DBUG_SUICIDE(););
 
-  log_make_latest_checkpoint();
+  /* ignore if current lsn is already checkpointed */
+  (void)log_checkpointing->request_sharp_checkpoint();
 
   return (err);
 }

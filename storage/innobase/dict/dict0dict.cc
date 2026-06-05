@@ -51,7 +51,8 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #endif /* !UNIV_HOTBACKUP */
 #include "ha_prototypes.h"
 #include "log0chkp.h"
-#include "log0write.h"
+#include "log0handler_interface.h"
+#include "log0helpers.h"
 #include "my_dbug.h"
 
 #ifndef UNIV_HOTBACKUP
@@ -229,7 +230,7 @@ static void dict_index_remove_from_cache_low(
 have some changed dynamic metadata in memory and have not been written
 back to mysql.innodb_dynamic_metadata. Update LSN limit, which is used
 to stop user threads when redo log is running out of space and they
-do not hold latches (log.free_check_limit_lsn). */
+do not hold latches (log.m_free_check_limit_lsn). */
 static void dict_persist_update_log_margin();
 
 /** Removes a table object from the dictionary cache. */
@@ -834,7 +835,7 @@ bool dict_table_autoinc_log(dict_table_t *table, uint64_t value, mtr_t *mtr) {
     dict_persist->mutex. Above update to AUTOINC would be either
     written back to DDTableBuffer or not. But the redo logs for
     current change won't be counted into current checkpoint.
-    See how log_sys->dict_max_allowed_checkpoint_lsn is set.
+    See how log_checkpointing->m_min_lsn_needed_by_dict_persist is set.
     So even a crash after below redo log flushed, no change lost.
 
     If that function sets the dirty_status after below checking,
@@ -4154,7 +4155,9 @@ void dict_set_corrupted(dict_index_t *index) {
     mtr.commit();
 
     /* Make sure the corruption bit won't be lost */
-    log_write_up_to(*log_sys, mtr.commit_lsn(), true);
+    ib::redo::must_succeed(
+        ib::redo::handler->persist_smaller_than(mtr.commit_lsn()),
+        UT_LOCATION_HERE);
 
     DBUG_INJECT_CRASH("log_corruption_crash", 1);
 
@@ -4221,8 +4224,8 @@ accordingly. */
 void dict_persist_to_dd_table_buffer() {
   bool persisted = false;
 
-  if (dict_sys == nullptr) {
-    log_set_dict_max_allowed_checkpoint_lsn(*log_sys, 0);
+  if (dict_sys == nullptr || srv_read_only_mode) {
+    log_checkpointing->set_min_lsn_needed_by_dict_persist(0);
     return;
   }
 
@@ -4250,7 +4253,7 @@ void dict_persist_to_dd_table_buffer() {
   /* Get this lsn with dict_persist->mutex held,
   so no other concurrent dynamic metadata change logs
   would be before this lsn. */
-  const lsn_t persisted_lsn = log_get_lsn(*log_sys);
+  const lsn_t persisted_lsn = ib::redo::handler->peek_first_unassigned_lsn();
 
   /* As soon as we release the dict_persist->mutex, new dynamic
   metadata changes could happen. They would be not persisted
@@ -4258,20 +4261,17 @@ void dict_persist_to_dd_table_buffer() {
   We must not remove redo which could allow to deduce them.
   Therefore the maximum allowed lsn for checkpoint is the
   current lsn. */
-  log_set_dict_max_allowed_checkpoint_lsn(*log_sys, persisted_lsn);
+  log_checkpointing->set_min_lsn_needed_by_dict_persist(persisted_lsn);
 
   mutex_exit(&dict_persist->mutex);
 
   if (persisted) {
-    log_write_up_to(*log_sys, persisted_lsn, true);
+    ib::redo::must_succeed(
+        ib::redo::handler->persist_smaller_than(persisted_lsn),
+        UT_LOCATION_HERE);
   }
 }
 
-/** Calculate and update the redo log margin for current tables which
-have some changed dynamic metadata in memory and have not been written
-back to mysql.innodb_dynamic_metadata. Update LSN limit, which is used
-to stop user threads when redo log is running out of space and they
-do not hold latches (log.free_check_limit_lsn). */
 static void dict_persist_update_log_margin() {
   /* Below variables basically considers only the AUTO_INCREMENT counter
   and a small margin for corrupted indexes. */
@@ -4310,9 +4310,9 @@ static void dict_persist_update_log_margin() {
                        total_splits * log_margin_per_split_no_root +
                        (num_dirty_tables == 0 ? 0 : log_margin_per_split_root));
 
-  if (log_sys != nullptr) {
+  if (log_checkpointing != nullptr) {
     /* Update margin for redo log */
-    log_set_dict_persist_margin(*log_sys, margin);
+    log_checkpointing->set_dict_persist_margin(margin);
   }
 }
 

@@ -1661,14 +1661,6 @@ void clone_free() {
 
 bool clone_check_provisioning() { return Clone_handler::is_provisioning(); }
 
-bool clone_check_active() {
-  mutex_enter(clone_sys->get_mutex());
-  auto is_active = clone_sys->check_active_clone(false);
-  mutex_exit(clone_sys->get_mutex());
-
-  return (is_active || Clone_handler::is_provisioning());
-}
-
 template <typename T>
 using DD_Objs = std::vector<const T *>;
 

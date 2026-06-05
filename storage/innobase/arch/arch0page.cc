@@ -951,7 +951,7 @@ int Page_Arch_Client_Ctx::start(bool recovery, uint64_t *start_id) {
 
     ib::info(ER_IB_MSG_20) << "Clone Start PAGE ARCH : start LSN : "
                            << m_start_lsn << ", checkpoint LSN : "
-                           << log_get_checkpoint_lsn(*log_sys);
+                           << log_checkpointing->get_checkpoint();
   }
 
   return (err);
@@ -999,9 +999,10 @@ int Page_Arch_Client_Ctx::stop(lsn_t *stop_id) {
   }
 
   arch_client_mutex_exit();
-
+  ut_a(ib::redo::handler->get_capabilities().supports_clone);
   ib::info(ER_IB_MSG_21) << "Clone Stop  PAGE ARCH : end   LSN : " << m_stop_lsn
-                         << ", log sys LSN : " << log_get_lsn(*log_sys);
+                         << ", log sys LSN : "
+                         << ib::redo::handler->peek_first_unassigned_lsn();
 
   return (err);
 }
@@ -1600,7 +1601,7 @@ void Arch_Page_Sys::post_recovery_init() {
   }
 
   arch_oper_mutex_enter();
-  m_latest_stop_lsn = log_get_checkpoint_lsn(*log_sys);
+  m_latest_stop_lsn = log_checkpointing->get_checkpoint();
   auto cur_block = m_data.get_block(&m_write_pos, ARCH_DATA_BLOCK);
   update_stop_info(cur_block);
   arch_oper_mutex_exit();
@@ -2389,8 +2390,10 @@ int Arch_Page_Sys::start(Arch_Group **group, lsn_t *start_lsn,
         if (!recovery) {
           MONITOR_INC(MONITOR_PAGE_TRACK_RESETS);
         }
-
-        log_sys_lsn = (recovery ? m_last_lsn : log_get_lsn(*log_sys));
+        ut_a(ib::redo::handler->get_capabilities().supports_clone);
+        log_sys_lsn =
+            (recovery ? m_last_lsn
+                      : ib::redo::handler->peek_first_unassigned_lsn());
 
         /* Enable/Reset buffer pool page tracking. */
         set_tracking_buf_pool(log_sys_lsn);
@@ -2570,7 +2573,7 @@ int Arch_Page_Sys::start(Arch_Group **group, lsn_t *start_lsn,
     }
 
     /* Request checkpoint */
-    log_request_checkpoint(*log_sys, true);
+    log_checkpointing->request_fuzzy_checkpoint(true);
   }
 
   return (0);
@@ -2996,7 +2999,7 @@ bool Arch_Page_Sys::save_reset_point(bool is_durable) {
     cur_block->begin_write(m_last_pos);
   }
 
-  m_latest_stop_lsn = log_get_checkpoint_lsn(*log_sys);
+  m_latest_stop_lsn = log_checkpointing->get_checkpoint();
   update_stop_info(cur_block);
 
   /* 2. Add the reset lsn to the current write_pos block header and request the
@@ -3103,7 +3106,7 @@ uint Arch_Page_Sys::purge(lsn_t *purge_lsn) {
   uint err = 0;
 
   if (*purge_lsn == 0) {
-    *purge_lsn = log_get_checkpoint_lsn(*log_sys);
+    *purge_lsn = log_checkpointing->get_checkpoint();
   }
 
   DBUG_PRINT("page_archiver", ("Purging of files - %" PRIu64 "", *purge_lsn));

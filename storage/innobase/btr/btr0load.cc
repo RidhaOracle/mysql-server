@@ -984,7 +984,7 @@ dberr_t Btree_load::page_commit(Page_load *page_loader,
 
 void Btree_load::log_free_check() noexcept {
   ut_ad(m_n_recs > 0);
-  bool is_req = log_free_check_is_required();
+  bool is_req = !ib::redo::handler->has_space();
   DBUG_EXECUTE_IF("btree_load_simulate_log_free", is_req = true;);
 
   if (is_req) {

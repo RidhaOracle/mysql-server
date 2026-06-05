@@ -47,6 +47,8 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #include "ha_prototypes.h"
 #include "lock0lock.h"
 #include "log0chkp.h"
+#include "log0handler_interface.h"
+#include "log0helpers.h"
 #include "log0write.h"
 #include "os0proc.h"
 #include "que0que.h"
@@ -1724,13 +1726,14 @@ static void trx_finalize_for_fts(
 static void trx_flush_log_if_needed_low(lsn_t lsn) /*!< in: lsn up to which logs
                                                    are to be flushed. */
 {
+  using Durability = ib::redo::Handler_interface::Durability;
+  using Origin = ib::redo::Handler_interface::Origin;
+
 #ifdef _WIN32
   bool flush = true;
 #else
   bool flush = srv_unix_file_flush_method != SRV_UNIX_NOSYNC;
 #endif /* _WIN32 */
-
-  Wait_stats wait_stats;
 
   switch (srv_flush_log_at_trx_commit) {
     case 2:
@@ -1738,10 +1741,12 @@ static void trx_flush_log_if_needed_low(lsn_t lsn) /*!< in: lsn up to which logs
       flush = false;
       [[fallthrough]];
     case 1:
-      /* Write the log and optionally flush it to disk */
-      wait_stats = log_write_up_to(*log_sys, lsn, flush);
-
-      MONITOR_INC_WAIT_STATS(MONITOR_TRX_ON_LOG_, wait_stats);
+      ib::redo::must_succeed(
+          ib::redo::handler->persist_smaller_than(
+              lsn,
+              flush ? Durability::FULLY_PERSISTED : Durability::OUTLIVE_PROCESS,
+              Origin::TRX_COMMIT),
+          UT_LOCATION_HERE);
 
       return;
     case 0:
@@ -1756,13 +1761,18 @@ static void trx_flush_log_if_needed(lsn_t lsn, /*!< in: lsn up to which logs are
                                                to be flushed. */
                                     trx_t *trx) /*!< in/out: transaction */
 {
+  using Durability = ib::redo::Handler_interface::Durability;
+  using Origin = ib::redo::Handler_interface::Origin;
+
   trx->op_info = "flushing log";
 
   DEBUG_SYNC_C("trx_flush_log_if_needed");
 
   if (trx->ddl_operation || trx->ddl_must_flush) {
-    auto wait_stats = log_write_up_to(*log_sys, lsn, true);
-    MONITOR_INC_WAIT_STATS(MONITOR_TRX_ON_LOG_, wait_stats);
+    ib::redo::must_succeed(
+        ib::redo::handler->persist_smaller_than(
+            lsn, Durability::FULLY_PERSISTED, Origin::TRX_COMMIT),
+        UT_LOCATION_HERE);
   } else {
     trx_flush_log_if_needed_low(lsn);
   }
@@ -2191,7 +2201,7 @@ void trx_commit_low(trx_t *trx, mtr_t *mtr) {
 
     DBUG_EXECUTE_IF("trx_commit_to_the_end_of_log_block", {
       const size_t space_left = mtr->get_expected_log_size();
-      mtr_commit_mlog_test_filling_block(*log_sys, space_left);
+      mtr_commit_mlog_test_filling_block(space_left);
     });
 
     mtr_commit(mtr);
@@ -2200,7 +2210,7 @@ void trx_commit_low(trx_t *trx, mtr_t *mtr) {
 
     DBUG_EXECUTE_IF(
         "ib_crash_during_trx_commit_in_mem", if (trx_is_rseg_updated(trx)) {
-          log_make_latest_checkpoint();
+          (void)log_checkpointing->request_sharp_checkpoint();
           DBUG_SUICIDE();
         });
     /*--------------*/

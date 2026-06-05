@@ -38,6 +38,7 @@ Atomic writes handling. */
 #include "page0zip.h"
 #include "srv0srv.h"
 #include "srv0start.h"
+#include "ut0dbg.h"
 #include "ut0mpmcbq.h"
 #include "ut0mutex.h"
 #include "ut0test.h"
@@ -1957,7 +1958,7 @@ bool Double_write::create_v1(page_no_t &page_no1,
   mtr.commit();
 
   /* Flush the modified pages to disk and make a checkpoint. */
-  log_make_latest_checkpoint();
+  (void)log_checkpointing->request_sharp_checkpoint();
 
   /* Remove doublewrite pages from the LRU list. */
   buf_pool_invalidate();

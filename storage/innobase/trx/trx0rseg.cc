@@ -644,7 +644,11 @@ page_no_t trx_rseg_create(space_id_t space_id, ulint rseg_id) {
   mtr_t mtr;
   fil_space_t *space = fil_space_get(space_id);
 
-  log_free_check();
+  /* Temporary tablespace doesn't require redo logging.
+  There is no need to check for space in the redo log. */
+  if (!fsp_is_system_temporary(space_id)) {
+    log_free_check();
+  }
 
   mtr_start(&mtr);
 
@@ -788,7 +792,10 @@ bool trx_rseg_add_rollback_segments(space_id_t space_id, ulong target_rsegs,
     }
 
     if (page_no == FIL_NULL) {
-      /* Create the missing rollback segment if allowed. */
+      /* Create the missing rollback segment in the undo space if allowed -
+      either if it is a temporary space that doesn’t require redo logging,
+      or if the space requires redo logging and InnoDB is in a state that
+      permits it. */
       if (type == TEMP || (!srv_read_only_mode && srv_force_recovery == 0)) {
         page_no = trx_rseg_create(space_id, rseg_id);
         if (page_no == FIL_NULL) {
@@ -942,7 +949,8 @@ bool trx_rseg_adjust_rollback_segments(ulong target_rollback_segments) {
 
   /* Make sure these rollback segments are checkpointed. */
   if (n_total_created > 0 && !srv_read_only_mode && srv_force_recovery == 0) {
-    log_make_latest_checkpoint();
+    /* ignore if current lsn is already checkpointed */
+    (void)log_checkpointing->request_sharp_checkpoint();
   }
 
   return (true);

@@ -61,8 +61,8 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #include "ha_prototypes.h"
 #include "ibuf0ibuf.h"
 #include "lock0lock.h"
-#include "log0buf.h"
 #include "log0chkp.h"
+#include "log0helpers.h"
 #include "pars0pars.h"
 #include "que0que.h"
 #include "rem0cmp.h"
@@ -691,10 +691,7 @@ handle_new_error:
     case DB_COMPUTE_VALUE_FAILED:
     case DB_LOCK_NOWAIT:
     case DB_BTREE_LEVEL_LIMIT_EXCEEDED:
-      DBUG_EXECUTE_IF("row_mysql_crash_if_error", {
-        log_buffer_flush_to_disk();
-        DBUG_SUICIDE();
-      });
+      DBUG_INJECT_CRASH_WITH_LOG_FLUSH("row_mysql_crash_if_error");
       if (savept) {
         /* Roll back the latest, possibly incomplete insertion
         or update */
@@ -3116,7 +3113,7 @@ static dberr_t row_drop_table_for_mysql_in_background(
   the InnoDB data dictionary get out-of-sync if the user runs
   with innodb_flush_log_at_trx_commit = 0 */
 
-  log_buffer_flush_to_disk();
+  ib::redo::must_persist_all(UT_LOCATION_HERE);
 
   trx_commit_for_mysql(trx);
 
@@ -3380,10 +3377,11 @@ static dberr_t row_discard_tablespace_end(trx_t *trx, dict_table_t *table,
   }
 
   DBUG_EXECUTE_IF("ib_discard_before_commit_crash",
-                  log_make_latest_checkpoint();
+                  (void)log_checkpointing->request_sharp_checkpoint();
                   DBUG_SUICIDE(););
 
-  DBUG_EXECUTE_IF("ib_discard_after_commit_crash", log_make_latest_checkpoint();
+  DBUG_EXECUTE_IF("ib_discard_after_commit_crash",
+                  (void)log_checkpointing->request_sharp_checkpoint();
                   DBUG_SUICIDE(););
 
   row_mysql_unlock_data_dictionary(trx);

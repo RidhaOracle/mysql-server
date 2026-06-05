@@ -53,9 +53,9 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #include "fil0fil.h"
 #include "fsp0sysspace.h"
 #include "ibuf0ibuf.h"
-#include "log0buf.h"
 #include "log0chkp.h"
-#include "log0write.h"
+#include "log0handler_interface.h"
+#include "log0helpers.h"
 #include "my_compiler.h"
 #include "os0file.h"
 #include "os0thread-create.h"
@@ -275,13 +275,11 @@ static bool buf_flush_validate_skip(
 #endif /* UNIV_DEBUG || UNIV_BUF_DEBUG */
 
 bool buf_are_flush_lists_empty_validate(void) {
-  /* No mutex is acquired. It is used by single-thread
-  in assertions during startup. */
+  /* No mutex is acquired. Result might be stale if there are concurrent threads
+  modifying the flush_list. */
 
   for (size_t i = 0; i < srv_buf_pool_instances; i++) {
-    auto buf_pool = buf_pool_from_array(i);
-
-    if (UT_LIST_GET_FIRST(buf_pool->flush_list) != nullptr) {
+    if (0 < buf_pool_from_array(i)->flush_list.get_length()) {
       return false;
     }
   }
@@ -378,7 +376,7 @@ void buf_flush_insert_into_flush_list(
     lsn_t lsn)            /*!< in: oldest modification */
 {
   ut_ad(mutex_own(buf_page_get_mutex(&block->page)));
-  ut_ad(log_sys != nullptr);
+  ut_ad(ib::redo::handler != nullptr);
 
   buf_flush_list_mutex_enter(buf_pool);
 
@@ -418,7 +416,9 @@ void buf_flush_insert_into_flush_list(
     we read it). */
 
     block->page.set_newest_lsn(
-        std::max(lsn, log_sys->flushed_to_disk_lsn.load()));
+        srv_force_recovery < SRV_FORCE_NO_LOG_REDO
+            ? std::max(lsn, ib::redo::handler->peek_first_nonpersisted_lsn())
+            : lsn);
   }
 
   ut_ad(log_is_data_lsn(lsn));
@@ -955,17 +955,22 @@ static void buf_flush_write_block_low(buf_page_t *bpage, buf_flush_t flush_type,
   if (!srv_read_only_mode) {
     const lsn_t flush_to_lsn = bpage->get_newest_lsn();
 
-    /* Do the check before calling log_write_up_to() because in most
+    /* Do the check before calling persist_smaller_than() because in most
     cases it would allow to avoid call, and because of that we don't
     want those calls because they would have bad impact on the counter
-    of calls, which is monitored to save CPU on spinning in log threads. */
+    of calls, which is monitored to save CPU on spinning in log threads.
 
-    if (log_sys->flushed_to_disk_lsn.load() < flush_to_lsn) {
-      Wait_stats wait_stats;
-
-      wait_stats = log_write_up_to(*log_sys, flush_to_lsn, true);
-
-      MONITOR_INC_WAIT_STATS_EX(MONITOR_ON_LOG_, _PAGE_WRITTEN, wait_stats);
+    The peek_first_nonpersisted_lsn() and persist_smaller_than() shouldn't be
+    called before start_writing(). See comment in log_write_up_to() for more
+    explanation why we can skip the call when recv_recovery_is_on() == true. */
+    if (!recv_recovery_is_on() &&
+        ib::redo::handler->peek_first_nonpersisted_lsn() < flush_to_lsn) {
+      ib::redo::must_succeed(
+          ib::redo::handler->persist_smaller_than(
+              flush_to_lsn,
+              ib::redo::Handler_interface::Durability::FULLY_PERSISTED,
+              ib::redo::Handler_interface::Origin::PAGE_FLUSHING),
+          UT_LOCATION_HERE);
     }
   }
 
@@ -2203,14 +2208,10 @@ ulint get_pct_for_dirty() {
  @return percent of io_capacity to flush to manage redo space */
 ulint get_pct_for_lsn(lsn_t age) /*!< in: current age of LSN. */
 {
-  ut_a(log_sys != nullptr);
-  log_t &log = *log_sys;
-
   lsn_t limit_for_free_check;
   lsn_t limit_for_dirty_page_age;
 
-  log_files_capacity_get_limits(log, limit_for_free_check,
-                                limit_for_dirty_page_age);
+  log_checkpointing->get_limits(limit_for_free_check, limit_for_dirty_page_age);
 
   double lsn_age_factor;
   lsn_t af_lwm = (srv_adaptive_flushing_lwm * limit_for_free_check) / 100;
@@ -2246,7 +2247,7 @@ ulint get_pct_for_lsn(lsn_t age) /*!< in: current age of LSN. */
 @return number of pages requested to flush */
 ulint set_flush_target_by_lsn(bool sync_flush, lsn_t sync_flush_limit_lsn) {
   lsn_t oldest_lsn = buf_pool_get_oldest_modification_approx();
-  ut_ad(oldest_lsn <= log_get_lsn(*log_sys));
+  ut_ad(oldest_lsn <= ib::redo::handler->peek_first_unassigned_lsn());
 
   lsn_t age = cur_iter_lsn > oldest_lsn ? cur_iter_lsn - oldest_lsn : 0;
 
@@ -3032,7 +3033,7 @@ static void buf_flush_page_coordinator_thread() {
     lsn_t lsn_limit;
     if (srv_flush_sync && !srv_read_only_mode) {
       /* lsn_limit!=0 means there are requests. needs to check the lsn. */
-      lsn_limit = log_sync_flush_lsn(*log_sys);
+      lsn_limit = log_checkpointing->get_sync_flush_lsn();
       if (lsn_limit != 0) {
         /* Avoid aggressive sync flush beyond limit when redo is disabled. */
         if (mtr_t::s_logging.is_enabled()) {
@@ -3052,10 +3053,10 @@ static void buf_flush_page_coordinator_thread() {
         ret_sleep == OS_SYNC_TIME_EXCEEDED) {
       /* For smooth page flushing along with WAL,
       flushes log as much as possible. */
-      log_sys->recent_written.advance_tail();
-      auto wait_stats = log_write_up_to(
-          *log_sys, log_buffer_ready_for_write_lsn(*log_sys), true);
-      MONITOR_INC_WAIT_STATS_EX(MONITOR_ON_LOG_, _PAGE_WRITTEN, wait_stats);
+      ib::redo::must_succeed(
+          ib::redo::handler->persist_available(
+              ib::redo::Handler_interface::Origin::PAGE_FLUSHING),
+          UT_LOCATION_HERE);
     }
 
     if (is_sync_flush || is_server_active) {
@@ -3275,10 +3276,12 @@ static void buf_flush_page_coordinator_thread() {
 
   /* Mark that it is safe to recover as we have already flushed all dirty
   pages in buffer pools. */
-  if (mtr_t::s_logging.is_disabled() && !srv_read_only_mode) {
-    log_persist_crash_safe(*log_sys);
+  if (ib::redo::handler->get_capabilities().supports_disabling) {
+    if (mtr_t::s_logging.is_disabled() && !srv_read_only_mode) {
+      log_persist_crash_safe(*log_sys);
+    }
+    log_crash_safe_validate(*log_sys);
   }
-  log_crash_safe_validate(*log_sys);
 
   /* We have lived our life. Time to die. */
 
@@ -3603,10 +3606,6 @@ void Buf_flush_list_added_lsns::assume_added_up_to(lsn_t start_lsn) {
   }
 }
 
-void Buf_flush_list_added_lsns::validate_not_added(lsn_t begin, lsn_t end) {
-  m_buf_added_lsns.validate_no_links(begin, end);
-}
-
 void Buf_flush_list_added_lsns::report_added(lsn_t oldest_modification,
                                              lsn_t newest_modification) {
   m_buf_added_lsns.add_link_advance_tail(oldest_modification,
@@ -3639,6 +3638,7 @@ void Buf_flush_list_added_lsns::wait_to_add(lsn_t oldest_modification) {
     MONITOR_INC_VALUE(MONITOR_LOG_ON_RECENT_CLOSED_WAIT_LOOPS, wait_loops);
   }
 }
+
 #else
 
 bool buf_flush_page_cleaner_is_active() { return (false); }

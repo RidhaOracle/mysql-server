@@ -73,6 +73,8 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 /* ut::random_from_interval */
 #include "ut0rnd.h"
 
+#include "log0handler_interface.h"
+
 /* srv_redo_log_encrypt */
 #include "srv0srv.h"
 
@@ -630,19 +632,18 @@ dberr_t log_checkpoint_header_read(
 
 dberr_t log_checkpoint_header_read(
     Log_file_handle &file_handle, Log_checkpoint_header_no checkpoint_header_no,
-    Log_checkpoint_header &header) {
-  Log_file_block buf;
-
-  const dberr_t err =
-      log_checkpoint_header_read(file_handle, checkpoint_header_no, buf.data);
+    Log_checkpoint_header &header,
+    ib::redo::Handler_interface::Metadata_value &block) {
+  const dberr_t err = log_checkpoint_header_read(
+      file_handle, checkpoint_header_no, block.data());
   if (err != DB_SUCCESS) {
     return err;
   }
 
-  if (!log_checkpoint_header_deserialize(buf.data, header)) {
+  if (!log_checkpoint_header_deserialize(block.data(), header)) {
     DBUG_PRINT("ib_log", ("invalid checkpoint " UINT32PF " checksum %lx",
                           uint32_t{to_int(checkpoint_header_no)},
-                          ulong{log_block_get_checksum(buf.data)}));
+                          ulong{log_block_get_checksum(block.data())}));
     return DB_CORRUPTION;
   }
 

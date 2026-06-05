@@ -1479,12 +1479,12 @@ bool fil_open_files_limit_update(size_t &new_max_open_files);
 /** Initializes the tablespace memory cache. */
 void fil_close();
 
-/** Opens all log files and system tablespace data files.
+/** Opens all system tablespace data files.
 They stay open until the database server shutdown. This should be called
-at a server startup after the space objects for the log and the system
+at a server startup after the space objects for the system
 tablespace have been created. The purpose of this operation is to make
 sure we never run out of file descriptors if we need to read from the
-insert buffer or to write to the log. */
+insert buffer. */
 void fil_open_system_tablespace_files();
 
 /** Closes all open files. There must not be any pending i/o's or not flushed

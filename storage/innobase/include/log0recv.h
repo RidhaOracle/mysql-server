@@ -37,6 +37,7 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #include "buf0types.h"
 #include "dict0types.h"
 #include "hash0hash.h"
+#include "log0handler.h"
 #include "log0sys.h"
 #include "mtr0types.h"
 
@@ -62,8 +63,6 @@ struct recv_addr_t;
 extern std::list<std::pair<space_id_t, lsn_t>> index_load_list;
 /** the last redo log flush len as seen by MEB */
 extern volatile lsn_t backup_redo_log_flushed_lsn;
-/** true when the redo log is being backed up */
-extern bool recv_is_making_a_backup;
 
 /** Scans the log segment and n_bytes_scanned is set to the length of valid
 log scanned.
@@ -127,11 +126,7 @@ void meb_apply_log_record(recv_addr_t *recv_addr, buf_block_t *block);
 void meb_fil_name_process(const char *name, space_id_t space_id);
 
 /** Scans log from a buffer and stores new log data to the parsing buffer.
-Parses and hashes the log records if new data found.  Unless
-UNIV_HOTBACKUP is defined, this function will apply log records
-automatically when the hash table becomes full.
-@param[in]      available_memory        we let the hash table of recs
-to grow to this size, at the maximum
+Parses and hashes the log records if new data found.
 @param[in]      buf                     buffer containing a log
 segment or garbage
 @param[in]      len                     buffer length
@@ -140,14 +135,8 @@ segment or garbage
 @retval	true  if limit_lsn has been reached, or not able to scan any
 more in this log group
 @retval false   otherwise */
-bool meb_scan_log_recs(size_t available_memory, const byte *buf, size_t len,
-                       lsn_t start_lsn, lsn_t *group_scanned_lsn);
-
-/** Check the 4-byte checksum to the trailer checksum field of a log
-block.
-@param[in]      block   pointer to a log block
-@return whether the checksum matches */
-bool log_block_checksum_is_ok(const byte *block);
+[[nodiscard]] bool meb_scan_log_recs(const byte *buf, size_t len,
+                                     lsn_t start_lsn, lsn_t *group_scanned_lsn);
 #else /* UNIV_HOTBACKUP */
 
 /** Applies the hashed log records to the page, if the page lsn is less than the
@@ -173,6 +162,12 @@ static inline void recv_recover_page(bool jri, buf_block_t *block) {
 
 #endif /* UNIV_HOTBACKUP */
 
+/** Check the 4-byte checksum to the trailer checksum field of a log
+block.
+@param[in]      block   pointer to a log block
+@return whether the checksum matches */
+[[nodiscard]] bool log_block_checksum_is_ok(const byte *block);
+
 /** Frees the recovery system. */
 void recv_sys_free();
 
@@ -195,14 +190,12 @@ or no records to apply).
 @return true if brand new */
 bool recv_page_is_brand_new(buf_block_t *block);
 
-/** Start recovering from a redo log checkpoint.
+/** Recovers all tablespaces from the redo log.
 @see recv_recovery_from_checkpoint_finish
-@param[in,out]  log        redo log
 @param[in]      flush_lsn  lsn stored at offset FIL_PAGE_FILE_FLUSH_LSN
                            in the system tablespace header
 @return error code or DB_SUCCESS */
-[[nodiscard]] dberr_t recv_recovery_from_checkpoint_start(log_t &log,
-                                                          lsn_t flush_lsn);
+[[nodiscard]] dberr_t recv_recovery_from_checkpoint_start(lsn_t flush_lsn);
 
 /** Determine if a redo log from a version before MySQL 8.0.30 is clean.
 @param[in,out]  log             redo log
@@ -231,13 +224,7 @@ void recv_sys_init();
 @param[in]      len             This many bytes of data is added, log block
                                 headers not included
 @return LSN after data addition */
-lsn_t recv_calc_lsn_on_data_add(lsn_t lsn, os_offset_t len);
-
-/** Empties the hash table of stored log records, applying them to appropriate
-pages.
-@param[in,out]  log             redo log */
-
-void recv_apply_hashed_log_recs(log_t &log);
+[[nodiscard]] lsn_t recv_calc_lsn_on_data_add(lsn_t lsn, os_offset_t len);
 
 #if defined(UNIV_DEBUG) || defined(UNIV_HOTBACKUP)
 /** Return string name of the redo log record type.
@@ -577,7 +564,7 @@ struct recv_sys_t {
   /** The previous value of recovered_lsn - before we parsed the last mtr.
   It is equal to recovered_lsn before we parsed any mtr. This is used to
   find moments in which recovered_lsn moves to the next block in which case
-  we should update the last_block_first_rec_group (described below). */
+  we should update the last_block_first_mtr_boundary (described below). */
   lsn_t previous_recovered_lsn;
 
   /** Tracks what should be the proper value of first_rec_group field in the
@@ -658,6 +645,16 @@ roll-forward */
 #define RECV_SCAN_SIZE (4 * UNIV_PAGE_SIZE)
 
 extern size_t recv_n_frames_for_pages_per_pool_instance;
+
+#ifdef UNIV_HOTBACKUP
+/* Following functions are defined in Redo Log Handler implementation but are
+exposed to MEB as it needs them and is not following Handler_interface.
+*/
+[[nodiscard]] dberr_t recv_parse_and_apply_log_recs(size_t max_mem);
+bool recv_sys_resize_buf();
+void recv_reset_buffer();
+void recv_track_changes_of_recovered_lsn();
+#endif
 
 #include "log0recv.ic"
 

@@ -35,7 +35,7 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #define buf0flu_h
 
 #include "buf0types.h"
-#include "log0types.h"
+#include "log0types.h" /* lsn_t */
 #include "univ.i"
 #include "ut0byte.h"
 #include "ut0cpu_cache.h"
@@ -358,12 +358,6 @@ class Buf_flush_list_added_lsns {
   aligned to the cache line boundary. This is needed since C++17 doesn't
   guarantee allocating aligned types dynamically */
   static Buf_flush_list_added_lsns_aligned_ptr create();
-
-  /** Validates using assertions that the specified LSN range is not yet added
-  to the flush lists.
-  @param[in]    begin   start LSN of the range
-  @param[in]    end     end LSN of the range*/
-  void validate_not_added(lsn_t begin, lsn_t end);
 
   /** Assume that the start_lsn is the start lsn of the first mini-transaction,
   for which report_added(mtr.start_lsn, mtr.end_lsn) was not yet called.

@@ -68,13 +68,15 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #include "fsp0sysspace.h"
 #include "ha_prototypes.h"
 #include "ibuf0ibuf.h"
-#include "log0buf.h"
 #include "log0chkp.h"
+#include "log0handler.h"
+#include "log0helpers.h"
 #include "log0recv.h"
 #include "log0write.h"
 #include "mem0mem.h"
 #include "mtr0mtr.h"
 
+#include "my_dbug.h"
 #include "my_psi_config.h"
 #include "mysql/psi/mysql_stage.h"
 #include "mysqld.h"
@@ -1148,6 +1150,9 @@ static const Thread_to_stop threads_to_stop[]{
      SRV_SHUTDOWN_MASTER_STOP}};
 
 void srv_shutdown_exit_threads() {
+  if (srv_thread_is_active(srv_threads.m_log_checkpointer)) {
+    (void)ib::redo::handler->persist_available();
+  }
   srv_shutdown_state.store(SRV_SHUTDOWN_EXIT_THREADS);
 
   if (srv_start_state == SRV_START_STATE_NONE) {
@@ -1212,13 +1217,21 @@ void srv_shutdown_exit_threads() {
       if (!buf_flush_page_cleaner_is_active() ||
           i >= SHUTDOWN_SLEEP_ROUNDS * 0.75) {
         log_stop_background_threads_nowait(*log_sys);
-
       } else {
         /* Ensure log threads are working. The redo log is
         like a blood, we need it for a lot of other systems
         to work. Ensure the blood flows. */
         log_wake_threads(*log_sys);
       }
+    }
+    /* Stop the checkpointer only once writer and flusher aren't active, as it
+    asserts all mtrs which did write_mtr() are already persisted to disc, and
+    that therefore it can recognize that dirty pages were added to flush list by
+    comparing buf_flush_list_smallest_not_added to peek_first_nonpersisted_lsn*/
+    if (srv_thread_is_active(srv_threads.m_log_checkpointer) &&
+        (!log_sys || (!srv_thread_is_active(srv_threads.m_log_flusher) &&
+                      !srv_thread_is_active(srv_threads.m_log_writer)))) {
+      log_checkpointing->stop_thread_no_wait();
     }
 
     bool active = os_thread_any_active();
@@ -1278,53 +1291,29 @@ static dberr_t srv_init_abort_low(bool create_new_db,
   return (err);
 }
 
-/** Recreate REDO log files.
-@param[in,out] flushed_lsn flushed_lsn
-@return DB_SUCCESS or error code */
-static dberr_t recreate_redo_files(lsn_t &flushed_lsn) {
-  ut_d(log_sys->disable_redo_writes = true);
+/** Check the page type, if there is a mismatch then throw
+fatal error. It may so happen that data file before 5.7 GA version
+may contain uninitialized bytes in the FIL_PAGE_TYPE field.
+@param[in]  page_id         Page id to verify
+@param[in]  type            Expected page type */
+static void verify_page_type(page_id_t page_id, page_type_t type) {
+  mtr_t mtr;
+  mtr_start(&mtr);
+  /* We should not write to redo log before checkpointing is enabled as it risks
+  running out of space, and we don't expect to write anything in this mtr.
+  It should be read only */
+  mtr_set_log_mode(&mtr, MTR_LOG_NO_REDO);
 
-  /* Emit a message to the error log. */
-  const auto target_size = log_sys->m_capacity.target_physical_capacity();
-  const auto target_size_in_M = target_size / (1024 * 1024UL);
-  ib::info(ER_IB_MSG_LOG_FILES_UPGRADE, ulonglong{target_size_in_M},
-           ulonglong{flushed_lsn});
+  const auto *block =
+      buf_page_get(page_id, univ_page_size, RW_S_LATCH, UT_LOCATION_HERE, &mtr);
 
-  RECOVERY_CRASH(5);
-  RECOVERY_CRASH(6);
-  ib::info(ER_IB_MSG_LOG_FILES_REWRITING);
-
-  /* Remove all existing log files. */
-  log_files_remove(*log_sys);
-
-  log_sys_close();
-  ut_a(log_sys == nullptr);
-
-  /* The checkpoint_lsn found could be larger than flushed_lsn in the system
-  tables space in case the shutdown wasn't slow. In such case we should start
-  from an lsn at least equal to checkpoint_lsn as pages in the tablespace will
-  have lsns larger than flushed_lsn. */
-  if (recv_sys->checkpoint_lsn != 0) {
-    ut_ad(flushed_lsn <= recv_sys->checkpoint_lsn);
-    flushed_lsn = std::max(flushed_lsn, recv_sys->checkpoint_lsn);
+  const auto page_type = fil_page_get_type(block->frame);
+  if (page_type != type) {
+    ib::fatal(UT_LOCATION_HERE, ER_IB_MSG_INVALID_PAGE_TYPE, unsigned{type},
+              unsigned{page_type}, ulong{page_id.space()},
+              ulong{page_id.page_no()});
   }
-
-  /* This is to provide the property that data byte at given lsn never
-  changes and avoid the need to rewrite the block with flushed_lsn. */
-  flushed_lsn = ut_uint64_align_up(flushed_lsn, OS_FILE_LOG_BLOCK_SIZE) +
-                LOG_BLOCK_HDR_SIZE;
-
-  /* `true` parameter makes sure new files are created */
-  dberr_t err = log_sys_init(true, flushed_lsn, flushed_lsn);
-  if (err != DB_SUCCESS) {
-    return err;
-  }
-
-  ut_d(log_sys->disable_redo_writes = false);
-
-  fil_open_system_tablespace_files();
-
-  return DB_SUCCESS;
+  mtr_commit(&mtr);
 }
 
 dberr_t srv_start(bool create_new_db) {
@@ -1470,13 +1459,13 @@ dberr_t srv_start(bool create_new_db) {
   err = clone_init();
 
   if (err != DB_SUCCESS) {
-    return (srv_init_abort(err));
+    return srv_init_abort(err);
   }
 
   err = fil_scan_for_tablespaces();
 
   if (err != DB_SUCCESS) {
-    return (srv_init_abort(err));
+    return srv_init_abort(err);
   }
 
   if (!srv_read_only_mode) {
@@ -1496,14 +1485,14 @@ dberr_t srv_start(bool create_new_db) {
       if (!srv_monitor_file) {
         ib::error(ER_IB_MSG_1127, srv_monitor_file_name, strerror(errno));
 
-        return (srv_init_abort(DB_ERROR));
+        return srv_init_abort(DB_ERROR);
       }
     } else {
       srv_monitor_file_name = nullptr;
       srv_monitor_file = os_file_create_tmpfile();
 
       if (!srv_monitor_file) {
-        return (srv_init_abort(DB_ERROR));
+        return srv_init_abort(DB_ERROR);
       }
     }
 
@@ -1512,14 +1501,14 @@ dberr_t srv_start(bool create_new_db) {
     srv_misc_tmpfile = os_file_create_tmpfile();
 
     if (!srv_misc_tmpfile) {
-      return (srv_init_abort(DB_ERROR));
+      return srv_init_abort(DB_ERROR);
     }
   }
 
   if (!os_aio_init(srv_n_read_io_threads, srv_n_write_io_threads)) {
     ib::error(ER_IB_MSG_1129);
 
-    return (srv_init_abort(DB_ERROR));
+    return srv_init_abort(DB_ERROR);
   }
 
   double size;
@@ -1552,7 +1541,7 @@ dberr_t srv_start(bool create_new_db) {
   if (err != DB_SUCCESS) {
     ib::error(ER_IB_MSG_1131);
 
-    return (srv_init_abort(DB_ERROR));
+    return srv_init_abort(DB_ERROR);
   }
 
   ib::info(ER_IB_MSG_1132);
@@ -1606,7 +1595,7 @@ dberr_t srv_start(bool create_new_db) {
       /* Other errors might come from
       Datafile::validate_first_page() */
 
-      return (srv_init_abort(err));
+      return srv_init_abort(err);
   }
 
   if (flushed_lsn < LOG_START_LSN) {
@@ -1625,41 +1614,63 @@ dberr_t srv_start(bool create_new_db) {
   if (dblwr::is_enabled() && ((err = dblwr::open()) != DB_SUCCESS)) {
     return srv_init_abort(err);
   }
-
-  lsn_t new_files_lsn;
-
-  err = log_sys_init(create_new_db, flushed_lsn, new_files_lsn);
-
-  if (err != DB_SUCCESS) {
-    return srv_init_abort(err);
+  if (ib::redo::handler == nullptr) {
+    ib::redo::set_handler(new ib::redo::Handler{});
   }
 
-  ut_a(log_sys != nullptr);
+  if (!srv_reconfigure_log_handler()) {
+    return srv_init_abort(DB_ERROR);
+  }
 
-  arch_init();
+  if (srv_redo_log_encrypt &&
+      !ib::redo::handler->get_capabilities().supports_encryption) {
+    ib::error(ER_IB_REDO_HANDLER_NO_ENCRYPTION_SUPPORT);
+    return srv_init_abort(DB_ERROR);
+  }
 
+  /* Must be initialized after dict_persist_init(), so that it observes that
+  log_checkpointing is still nullptr and does not try to call
+  log_checkpointing->set_dict_persist_margin(..) which will try to interact
+  with (not started yet) ib::redo::handler */
+  Log_checkpointing::init();
   if (create_new_db) {
     ut_a(buf_are_flush_lists_empty_validate());
 
     ut_a(!srv_read_only_mode);
 
-    ut_a(log_sys->last_checkpoint_lsn.load() ==
-         LOG_START_LSN + LOG_BLOCK_HDR_SIZE);
-
-    ut_a(new_files_lsn == LOG_START_LSN + LOG_BLOCK_HDR_SIZE);
-
-    err = log_start(*log_sys, new_files_lsn, new_files_lsn);
-
-    if (err != DB_SUCCESS) {
-      return srv_init_abort(err);
+    ut_a(flushed_lsn == LOG_START_LSN + LOG_BLOCK_HDR_SIZE);
+    if (ib::redo::handler->create(flushed_lsn) != ib::redo::Status::SUCCESS) {
+      return srv_init_abort(DB_ERROR);
     }
 
-    log_start_background_threads(*log_sys);
+    if (ib::redo::handler->get_capabilities().supports_clone) {
+      /* arch_init() should be called before recovery, but after
+      log_sys_create() */
+      ut_a(log_sys != nullptr);
+      arch_init();
+    }
+
+    ut_a(log_sys == nullptr ||
+         log_checkpointing->get_checkpoint() == flushed_lsn);
+
+    if (!log_checkpointing->save_checkpoint_value(flushed_lsn)) {
+      return srv_init_abort(DB_ERROR);
+    }
+
+    buf_flush_list_added->assume_added_up_to(flushed_lsn);
+    if (ib::redo::handler->start_writing(flushed_lsn) !=
+        ib::redo::Status::SUCCESS) {
+      return srv_init_abort(DB_ERROR);
+    }
+
+    log_checkpointing->start_thread();
+    ut_a(ib::redo::handler->peek_first_unassigned_lsn() == flushed_lsn);
+    ut_a(ib::redo::handler->peek_first_nonpersisted_lsn() == flushed_lsn);
 
     err = srv_undo_tablespaces_init(true);
 
     if (err != DB_SUCCESS) {
-      return (srv_init_abort(err));
+      return srv_init_abort(err);
     }
 
     mtr_start(&mtr);
@@ -1669,7 +1680,7 @@ dberr_t srv_start(bool create_new_db) {
     mtr_commit(&mtr);
 
     if (!ret) {
-      return (srv_init_abort(DB_ERROR));
+      return srv_init_abort(DB_ERROR);
     }
 
     /* To maintain backward compatibility we create only
@@ -1690,7 +1701,7 @@ dberr_t srv_start(bool create_new_db) {
     err = dict_create();
 
     if (err != DB_SUCCESS) {
-      return (srv_init_abort(err));
+      return srv_init_abort(err);
     }
 
     srv_create_sdi_indexes();
@@ -1730,50 +1741,71 @@ dberr_t srv_start(bool create_new_db) {
     been shut down normally: this is the normal startup path */
     RECOVERY_CRASH(1);
 
-    if (new_files_lsn != 0) {
-      /* This means that either no log files have been found
-      or the existing log files were marked as uninitialized. */
-      flushed_lsn = new_files_lsn;
-    }
+    const auto open_status = ib::redo::handler->start_reading();
+    if (open_status == ib::redo::Status::COULD_NOT_OPEN) {
+      /* Following assert means that at this particular moment the log_sys is
+      not running: even if it was for a moment, it got closed. */
+      ut_a(log_sys == nullptr);
 
-    ut_a(log_sys->m_format <= Log_format::CURRENT);
+      /* ib::redo::Handler::start_reading() allows upgrade if log was
+      logically empty, by removing old files. However the checkpoint_lsn found
+      could be larger than flushed_lsn in the system tables space in case the
+      shutdown wasn't slow. In such case we should start from an lsn at least
+      equal to checkpoint_lsn as pages in the tablespace will have lsns larger
+      than flushed_lsn. */
+      if (recv_sys->checkpoint_lsn != 0) {
+        ut_ad(flushed_lsn <= recv_sys->checkpoint_lsn);
+        flushed_lsn = std::max(flushed_lsn, recv_sys->checkpoint_lsn);
+      }
 
-    const bool log_upgrade = log_sys->m_format < Log_format::CURRENT;
-
-    if (log_upgrade) {
-      if (srv_read_only_mode) {
-        ib::error(ER_IB_MSG_LOG_UPGRADE_IN_READ_ONLY_MODE,
-                  ulong{to_int(log_sys->m_format)});
+      /* When recreating files, we try not to reuse lsn which was already part
+      of a block seen before shutdown. Files always start at a block boundary,
+      so ib::redo::Handler::create(flushed_lsn) needs to set initial prefix
+      of flushed_lsn % OS_FILE_LOG_BLOCK_SIZE bytes to something. Thus, in case
+      of flushed_lsn % OS_FILE_LOG_BLOCK_SIZE > LOG_BLOCK_HDR_SIZE, it would
+      have to fabricate mtr data, in some sense changing the history. To avoid
+      this we move to the next block's header's end. This doesn't seem to be
+      InnoDB's correctness requirement, as we probably wouldn't be able to read
+      such fabricated mtr data anyway due to m_first_rec_group and checkpoint
+      lsn being set to flushed_lsn as well. But we play safe, for example to
+      avoid confusing backup tools which might try to operate on whole blocks.*/
+      flushed_lsn = ut_uint64_align_up(flushed_lsn, OS_FILE_LOG_BLOCK_SIZE) +
+                    LOG_BLOCK_HDR_SIZE;
+      if (ib::redo::handler->create(flushed_lsn) != ib::redo::Status::SUCCESS) {
         return srv_init_abort(DB_ERROR);
       }
 
-      /* Check if the redo log from an older known redo log
-      version is from a clean shutdown. */
-      err = recv_verify_log_is_clean_pre_8_0_30(*log_sys);
-      if (err != DB_SUCCESS) {
-        return srv_init_abort(err);
-      }
+      /* ib::redo::Handler::start_reading() should've
+      already found the same lsn */
+      ut_ad(log_sys == nullptr ||
+            log_checkpointing->get_checkpoint() == flushed_lsn);
 
-      /* Redo logs are clean. We need to recreate REDO files */
-      err = recreate_redo_files(flushed_lsn);
-      if (err != DB_SUCCESS) {
-        return srv_init_abort(err);
+      if (!log_checkpointing->save_checkpoint_value(flushed_lsn)) {
+        return srv_init_abort(DB_ERROR);
       }
+    } else if (open_status != ib::redo::Status::SUCCESS) {
+      return srv_init_abort(DB_ERROR);
     }
 
-    err = recv_recovery_from_checkpoint_start(*log_sys, flushed_lsn);
+    /* arch_init() needs log_sys object created by log_sys_create(), and is
+    itself needed since recv_recovery_from_checkpoint_start() to track changes
+    to pages. */
+    if (ib::redo::handler->get_capabilities().supports_clone) {
+      ut_a(log_sys != nullptr);
+      arch_init();
+    }
+    err = recv_recovery_from_checkpoint_start(flushed_lsn);
     if (err != DB_SUCCESS) {
       return srv_init_abort(err);
     }
 
-    arch_page_sys->post_recovery_init();
+    if (ib::redo::handler->get_capabilities().supports_clone) {
+      arch_page_sys->post_recovery_init();
+    }
 
     ut_ad(clone_check_recovery_crashpoint(recv_sys->is_cloned_db));
 
     ut_a(srv_force_recovery < SRV_FORCE_NO_LOG_REDO || srv_read_only_mode);
-    const lsn_t checkpoint_lsn_after_recovery =
-        log_sys->last_checkpoint_lsn.load();
-    const lsn_t write_lsn_after_recovery = log_get_lsn(*log_sys);
     ut_a(!recv_sys->found_corrupt_log);
 
     if (srv_force_recovery < SRV_FORCE_NO_LOG_REDO) {
@@ -1795,47 +1827,61 @@ dberr_t srv_start(bool create_new_db) {
 
       ut_a(p == nullptr);
 
-      return (srv_init_abort(DB_ERROR));
+      return srv_init_abort(DB_ERROR);
     }
 
     /* We have successfully recovered from the redo log. The
     data dictionary should now be readable. */
 
-    if (recv_sys->found_corrupt_log) {
-      ib::warn(ER_IB_MSG_RECOVERY_CORRUPT);
-    }
+    ut_a(!recv_sys->found_corrupt_log);
 
     if (!srv_force_recovery && !srv_read_only_mode) {
+      ut_ad(buf_are_flush_lists_empty_validate());
+      /* this is not really needed, as the buffer pool should be empty now */
       buf_flush_sync_all_buf_pools();
     }
 
-    ut_a(checkpoint_lsn_after_recovery == log_sys->last_checkpoint_lsn.load());
-    ut_a(write_lsn_after_recovery == log_get_lsn(*log_sys));
     RECOVERY_CRASH(3);
+    const auto recovered_lsn = recv_sys->recovered_lsn;
 
     auto *dict_metadata = recv_recovery_from_checkpoint_finish(false);
     ut_a(dict_metadata != nullptr);
 
-    /* We need to save the dynamic metadata collected from redo log to DD
-    buffer table here. This is to make sure that the dynamic metadata is not
-    lost by any future checkpoint. Since DD and data dictionary in memory
-    objects are not fully initialized at this point, the usual mechanism to
-    persist dynamic metadata at checkpoint wouldn't work. */
-    ut_a(checkpoint_lsn_after_recovery == log_sys->last_checkpoint_lsn.load());
-    ut_a(write_lsn_after_recovery == log_get_lsn(*log_sys));
-
-    /* We must start the log threads because we might need to write out the dict
-    persistent data into redolog, if the server is not in read-only mode. */
-    if (!srv_read_only_mode) {
-      log_start_background_threads(*log_sys);
+    buf_flush_list_added->assume_added_up_to(recovered_lsn);
+    if (srv_force_recovery < SRV_FORCE_NO_LOG_REDO) {
+      /* We need to start log threads now, because dict_metadata->store()
+      will write recovered updates persistent metadata to actual B-tree pages -
+      an operation on pages which itself needs to be redo logged.
+      Even in srv_read_only_mode we call start_writing(), because many places
+      in innodb assume that log_start() was called - in particular, that we can
+      call peek_unassigned_lsn() in buf_page_lsn_check after reads. However in
+      srv_read_only_mode, the background threads will not be started. */
+      const auto start_result = ib::redo::handler->start_writing(recovered_lsn);
+      if (start_result != ib::redo::Status::SUCCESS) {
+        ut_ad(start_result == ib::redo::Status::WRITE_ERROR);
+        return srv_init_abort(DB_ERROR);
+      }
+      /* Validate a few system page types that were left uninitialized
+      by older versions of MySQL. */
+      verify_page_type({IBUF_SPACE_ID, FSP_IBUF_HEADER_PAGE_NO},
+                       FIL_PAGE_TYPE_SYS);
+      verify_page_type({TRX_SYS_SPACE, FSP_FIRST_RSEG_PAGE_NO},
+                       FIL_PAGE_TYPE_SYS);
+      verify_page_type({TRX_SYS_SPACE, TRX_SYS_PAGE_NO}, FIL_PAGE_TYPE_TRX_SYS);
+      verify_page_type({TRX_SYS_SPACE, FSP_DICT_HDR_PAGE_NO},
+                       FIL_PAGE_TYPE_SYS);
     }
 
-    /* We could possibly execute it much later if not the current dict_persist
-    functionality implementation, which requires it to work properly. */
-    err = dict_boot();
+    /* We should not start checkpointer before persisted metadata is stored. */
+    ut_a(!log_checkpointer_is_active());
 
+    /* We have to call dict_boot() either before setting recv_lsn_checks_on,
+    or after ib::redo::handler->start_writing(), as it will read pages from
+    disc. dict_boot() also initializes the change buffer which is needed for any
+    disk i/o. */
+    err = dict_boot();
     if (err != DB_SUCCESS) {
-      return (srv_init_abort(err));
+      return srv_init_abort(err);
     }
 
     DBUG_EXECUTE_IF("log_first_rec_group_test", {
@@ -1843,6 +1889,12 @@ dberr_t srv_start(bool create_new_db) {
       log_write_up_to(*log_sys, end_lsn, true);
       DBUG_SUICIDE();
     });
+
+    /* We need to save the dynamic metadata collected from redo log to DD
+    buffer table here. This is to make sure that the dynamic metadata is not
+    lost by any future checkpoint. Since DD and data dictionary in memory
+    objects are not fully initialized at this point, the usual mechanism to
+    persist dynamic metadata at checkpoint wouldn't work. */
 
     if (!recv_sys->is_cloned_db && !dict_metadata->empty()) {
       ut_a(!srv_read_only_mode);
@@ -1860,7 +1912,7 @@ dberr_t srv_start(bool create_new_db) {
                          dict_sys_t::s_dd_space_file_name, true, false);
         if (error != DB_SUCCESS) {
           ib::error(ER_IB_MSG_1142);
-          return (srv_init_abort(DB_ERROR));
+          return srv_init_abort(DB_ERROR);
         }
       } else {
         fil_space_release(space);
@@ -1873,30 +1925,44 @@ dberr_t srv_start(bool create_new_db) {
       dict_metadata->store();
 
       /* Flush logs to persist the changes. */
-      log_buffer_flush_to_disk(*log_sys);
+      ib::redo::must_persist_all(UT_LOCATION_HERE);
     }
     ut::delete_(dict_metadata);
-    ut_a(checkpoint_lsn_after_recovery == log_sys->last_checkpoint_lsn.load());
 
     RECOVERY_CRASH(4);
 
-    log_sys->m_allow_checkpoints.store(true, std::memory_order_release);
+    if (!srv_read_only_mode) {
+      log_checkpointing->start_thread();
+    }
 
     /* for a restored database we reset creator for log. To do this we stop
     background log processing for unknown reason, possibly just in case. */
     if (recv_sys->is_cloned_db || recv_sys->is_meb_db) {
+      ut_a(!recv_sys->is_cloned_db ||
+           ib::redo::handler->get_capabilities().supports_clone);
+      ut_a(!recv_sys->is_meb_db ||
+           ib::redo::handler->get_capabilities().supports_meb);
       buf_pool_wait_for_no_pending_io();
 
       ut_a(!srv_read_only_mode);
-
-      log_stop_background_threads(*log_sys);
+      ib::redo::must_succeed(ib::redo::handler->persist_available(),
+                             UT_LOCATION_HERE);
+      const auto end_lsn = ib::redo::handler->peek_first_unassigned_lsn();
+      log_checkpointing->stop_thread_and_wait();
+      ib::redo::handler->stop_writing();
 
       ut_ad(buf_pool_pending_io_reads_count() == 0);
+
       err = log_files_reset_creator_and_set_full(*log_sys);
       if (err != DB_SUCCESS) {
         return srv_init_abort(err);
       }
-      log_start_background_threads(*log_sys);
+      ut_a(end_lsn == buf_flush_list_added->smallest_not_added_lsn());
+      if (ib::redo::handler->start_writing(end_lsn) !=
+          ib::redo::Status::SUCCESS) {
+        return srv_init_abort(DB_ERROR);
+      }
+      log_checkpointing->start_thread();
     }
 
     if (sum_of_new_sizes > 0) {
@@ -1914,13 +1980,13 @@ dberr_t srv_start(bool create_new_db) {
       is durable even if mysqld would crash
       quickly */
 
-      log_buffer_flush_to_disk(*log_sys);
+      ib::redo::must_persist_all(UT_LOCATION_HERE);
     }
 
     err = srv_undo_tablespaces_init(false);
 
     if (err != DB_SUCCESS && srv_force_recovery < SRV_FORCE_NO_UNDO_LOG_SCAN) {
-      return (srv_init_abort(err));
+      return srv_init_abort(err);
     }
 
     trx_purge_sys_mem_create();
@@ -1938,12 +2004,12 @@ dberr_t srv_start(bool create_new_db) {
   /* Open temp-tablespace and keep it open until shutdown. */
   err = srv_open_tmp_tablespace(create_new_db, &srv_tmp_space);
   if (err != DB_SUCCESS) {
-    return (srv_init_abort(err));
+    return srv_init_abort(err);
   }
 
   err = ibt::open_or_create(create_new_db);
   if (err != DB_SUCCESS) {
-    return (srv_init_abort(err));
+    return srv_init_abort(err);
   }
 
   /* Here the double write buffer has already been created and so
@@ -1967,7 +2033,7 @@ dberr_t srv_start(bool create_new_db) {
   If any of these rollback segments contain undo logs, load them into
   the purge queue */
   if (!trx_rseg_adjust_rollback_segments(srv_rollback_segments)) {
-    return (srv_init_abort(DB_ERROR));
+    return srv_init_abort(DB_ERROR);
   }
 
   /* Any undo tablespaces under construction are now fully built
@@ -2052,7 +2118,7 @@ dberr_t srv_start(bool create_new_db) {
 
       ib::error(ER_IB_MSG_1148);
 
-      return (srv_init_abort(DB_ERROR));
+      return srv_init_abort(DB_ERROR);
     }
   }
 
@@ -2064,7 +2130,7 @@ dberr_t srv_start(bool create_new_db) {
     if (srv_force_recovery == 0) {
       ib::error(ER_IB_MSG_1150);
 
-      return (srv_init_abort(DB_ERROR));
+      return srv_init_abort(DB_ERROR);
     }
   }
 
@@ -2073,9 +2139,11 @@ dberr_t srv_start(bool create_new_db) {
   clone_files_recovery(true);
 
   ib::info(ER_IB_MSG_1151, INNODB_VERSION_STR,
-           ulonglong{log_get_lsn(*log_sys)});
+           ulonglong{srv_force_recovery < SRV_FORCE_NO_LOG_REDO
+                         ? ib::redo::handler->peek_first_unassigned_lsn()
+                         : 0});
 
-  return (DB_SUCCESS);
+  return DB_SUCCESS;
 }
 
 /** Applier of dynamic metadata */
@@ -2205,16 +2273,14 @@ void srv_start_threads() {
     Only the required checkpoints were allowed, which includes:
             - checkpoints because of too old last_checkpoint_lsn,
             - checkpoints explicitly requested (because of call to
-              log_make_latest_checkpoint()).
+              log_checkpointing->request_sharp_checkpoint()).
     The reason was to make the situation more deterministic during
     the startup, because then:
             - it is easier to write mtr tests,
             - there are less possible flows - smaller risk of bug.
     Now we start allowing periodical checkpoints! Since now, it's
     hard to predict when checkpoints are written! */
-    log_limits_mutex_enter(*log_sys);
-    log_sys->periodical_checkpoints_enabled = true;
-    log_limits_mutex_exit(*log_sys);
+    log_checkpointing->enable_periodical_checkpoints();
   }
 
   srv_threads.m_buf_resize =
@@ -2579,6 +2645,18 @@ static lsn_t srv_shutdown_log() {
   ut_ad(buf_pool_pending_io_reads_count() == 0);
   ut_ad(buf_pool_pending_io_writes_count() == 0);
 
+  lsn_t lsn{srv_force_recovery < SRV_FORCE_NO_LOG_REDO
+                ? ib::redo::handler->peek_first_unassigned_lsn()
+                : 0};
+  const auto persist_available_and_stop = [&lsn] {
+    ib::redo::must_succeed(ib::redo::handler->persist_available(),
+                           UT_LOCATION_HERE);
+    log_checkpointing->stop_thread_and_wait();
+    lsn = ib::redo::handler->peek_first_unassigned_lsn();
+    ut_a(lsn == ib::redo::handler->peek_first_nonpersisted_lsn());
+    ib::redo::handler->stop_writing();
+  };
+
   if (srv_fast_shutdown == 2) {
     if (!srv_read_only_mode) {
       ib::info(ER_IB_MSG_1253);
@@ -2592,8 +2670,7 @@ static lsn_t srv_shutdown_log() {
       a crash recovery. We must not write the lsn stamps
       to the data files, since at a startup InnoDB deduces
       from the stamps if the previous shutdown was clean. */
-
-      log_stop_background_threads(*log_sys);
+      persist_available_and_stop();
     }
 
     /* No redo log might be generated since now. */
@@ -2601,18 +2678,25 @@ static lsn_t srv_shutdown_log() {
 
     srv_shutdown_set_state(SRV_SHUTDOWN_LAST_PHASE);
 
-    return (log_get_lsn(*log_sys));
+    return lsn;
   }
 
   if (!srv_read_only_mode) {
-    log_make_empty_and_stop_background_threads(*log_sys);
+    while (log_checkpointing->request_sharp_checkpoint()) {
+      /* It could happen, that when writing a new checkpoint,
+      DD dynamic metadata was persisted, making some pages
+      dirty (with the persisted data) and writing new redo
+      records to protect those modifications. In such case,
+      current lsn would be higher than lsn and we would need
+      another iteration to ensure, that checkpoint lsn points
+      to the newest lsn. */
+    }
+    persist_available_and_stop();
   }
 
   /* No redo log might be generated since now. */
   log_background_threads_inactive_validate();
   buf_assert_all_are_replaceable();
-
-  const lsn_t lsn = log_get_lsn(*log_sys);
 
   if (!srv_read_only_mode) {
     /* Redo log has been flushed at the log_flusher's exit. */
@@ -2624,10 +2708,8 @@ static lsn_t srv_shutdown_log() {
   /* Validate lsn and write it down. */
   ut_a(log_is_data_lsn(lsn) || srv_force_recovery >= SRV_FORCE_NO_LOG_REDO);
 
-  ut_a(lsn == log_sys->last_checkpoint_lsn.load() ||
+  ut_a(lsn == log_checkpointing->get_checkpoint() ||
        srv_force_recovery >= SRV_FORCE_NO_LOG_REDO);
-
-  ut_a(lsn == log_get_lsn(*log_sys));
 
   if (!srv_read_only_mode) {
     ut_a(srv_force_recovery < SRV_FORCE_NO_LOG_REDO);
@@ -2637,7 +2719,6 @@ static lsn_t srv_shutdown_log() {
   }
 
   buf_assert_all_are_replaceable();
-  ut_a(lsn == log_get_lsn(*log_sys));
 
   return (lsn);
 }
@@ -2791,7 +2872,8 @@ void srv_shutdown() {
 
   ibuf_close();
   ddl_log_close();
-  log_sys_close();
+  delete ib::redo::handler;
+  Log_checkpointing::deinit();
   recv_sys_close();
   trx_sys_close();
   lock_sys_close();

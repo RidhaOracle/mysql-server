@@ -32,7 +32,7 @@ this program; if not, write to the Free Software Foundation, Inc.,
 
 #include "clone0snapshot.h"
 #include "clone0clone.h"
-#include "log0log.h" /* log_get_lsn */
+#include "log0handler_interface.h" /* ib::redo::handler */
 #include "page0zip.h"
 #include "sql/handler.h"
 
@@ -892,8 +892,9 @@ int Clone_Snapshot::get_page_for_write(const page_id_t &page_id,
   }
 
   memcpy(page_data, src_data, data_size);
+  ut_a(ib::redo::handler->get_capabilities().supports_clone);
 
-  auto cur_lsn = log_get_lsn(*log_sys);
+  auto cur_lsn = ib::redo::handler->peek_first_unassigned_lsn();
   const auto frame_lsn =
       static_cast<lsn_t>(mach_read_from_8(page_data + FIL_PAGE_LSN));
 
