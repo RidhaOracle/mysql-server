@@ -227,27 +227,22 @@ static constexpr uint32_t SHUTDOWN_SLEEP_ROUNDS =
   ut_a(!srv_read_only_mode);
   ut_a(!srv_force_recovery);
 
-  /* Until this undo tablespace can become active, keep a truncate log
-  file around so that if a crash happens it can be rebuilt at startup. */
-  auto err = undo_truncate::start_logging(&undo_space);
-  if (err != DB_SUCCESS) {
-    ib::error(ER_IB_MSG_CREATE_CONSTRUCTION_LOG_FILE_FAILED,
-              undo_space.log_file_name(), undo_space.space_name());
-  }
-  ut_ad(err == DB_SUCCESS);
-
-  ut_d(undo_truncate::inject_crash("fixup_crash_after_creating_the_log_file"));
+  ut_d(undo_truncate::inject_crash(
+      "create_crash_before_undo_tablespace_create"));
 
   auto flags = fsp_flags_init(univ_page_size, false, false, false, false);
   fsp_flags_set_undo_unusable(flags);
 
   /* Create the new UNDO tablespace. */
-  err = fil_undo_create(space_id, undo_space.space_name(),
-                        undo_space.file_name(), flags,
-                        UNDO_INITIAL_SIZE_IN_PAGES, undo_space.is_explicit());
+  const auto err = fil_undo_create(
+      space_id, undo_space.space_name(), undo_space.file_name(), flags,
+      UNDO_INITIAL_SIZE_IN_PAGES, undo_space.is_explicit());
   if (err != DB_SUCCESS) {
     return err;
   }
+
+  ut_d(
+      undo_truncate::inject_crash("create_crash_after_undo_tablespace_create"));
 
   undo_space.set_new();
   ut_a(undo_truncate::is_reserved(space_id));
@@ -381,6 +376,9 @@ static dberr_t srv_undo_tablespace_fixup_num(space_id_t space_num) {
       return DB_IO_ERROR;
     }
   }
+
+  /* Remove the truncate log file */
+  undo_truncate::remove_truncate_log_file(space_num);
   return DB_SUCCESS;
 }
 
@@ -624,13 +622,6 @@ static dberr_t srv_undo_tablespace_open_by_num(const space_id_t space_num) {
     const auto scanned_name =
         tablespace_scanning->get_tablespace_file_by_id(space_id);
     if (!scanned_name) {
-      return DB_CANNOT_OPEN_FILE;
-    }
-
-    /* If the legacy truncate marker (log file) is present, the undo file should
-    have been deleted by this point. */
-    if (undo_truncate::is_active_truncate_log_present(space_num)) {
-      ut_a(!os_file_exists(scanned_name->c_str()));
       return DB_CANNOT_OPEN_FILE;
     }
 
@@ -939,11 +930,6 @@ static void srv_undo_tablespaces_mark_construction_done() {
       mtr.start();
       undo_truncate::mark_undo_tablespace_usable(space_id, &mtr);
       mtr.commit();
-    }
-
-    space_id_t space_num = undo_truncate::id2num(space_id);
-    if (undo_truncate::is_active_truncate_log_present(space_num)) {
-      undo_truncate::done_logging(space_num);
     }
   }
 

@@ -5753,9 +5753,6 @@ fil_load_status Fil_system::ibd_open_for_recovery(space_id_t space_id,
   essentially skips any redo log recovery for it, which is fine as
   srv_undo_tablespaces_open() will delete the file anyway.
 
-  TODO: Log files are still used when creating a completely new Undo Space
-  (--initialize or CREATE UNDO TABLESPACE) - in such case we also skip opening.
-
   The current implementation of truncation marks the old and new Undo Spaces
   by updating a flag in the FSP_FLAGS header which is set and reset using
   redo-logged MTRs. Therefore, we have to perform redo log recovery on Undo
@@ -9569,7 +9566,6 @@ const byte *fil_tablespace_redo_extend_wrapper(const byte *ptr, const byte *end,
               undo_truncate::id2num(space_id))) {
         return fil_tablespace_redo_extend(ptr, end, space_id, true);
       }
-
       /* The `fil_tablespace_open_for_recovery()` could have called
       tablespace_scanning->erase_path(space_id) if the keyring is
       missing. Abort recovery if it happened. It may have been corrupted also,
@@ -9579,7 +9575,6 @@ const byte *fil_tablespace_redo_extend_wrapper(const byte *ptr, const byte *end,
         ib::fatal(UT_LOCATION_HERE, ER_IB_MSG_TABLESPACE_NOT_OPENED,
                   ulong{space_id});
       }
-
       return nullptr;
     }
   }

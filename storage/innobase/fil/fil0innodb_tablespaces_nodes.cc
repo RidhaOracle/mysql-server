@@ -26,8 +26,8 @@ St, Fifth Floor, Boston, MA 02110-1301 USA */
 #include "os0file.h"
 #include "scope_guard.h"
 #include "trx0purge.h"
+#include "trx0undo_trunc.h"
 #include "ut0dbg.h" /* ut_error */
-
 namespace ib::fil {
 
 Tablespaces_nodes::Capabilities Tablespaces_nodes::get_capabilities() {
@@ -107,6 +107,10 @@ Tablespaces_nodes::create(Tablespace_id space_id, size_t node_order,
                        node_path);
       });
 
+#ifndef UNIV_HOTBACKUP
+  ut_d(undo_truncate::inject_crash("fixup_crash_after_creating_empty_file"));
+#endif
+
   /* Special handling for UNDO tablespace */
   if (is_undo_tablespace) {
     ut_a(!srv_read_only_mode);
@@ -139,6 +143,11 @@ Tablespaces_nodes::create(Tablespace_id space_id, size_t node_order,
       return ut::Unexpected(is_undo_tablespace ? Create_error::OUT_OF_DISK_SPACE
                                                : Create_error::IO_ERROR);
     }
+
+    DBUG_EXECUTE_IF(
+        "fixup_crash_after_init_with_zeros",
+        ib::info(ER_IB_MSG_INJECT_CRASH, "fixup_crash_after_init_with_zeros");
+        DBUG_SUICIDE(););
 
     if (node_order == 0) {
       /* Write few initial pages of tablespace */

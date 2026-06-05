@@ -1856,6 +1856,9 @@ void Log_DDL::replay_delete_space_log(space_id_t space_id,
 
   row_drop_tablespace(space_id, file_path);
 
+  DBUG_EXECUTE_IF("ddl_log_replay_delete_space_crash_after_file_delete",
+                  DBUG_SUICIDE(););
+
   /* If this is an undo space_id, allow the undo number for it
   to be reused. */
   if (fsp_is_undo_tablespace(space_id)) {

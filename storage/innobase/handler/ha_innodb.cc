@@ -16338,7 +16338,6 @@ static int innodb_drop_tablespace(handlerton *hton, THD *thd,
 static int innodb_create_undo_tablespace(handlerton *hton, THD *thd,
                                          st_alter_tablespace *alter_info,
                                          dd::Tablespace *dd_space) {
-  int error = 0;
   dberr_t err;
   uint32_t flags;
 
@@ -16350,8 +16349,8 @@ static int innodb_create_undo_tablespace(handlerton *hton, THD *thd,
                dd_tablespace_get_filename(dd_space)) == 0);
 
   /* Be sure the input parameters are valid before continuing. */
-  error = validate_create_tablespace_info(IBU, alter_info);
-  if (error) {
+  if (const int error = validate_create_tablespace_info(IBU, alter_info);
+      error) {
     return error;
   }
 
@@ -16364,19 +16363,8 @@ static int innodb_create_undo_tablespace(handlerton *hton, THD *thd,
     return notifier.get_error();
   }
 
-  /* Create the tablespace object. */
-
   /* Serialize all undo tablespace DDLs */
-  mutex_enter(&undo_truncate::ddl_mutex);
-
-  /* Get the transaction associated with the current thd and make
-  sure it will not block this DDL. */
-  check_trx_exists(thd);
-
-  /* Allocate a new transaction for this DDL */
-  trx_t *trx = innobase_trx_allocate(thd);
-  trx_start_if_not_started(trx, true, UT_LOCATION_HERE);
-  ++trx->will_lock;
+  IB_mutex_guard ddl_guard(&undo_truncate::ddl_mutex, UT_LOCATION_HERE);
 
   /* Find the next available undo space number and mark it in-use. */
   space_id_t space_id = undo_truncate::get_next_available_space_id();
@@ -16385,21 +16373,42 @@ static int innodb_create_undo_tablespace(handlerton *hton, THD *thd,
     /* All available explicit undo tablespaces have been used. */
     ib::error(ER_IB_MSG_MAX_UNDO_SPACES_REACHED, alter_info->tablespace_name,
               alter_info->data_file_name, int{FSP_MAX_UNDO_TABLESPACES});
-    error = HA_ERR_TABLESPACE_EXISTS;
-    trx_rollback_for_mysql(trx);
-    goto cleanup;
+    return HA_ERR_TABLESPACE_EXISTS;
   }
+
+  /* Get the transaction associated with the current thd, which is used to
+  update the DD tables, and to remove the DELETE_SPACE_LOG that we will soon
+  insert using a separate immediately-committed local transaction. This way, if
+  the thd's trx commits, the DD will have the new Undo Space and there will be
+  no DELETE_SPACE_LOG, but if it fails to commit then the DD will have no
+  mention of this new Undo Space and the Log_DDL will have DELETE_SPACE_LOG
+  entry requesting a clean up. */
+  trx_t *trx = check_trx_exists(thd);
+  TrxInInnoDB trx_in_innodb(trx);
+  trx_start_if_not_started(trx, true, UT_LOCATION_HERE);
+  ++trx->will_lock;
+
+  /* Add DELETE_SPACE_LOG to Log_DDL using a separate transaction and commit
+  it, then use the current thd's trx to remove this record, but don't commit it.
+  */
+  err = log_ddl->write_delete_space_log(
+      trx, nullptr, space_id, alter_info->data_file_name, false, false);
+
+  if (err != DB_SUCCESS) {
+    return convert_error_code_to_mysql(err, 0, nullptr);
+  }
+
+  ut_d(undo_truncate::inject_crash("create_undo_crash_after_ddl_log"));
 
   err = srv_undo_tablespace_create(alter_info->tablespace_name,
                                    alter_info->data_file_name, space_id);
 
   if (err != DB_SUCCESS) {
-    error = convert_error_code_to_mysql(err, 0, nullptr);
-    trx_rollback_for_mysql(trx);
-    goto cleanup;
+    return convert_error_code_to_mysql(err, 0, nullptr);
   }
 
-  innobase_commit_low(trx);
+  ut_d(
+      undo_truncate::inject_crash("create_undo_crash_before_statement_commit"));
 
   /* Make sure the DD has the space_id and the flags. */
   flags = fsp_flags_init(univ_page_size, false, false, false, false);
@@ -16409,14 +16418,9 @@ static int innodb_create_undo_tablespace(handlerton *hton, THD *thd,
   undo_truncate::set_active(space_id);
   ut_d(ib::info(ER_IB_MSG_UNDO_MARKED_ACTIVE, alter_info->tablespace_name));
 
-cleanup:
-  trx_free_for_mysql(trx);
-
-  mutex_exit(&undo_truncate::ddl_mutex);
-
   ib::info(ER_IB_MSG_CREATED_UNDO_SPACE, alter_info->tablespace_name);
 
-  return error;
+  return 0;
 }
 
 /** ALTER an undo tablespace to ACTIVE.
@@ -16674,7 +16678,7 @@ static int innodb_drop_undo_tablespace(handlerton *hton, THD *thd,
   undo_truncate::spaces->x_unlock();
 
   /* Get the transaction associated with the current thd and write a
-  delete_space record to the DDL_LOG. */
+  delete_space record to the DDL log. */
   trx_t *trx = check_trx_exists(thd);
   TrxInInnoDB trx_in_innodb(trx);
   trx_start_if_not_started(trx, true, UT_LOCATION_HERE);
@@ -16689,6 +16693,7 @@ static int innodb_drop_undo_tablespace(handlerton *hton, THD *thd,
 
   mutex_exit(&undo_truncate::ddl_mutex);
 
+  ut_d(undo_truncate::inject_crash("drop_undo_crash_after_log_ddl"));
   ib::info(ER_IB_MSG_DROPPED_UNDO_SPACE, alter_info->tablespace_name);
 
   return error;

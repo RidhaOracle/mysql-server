@@ -350,175 +350,28 @@ void Tablespace::alter_active() {
 
 /*======== Truncate operations helpers functions ========== */
 
-dberr_t start_logging(Tablespace *undo_space) {
-#ifdef UNIV_DEBUG
-  static Inject_failure_once injector("ib_undo_trunc_fail_start_logging");
-  if (injector.should_fail()) {
-    return DB_OUT_OF_MEMORY;
-  }
-#endif /* UNIV_DEBUG */
-
-  {
-    const char *file_name = undo_space->file_name();
-    const auto err = os_file_create_subdirs_if_needed(file_name);
-    if (err != DB_SUCCESS) {
-      return err;
-    }
-  }
-
-  char *log_file_name = undo_space->log_file_name();
-
-  /* Create the log file if not exists, open it and write 0 to indicate init
-  phase. */
-  bool ret;
-  pfs_os_file_t handle =
-      os_file_create(innodb_log_file_key, log_file_name,
-                     OS_FILE_CREATE | OS_FILE_ON_ERROR_NO_EXIT, OS_LOG_FILE,
-                     srv_read_only_mode, &ret);
-  if (!ret && os_file_get_last_error(false) == OS_FILE_ALREADY_EXISTS) {
-    handle = os_file_create(innodb_log_file_key, log_file_name,
-                            OS_FILE_OPEN | OS_FILE_ON_ERROR_NO_EXIT,
-                            OS_LOG_FILE, srv_read_only_mode, &ret);
-  }
-
-  if (!ret) {
-    return DB_IO_ERROR;
-  }
-
-  const auto sz = UNIV_PAGE_SIZE;
-  const auto buf = ut::make_unique_aligned<byte[]>(UNIV_PAGE_SIZE, sz);
-  if (buf == nullptr) {
-    os_file_close(handle);
-    return DB_OUT_OF_MEMORY;
-  }
-
-  IORequest request(IORequest::Type::WRITE | IORequest::Type::NO_COMPRESSION);
-
-  const auto err =
-      os_file_write(request, log_file_name, handle, buf.get(), 0, sz);
-
-  os_file_flush(handle);
-  os_file_close(handle);
-
-  return err;
-}
-
-void done_logging(space_id_t space_num) {
-  /* Get the first space id for this space_num. That is good enough since we
-  only need the log_file_name. */
-  Tablespace undo_space(num2id(space_num, 0));
-
-  char *log_file_name = undo_space.log_file_name();
-
-  /* If this file does not exist, there is nothing to do. */
-  if (!os_file_exists(log_file_name)) {
-    return;
-  }
-
-  /* Open log file and write magic number to indicate done phase. */
-  bool ret;
-  pfs_os_file_t handle = os_file_create_simple_no_error_handling(
-      innodb_log_file_key, log_file_name, OS_FILE_OPEN,
-      srv_read_only_mode ? OS_FILE_READ_ONLY : OS_FILE_READ_WRITE, &ret);
-
-  if (!ret) {
-    os_file_delete_if_exists(innodb_log_file_key, log_file_name, nullptr);
-    return;
-  }
-
-  ulint sz = UNIV_PAGE_SIZE;
-  byte *buf = static_cast<byte *>(ut::aligned_zalloc(sz, UNIV_PAGE_SIZE));
-  if (buf == nullptr) {
-    os_file_close(handle);
-    os_file_delete_if_exists(innodb_log_file_key, log_file_name, nullptr);
-    return;
-  }
-
-  mach_write_to_4(buf, s_magic);
-
-  IORequest request(IORequest::Type::WRITE | IORequest::Type::NO_COMPRESSION);
-
-  const dberr_t err = os_file_write(request, log_file_name, handle, buf, 0, sz);
-
-  ut_a(err == DB_SUCCESS);
-
-  os_file_flush(handle);
-  os_file_close(handle);
-
-  ut::aligned_free(buf);
-  os_file_delete_if_exists(innodb_log_file_key, log_file_name, nullptr);
-}
+/* These functions are still kept to support upgrade from a version which used
+the truncate log functionality in case it crashed during truncate or CREATE
+UNDO TABLESPACE */
 
 bool is_active_truncate_log_present(space_id_t space_num) {
   /* Get the first space id for thus space_num. That is good enough since we
   only need the log_file_name. */
   Tablespace undo_space(num2id(space_num, 0));
+  return os_file_exists(undo_space.log_file_name());
+}
+
+void remove_truncate_log_file(space_id_t space_num) {
+  ut_a(tablespace_scanning);
+
+  Tablespace undo_space(num2id(space_num, 0));
 
   /* The truncation log file location changed to a new default location.
   Check if it exists in either location. */
   char *log_file_name = undo_space.log_file_name();
-  if (!os_file_exists(log_file_name)) {
-    log_file_name = undo_space.log_file_name_old();
-    if (!os_file_exists(log_file_name)) {
-      log_file_name = nullptr;
-    }
+  if (log_file_name && os_file_exists(log_file_name)) {
+    os_file_delete_if_exists(innodb_log_file_key, log_file_name, nullptr);
   }
-
-  /* If the log file exists, check it for presence of magic
-  number.  If found, then delete the file and report file
-  doesn't exist as presence of magic number suggest that
-  truncate action was complete. */
-  if (log_file_name != nullptr) {
-    bool ret;
-    pfs_os_file_t handle = os_file_create_simple_no_error_handling(
-        innodb_log_file_key, log_file_name, OS_FILE_OPEN,
-        srv_read_only_mode ? OS_FILE_READ_ONLY : OS_FILE_READ_WRITE, &ret);
-    if (!ret) {
-      os_file_delete_if_exists(innodb_log_file_key, log_file_name, nullptr);
-      return false;
-    }
-
-    ulint sz = UNIV_PAGE_SIZE;
-    byte *buf = static_cast<byte *>(ut::aligned_zalloc(sz, UNIV_PAGE_SIZE));
-    if (buf == nullptr) {
-      os_file_close(handle);
-      os_file_delete_if_exists(innodb_log_file_key, log_file_name, nullptr);
-      return false;
-    }
-
-    IORequest request(IORequest::Type::READ | IORequest::Type::NO_COMPRESSION);
-
-    dberr_t err;
-
-    err = os_file_read(request, log_file_name, handle, buf, 0, sz);
-
-    os_file_close(handle);
-
-    if (err != DB_SUCCESS) {
-      ib::info(ER_IB_MSG_UNDO_TRUNCATE_FAIL_TO_READ_LOG_FILE, log_file_name,
-               ut_strerr(err));
-
-      os_file_delete(innodb_log_file_key, log_file_name);
-
-      ut::aligned_free(buf);
-
-      return false;
-    }
-
-    ulint magic_no = mach_read_from_4(buf);
-
-    ut::aligned_free(buf);
-
-    if (magic_no == s_magic) {
-      /* Found magic number. */
-      os_file_delete(innodb_log_file_key, log_file_name);
-      return false;
-    }
-
-    return true;
-  }
-
-  return false;
 }
 
 /*===================== Global Functions ========================= */

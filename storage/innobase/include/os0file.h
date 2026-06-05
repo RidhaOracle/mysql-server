@@ -1490,15 +1490,6 @@ Flushes the write buffers of a given file to the disk.
 @return true if success */
 bool os_file_flush_func(os_file_t file);
 
-/** Retrieves the last error number if an error occurs in a file I/0 function.
-The number should be retrieved before any other OS calls (because they may
-overwrite the error number). If the number is not known to this program,
-the OS error number + 100 is returned.
-@param[in]      report_all_errors       true if we want an error message printed
-                                        for all errors
-@return error number, or OS error number + 100 */
-ulint os_file_get_last_error(bool report_all_errors);
-
 /** Retrieves the last error number if an OS error occurs in a file IO function.
 The number should be retrieved before any other OS calls (because they may
 overwrite the error number). If the number is not known to this program,

@@ -71,36 +71,20 @@ namespace undo_truncate {
 // Forward declaration.
 struct Tablespace;
 
-/** Magic Number to indicate truncate action is complete. */
-static constexpr uint32_t s_magic = 76845412;
-
 /** Truncate Log file Prefix. */
 static constexpr char s_log_prefix[] = "undo_";
 
 /** Truncate Log file Extension. */
 static constexpr char s_log_ext[] = "trunc.log";
 
-/** Create the truncate log file. Needed to track the state of truncate during
-a crash. An auxiliary redo log file undo_<space_id>_trunc.log will be created
-while the truncate of the UNDO is in progress. This file is required during
-recovery to complete the truncate.
-@param[in]  undo_space  undo tablespace to truncate.
-@return DB_SUCCESS or error code.*/
-[[nodiscard]] dberr_t start_logging(Tablespace *undo_space);
-
-/** Mark completion of undo truncate action by writing magic number
-to the log file and then removing it from the disk.
-If we are going to remove it from disk then why write magic number?
-This is to safeguard from unlink (file-system) anomalies that will
-keep the link to the file even after unlink action is successful
-and ref-count = 0.
-@param[in]  space_num  number of the undo tablespace to truncate. */
-void done_logging(space_id_t space_num);
-
 /** Check if TRUNCATE_DDL_LOG file exist.
 @param[in]  space_num  undo tablespace number
 @return true if exist else false. */
 [[nodiscard]] bool is_active_truncate_log_present(space_id_t space_num);
+
+/** Remove TRUNCATE_DDL_LOG file if it exists
+@param[in]  space_num  undo tablespace number */
+void remove_truncate_log_file(space_id_t space_num);
 
 /** Mutex for serializing undo tablespace related DDL.  These have to do with
 creating and dropping undo tablespaces. */
@@ -209,7 +193,6 @@ struct Tablespace {
         m_space_name(),
         m_file_name(),
         m_log_file_name(),
-        m_log_file_name_old(),
         m_rsegs(),
         truncate_in_progress(false) {}
 
@@ -221,7 +204,6 @@ struct Tablespace {
         m_space_name(),
         m_file_name(),
         m_log_file_name(),
-        m_log_file_name_old(),
         m_rsegs() {
     ut_ad(m_id == 0 || is_reserved(m_id));
 
@@ -250,11 +232,6 @@ struct Tablespace {
     if (m_log_file_name != nullptr) {
       ut::free(m_log_file_name);
       m_log_file_name = nullptr;
-    }
-
-    if (m_log_file_name_old != nullptr) {
-      ut::free(m_log_file_name_old);
-      m_log_file_name_old = nullptr;
     }
 
     /* Clear the cached rollback segments.  */
@@ -332,16 +309,6 @@ struct Tablespace {
     }
 
     return (m_log_file_name);
-  }
-
-  /** Get the old undo log filename from the srv_log_group_home_dir.
-  Make it if not yet made. */
-  [[nodiscard]] char *log_file_name_old() {
-    if (m_log_file_name_old == nullptr) {
-      m_log_file_name_old = make_log_file_name(m_id, srv_log_group_home_dir);
-    }
-
-    return (m_log_file_name_old);
   }
 
   /** Get the undo tablespace ID.
@@ -527,10 +494,6 @@ struct Tablespace {
   /** The truncation log file name, auto-generated when needed
   from the space number and the srv_undo_dir. */
   char *m_log_file_name;
-
-  /** The old truncation log file name, auto-generated when needed
-  from the space number and the srv_log_group_home_dir. */
-  char *m_log_file_name_old;
 
   /** List of rollback segments within this tablespace.
   This is not always used. Must call init_rsegs to use it. */

@@ -853,16 +853,6 @@ static monitor_info_t innodb_counter_info[] = {
      "Number of times undo truncation was initiated", MONITOR_NONE,
      MONITOR_DEFAULT_START, MONITOR_UNDO_TRUNCATE_COUNT},
 
-    {"undo_truncate_start_logging_count", "undo",
-     "Number of times during undo truncation a log file was started",
-     MONITOR_NONE, MONITOR_DEFAULT_START,
-     MONITOR_UNDO_TRUNCATE_START_LOGGING_COUNT},
-
-    {"undo_truncate_done_logging_count", "undo",
-     "Number of times during undo truncation a log file was deleted",
-     MONITOR_NONE, MONITOR_DEFAULT_START,
-     MONITOR_UNDO_TRUNCATE_DONE_LOGGING_COUNT},
-
     {"undo_truncate_usec", "undo",
      "Time (in microseconds) spent to process undo truncation", MONITOR_NONE,
      MONITOR_DEFAULT_START, MONITOR_UNDO_TRUNCATE_MICROSECOND},
