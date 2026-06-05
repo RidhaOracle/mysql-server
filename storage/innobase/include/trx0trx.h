@@ -52,7 +52,7 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #ifndef UNIV_HOTBACKUP
 #include "fts0fts.h"
 #endif /* !UNIV_HOTBACKUP */
-#include "read0read.h"
+
 #include "sql/handler.h"  // Xa_state_list
 #include "srv0srv.h"
 
@@ -65,7 +65,7 @@ extern std::vector<std::pair<trx_id_t, table_id_t>> to_rollback_trx_tables;
 struct mtr_t;
 
 // Forward declaration
-class ReadView;
+class Read_view_interface;
 
 // Forward declaration
 class Flush_observer;
@@ -205,14 +205,14 @@ void trx_commit_complete_for_mysql(trx_t *trx); /*!< in/out: transaction */
 void trx_mark_sql_stat_end(trx_t *trx); /*!< in: trx handle */
 /** Assigns a read view for a consistent read query. All the consistent reads
  within the same transaction will get the same read view, which is created
- when this function is first called for a new started transaction. */
-ReadView *trx_assign_read_view(trx_t *trx); /*!< in: active transaction */
+ when this function is first called for a new started transaction.
+@param[in]    trx   active transaction */
+void trx_assign_read_view(trx_t *trx);
 
-/** @return the transaction's read view or NULL if one not assigned. */
-static inline ReadView *trx_get_read_view(trx_t *trx);
-
-/** @return the transaction's read view or NULL if one not assigned. */
-static inline const ReadView *trx_get_read_view(const trx_t *trx);
+/** Get the view which was open by this transaction, if any.
+@param trx              the transaction the view of which we are interested in
+@return the transaction's read view or nullptr if has no open view. */
+[[nodiscard]] const Read_view_interface *trx_get_read_view(const trx_t *trx);
 
 /** Prepares a transaction for commit/rollback. */
 void trx_commit_or_rollback_prepare(trx_t *trx); /*!< in/out: transaction */
@@ -801,8 +801,10 @@ struct trx_t {
   concurrent unique insert or replace operation. */
   bool skip_lock_inheritance;
 
-  ReadView *read_view; /*!< consistent read view used in the
-                       transaction, or NULL if not yet set */
+  /** Consistent read view used in the transaction, or nullptr if not yet set.
+  Even if not null, it might be in "closed" state, which can be checked via
+  trx_sys->mvcc->is_view_open(trx->read_view) */
+  Read_view_interface *read_view;
 
   UT_LIST_NODE_T(trx_t)
   trx_list; /*!< list of transactions;
@@ -1169,26 +1171,6 @@ static inline void assert_trx_in_rw_list(const trx_t *t) {
   ut_ad(!t->read_only);
   ut_ad(t->in_rw_trx_list == !(t->read_only || !t->rsegs.m_redo.rseg));
   check_trx_state(t);
-}
-
-/** Check if transaction is free so that it can be re-initialized.
-@param t transaction handle */
-static inline void assert_trx_is_free(const trx_t *t) {
-  ut_ad(trx_state_eq(t, TRX_STATE_NOT_STARTED) ||
-        trx_state_eq(t, TRX_STATE_FORCED_ROLLBACK));
-  ut_ad(!trx_is_rseg_updated(t));
-  ut_ad(!MVCC::is_view_active(t->read_view));
-  ut_ad((t)->lock.wait_thr == nullptr);
-  ut_ad(UT_LIST_GET_LEN((t)->lock.trx_locks) == 0);
-  ut_ad((t)->dict_operation == TRX_DICT_OP_NONE);
-}
-
-/** Check if transaction is in-active so that it can be freed and put back to
-transaction pool.
-@param t transaction handle */
-static inline void assert_trx_is_inactive(const trx_t *t) {
-  assert_trx_is_free(t);
-  ut_ad(t->dict_operation_lock_mode == 0);
 }
 
 #ifdef UNIV_DEBUG

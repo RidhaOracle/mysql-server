@@ -38,7 +38,7 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #include "mtr0mtr.h"
 #include "page0page.h"
 #include "que0types.h"
-#include "read0types.h"
+#include "read0read_view_interface.h"
 #include "trx0sys.h"
 #include "trx0types.h"
 #include "univ.i"
@@ -1028,7 +1028,7 @@ struct trx_purge_t {
   ulint n_stop;
 
   /** true, if purge is active, we check this without the latch too */
-  volatile bool running;
+  std::atomic<bool> running;
 
   /** Purge coordinator thread states, we check this in several places without
   holding the latch. */
@@ -1038,7 +1038,7 @@ struct trx_purge_t {
   que_t *query;
 
   /** The purge will not remove undo logs which are >= this view (purge view) */
-  ReadView view;
+  Read_view_interface *view;
 
   /** This is computed as a lower-bound of minimum of:
   - the smallest trx->no still needed by the oldest open read view

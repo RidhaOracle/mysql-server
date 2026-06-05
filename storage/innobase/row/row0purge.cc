@@ -280,6 +280,8 @@ bool row_purge_poss_sec(purge_node_t *node,    /*!< in/out: row purge node */
   bool can_delete;
   mtr_t mtr;
 
+  ut_a(purge_sys->is_this_a_purge_thread);
+
   ut_ad(!index->is_clustered());
   mtr_start(&mtr);
 

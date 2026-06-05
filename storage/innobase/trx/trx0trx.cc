@@ -53,7 +53,8 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #include "log0write.h"
 #include "os0proc.h"
 #include "que0que.h"
-#include "read0read.h"
+#include "read0mvcc_interface.h"
+#include "read0read_view_interface.h"
 #include "row0mysql.h"
 #include "srv0mon.h"
 #include "srv0srv.h"
@@ -222,9 +223,17 @@ static void trx_init(trx_t *trx) {
   trx->lock.que_state = TRX_QUE_RUNNING;
 
   trx->last_sql_stat_start.least_undo_no = 0;
-
-  ut_ad(!MVCC::is_view_active(trx->read_view));
-
+#ifdef UNIV_DEBUG
+  /* The trx's read_view can't be open. However, trx_pool_init() happens before
+  trx_sys is initialized, so we can't use trx_sys->mvcc->is_view_open to assert
+  that important assumption. Thankfully, in this specific scenario we can assert
+  an even stronger condition: that the read_view pointer is nullptr. */
+  if (trx_sys != nullptr && trx_sys->mvcc != nullptr) {
+    ut_a(!trx_sys->mvcc->is_view_open(trx->read_view));
+  } else {
+    ut_a(trx->read_view == nullptr);
+  }
+#endif /* UNIV_DEBUG */
   trx->lock.rec_cached = 0;
 
   trx->lock.table_cached = 0;
@@ -447,6 +456,26 @@ void trx_pool_close() {
   trx_pools = nullptr;
 }
 
+/** Check if transaction is free so that it can be re-initialized.
+@param t transaction handle */
+static inline void assert_trx_is_free(const trx_t *t) {
+  ut_ad(trx_state_eq(t, TRX_STATE_NOT_STARTED) ||
+        trx_state_eq(t, TRX_STATE_FORCED_ROLLBACK));
+  ut_ad(!trx_is_rseg_updated(t));
+  ut_ad(!trx_sys->mvcc->is_view_open(t->read_view));
+  ut_ad((t)->lock.wait_thr == nullptr);
+  ut_ad(UT_LIST_GET_LEN((t)->lock.trx_locks) == 0);
+  ut_ad((t)->dict_operation == TRX_DICT_OP_NONE);
+}
+
+/** Check if transaction is in-active so that it can be freed and put back to
+transaction pool.
+@param t transaction handle */
+static inline void assert_trx_is_inactive(const trx_t *t) {
+  assert_trx_is_free(t);
+  ut_ad(t->dict_operation_lock_mode == 0);
+}
+
 /** @return a trx_t instance from trx_pools. */
 static trx_t *trx_create_low() {
   trx_t *trx = trx_pools->get();
@@ -509,6 +538,11 @@ static void trx_free(trx_t *&trx) {
   }
 
   trx->mod_tables.clear();
+
+  /* All callers should ensure trx->read_view is closed, which we've already
+  checked in assert_trx_is_free(trx). But, some callers, such as
+  trx_free_for_background(), do not ensure it was freed. */
+  trx_sys->mvcc->view_free(trx->read_view);
 
   ut_ad(trx->read_view == nullptr);
   ut_ad(trx->is_dd_trx == false);
@@ -598,6 +632,9 @@ void trx_free_resurrected(trx_t *trx) {
 @param[in,out]  trx     transaction object to free */
 void trx_free_for_background(trx_t *trx) {
   trx_validate_state_before_free(trx);
+
+  ut_a(!trx_sys->mvcc->is_view_open(trx->read_view));
+  trx_sys->mvcc->view_free(trx->read_view);
 
   trx_free(trx);
 }
@@ -2010,6 +2047,7 @@ written */
 
     } else {
       ut_ad(trx->id > 0);
+      ut_a(trx->read_view == nullptr);
       MONITOR_INC(MONITOR_TRX_RW_COMMIT);
     }
   }
@@ -2175,6 +2213,8 @@ void trx_commit_low(trx_t *trx, mtr_t *mtr) {
 
   bool serialised;
 
+  //  TBD: why do resurrected PREPARED transactions have trx->no set to trx->id?
+  ut_a(trx->no == TRX_ID_MAX || trx->no == trx->id);
   if (mtr != nullptr) {
     mtr->set_sync();
 
@@ -2296,24 +2336,23 @@ void trx_cleanup_at_db_startup(trx_t *trx) /*!< in: transaction */
   trx->state.store(TRX_STATE_NOT_STARTED, std::memory_order_relaxed);
 }
 
-/** Assigns a read view for a consistent read query. All the consistent reads
- within the same transaction will get the same read view, which is created
- when this function is first called for a new started transaction.
- @return consistent read view */
-ReadView *trx_assign_read_view(trx_t *trx) /*!< in/out: active transaction */
-{
+void trx_assign_read_view(trx_t *trx) {
   ut_ad(trx_can_be_handled_by_current_thread_or_is_hp_victim(trx));
   ut_ad(trx->state.load(std::memory_order_relaxed) == TRX_STATE_ACTIVE);
 
   if (srv_read_only_mode) {
     ut_ad(trx->read_view == nullptr);
-    return (nullptr);
-
-  } else if (!MVCC::is_view_active(trx->read_view)) {
-    trx_sys->mvcc->view_open(trx->read_view, trx);
+    return;
   }
 
-  return (trx->read_view);
+  if (!trx_sys->mvcc->is_view_open(trx->read_view)) {
+    trx_sys->mvcc->view_open(trx->read_view, trx);
+  }
+}
+
+const Read_view_interface *trx_get_read_view(const trx_t *trx) {
+  return (!trx_sys->mvcc->is_view_open(trx->read_view) ? nullptr
+                                                       : trx->read_view);
 }
 
 /** Prepares a transaction for commit/rollback. */
@@ -3404,8 +3443,8 @@ void trx_set_rw_mode(trx_t *trx) /*!< in/out: transaction that is RW */
   trx_sys->rw_trx_ids.push_back(trx->id);
 
   /* So that we can see our own changes. */
-  if (MVCC::is_view_active(trx->read_view)) {
-    MVCC::set_view_creator_trx_id(trx->read_view, trx->id);
+  if (trx_sys->mvcc->is_view_open(trx->read_view)) {
+    trx_sys->mvcc->set_view_creator_trx_id(trx->read_view, trx->id);
   }
   trx_add_to_rw_trx_list(trx);
 

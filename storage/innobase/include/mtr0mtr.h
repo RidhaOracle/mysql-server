@@ -52,9 +52,6 @@ this program; if not, write to the Free Software Foundation, Inc.,
 /** Start a synchronous mini-transaction */
 #define mtr_start_sync(m) (m)->start(true)
 
-/** Start an asynchronous read-only mini-transaction */
-#define mtr_start_ro(m) (m)->start(true, true)
-
 /** Commit a mini-transaction. */
 #define mtr_commit(m) (m)->commit()
 

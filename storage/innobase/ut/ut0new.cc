@@ -118,8 +118,6 @@ PSI_memory_info pfs_info_auto[n_auto];
 
 #endif /* UNIV_PFS_MEMORY */
 
-/** Setup the internal objects needed for ut::new_withkey() to operate.
-This must be called before the first call to ut::new_withkey(). */
 void ut_new_boot() {
 #ifdef UNIV_PFS_MEMORY
   for (size_t i = 0; i < n_auto; i++) {

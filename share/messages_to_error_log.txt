@@ -9135,8 +9135,8 @@ ER_IB_MSG_1199
 ER_IB_MSG_1200
   eng "%s"
 
-ER_IB_MSG_1201
-  eng "%s"
+ER_IB_MSG_OPEN_READ_VIEWS_ON_SHUTDOWN
+  eng "All read views were not closed before shutdown: %zu read views open"
 
 ER_IB_MSG_1202
   eng "%s"

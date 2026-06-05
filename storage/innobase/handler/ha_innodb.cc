@@ -169,6 +169,7 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #include "p_s.h"
 #include "page0zip.h"
 #include "pars0pars.h"
+#include "read0mvcc_interface.h"
 #include "rem0types.h"
 #include "row0ext.h"
 #include "row0import.h"
@@ -19185,7 +19186,7 @@ int ha_innobase::external_lock(THD *thd, /*!< in: handle to the user thread */
       }
 
     } else if (trx->isolation_level <= TRX_ISO_READ_COMMITTED &&
-               MVCC::is_view_active(trx->read_view)) {
+               trx_sys->mvcc->is_view_open(trx->read_view)) {
       mutex_enter(&trx_sys->mutex);
 
       trx_sys->mvcc->view_close(trx->read_view, true);
@@ -19778,7 +19779,7 @@ THR_LOCK_DATA **ha_innobase::store_lock(
         innobase_trx_map_isolation_level(thd_get_trx_isolation(thd));
 
     if (trx->isolation_level <= TRX_ISO_READ_COMMITTED &&
-        MVCC::is_view_active(trx->read_view)) {
+        trx_sys->mvcc->is_view_open(trx->read_view)) {
       /* At low transaction isolation levels we let
       each consistent read set its own snapshot */
 

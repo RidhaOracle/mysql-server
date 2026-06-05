@@ -54,7 +54,8 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #include "my_inttypes.h"
 #include "os0thread.h"
 #include "que0que.h"
-#include "read0read.h"
+#include "read0mvcc_interface.h"
+#include "read0read_view_interface.h"
 #include "row0purge.h"
 #include "row0upd.h"
 #include "srv0mon.h"
@@ -251,14 +252,24 @@ Note that m_lowest_needed_trx_no might be lower than needed by purge_sys->view
 in case GTID persistor is lagging. */
 static void trx_purge_update_oldest_needed() {
   rw_lock_x_lock(&purge_sys->latch, UT_LOCATION_HERE);
-  trx_sys->mvcc->clone_oldest_view(&purge_sys->view);
-  const auto needed_by_purge_view = purge_sys->view.low_limit_no();
+
+  trx_sys->mvcc->clone_oldest_view(purge_sys->view);
+  ut_a(purge_sys->view != nullptr);
+  /* The purge_sys->view should be a *clone* of an open read view, but itself it
+  should not be considered open, so it doesn't participate in competition for
+  the oldest open read view in clone_oldest_view() when we call it next time.
+  We'd like to assert ut_a(!trx_sys->mvcc->is_view_open(purge_sys->view)) here,
+  but the is_view_open(..) can not be called on pointers obtained from
+  clone_oldest_view(), because MVCC::is_view_open() uses information encoded in
+  the lowest bit of a pointer by view_open(..) and view_close(..), which only
+  works for trx->read_view fields. */
+  const auto needed_by_purge_view = purge_sys->view->get_lowest_needed_trx_no();
   /* The Clone_persist_gtid::get_oldest_trx_no() can return TRX_ID_MAX, if there
   are no GTIDs pending to be persisted. It is crucial for correctness, that
   get_oldest_trx_no() must be called after the oldest view was cloned, so that
   in case it returns TRX_ID_MAX, we properly cap it to no more than
   trx_sys->serialisation_min_trx_no seen at an earlier moment (which is an upper
-  bound for purge_sys->view->low_limit_no() on the one hand, and at
+  bound for purge_sys->view->get_lowest_needed_trx_no() on the one hand, and at
   the same time a lower bound for trx->no of any trx assigned a new GTID since
   then and at the same time ). If we do that in opposite order, it could be the
   case that new GTIDs were assigned after the get_oldest_trx_no() has returned
@@ -269,6 +280,7 @@ static void trx_purge_update_oldest_needed() {
       clone_sys->get_gtid_persistor().get_oldest_trx_no();
   purge_sys->m_lowest_needed_trx_no =
       std::min(needed_by_purge_view, needed_by_persistor);
+
   rw_lock_x_unlock(&purge_sys->latch);
 }
 
@@ -297,7 +309,9 @@ void trx_purge_sys_initialize(uint32_t n_purge_threads,
 
   purge_sys->query = trx_purge_graph_build(purge_sys->trx, n_purge_threads);
 
-  new (&purge_sys->view) ReadView();
+  trx_sys->mvcc->undo_purge_is_starting();
+
+  ut_a(purge_sys->view == nullptr);
   trx_purge_update_oldest_needed();
 
   purge_sys->rseg_iter = ut::new_withkey<TrxUndoRsegsIterator>(
@@ -316,8 +330,12 @@ void trx_purge_sys_close() {
 
   purge_sys->sess = nullptr;
 
-  purge_sys->view.close();
-  purge_sys->view.~ReadView();
+  trx_sys->mvcc->view_free(purge_sys->view);
+
+  /* The MVCC will not be used by the Undo Purge anymore, any Undo-related
+  support in the MVCC can be cleaned up now, as the trx_sys will be
+  deinitialized soon after this call. */
+  trx_sys->mvcc->undo_purge_has_shutdown();
 
   rw_lock_free(&purge_sys->latch);
   mutex_free(&purge_sys->pq_mutex);
@@ -2383,7 +2401,6 @@ static void trx_purge_wait_for_workers_to_complete() {
 /** Remove old historical changes from the rollback segments. */
 static void trx_purge_truncate(void) {
   ut_ad(trx_purge_check_limit());
-
   if (purge_sys->limit.trx_no == 0) {
     trx_purge_truncate_history(&purge_sys->iter);
   } else {
@@ -2413,6 +2430,7 @@ ulint trx_purge(ulint n_purge_threads, /*!< in: number of purge tasks
   ut_a(purge_sys->n_submitted == purge_sys->n_completed);
 
   trx_purge_update_oldest_needed();
+
   CONDITIONAL_SYNC_POINT("after_clone_oldest_view");
 #ifdef UNIV_DEBUG
   if (srv_purge_view_update_only_debug) {

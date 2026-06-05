@@ -42,7 +42,6 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #include "os0thread-create.h"
 #include "pars0pars.h"
 #include "que0que.h"
-#include "read0read.h"
 #include "row0mysql.h"
 #include "row0undo.h"
 #include "sql_thd_internal_api.h"

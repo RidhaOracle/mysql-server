@@ -202,7 +202,7 @@ array and the PFS code initializes them via PSI_MEMORY_CALL(register_memory)().
 mem_key_other and mem_key_std are special in the following way.
 * If the caller has not provided a key and the file name of the caller is
   unknown, then mem_key_std will be used. This happens only when called from
-  within std::* containers.
+  within `std` containers.
 * If the caller has not provided a key and the file name of the caller is
   known, but is not amongst the predefined names (see ut_new_boot()) then
   mem_key_other will be used. Generally this should not happen and if it
@@ -231,12 +231,12 @@ extern PSI_memory_key mem_key_undo_spaces;
 extern PSI_memory_key mem_key_ut_lock_free_hash_t;
 /* Please obey alphabetical order in the definitions above. */
 
-/** Setup the internal objects needed for ut::*_withkey() to operate.
-This must be called before the first call to ut::*_withkey(). */
+/** Setup the internal objects needed for `ut::*_withkey()` to operate.
+This must be called before the first call to `ut::*_withkey()`. */
 void ut_new_boot();
 
-/** Setup the internal objects needed for ut::*_withkey() to operate.
-This must be called before the first call to ut::*_withkey(). This
+/** Setup the internal objects needed for `ut::*_withkey()` to operate.
+This must be called before the first call to `ut::*_withkey()`. This
 version of function might be called several times and it will
 simply skip all calls except the first one, during which the
 initialization will happen. */
@@ -1987,17 +1987,17 @@ struct allocator_base_pfs {
 };
 }  // namespace detail
 
-/** Allocator that allows std::* containers to manage their memory through
+/** Allocator that allows `std` containers to manage their memory through
     ut::malloc* and ut::free library functions.
 
     Main purpose of this custom allocator is to instrument all of the memory
-    allocations and deallocations that are being done by std::* containers under
+    allocations and deallocations that are being done by `std` containers under
     the hood, and have them recorded through the PFS (memory) engine.
 
-    Other than std::* containers, this allocator is of course also suitable for
+    Other than `std` containers, this allocator is of course also suitable for
     use in any other allocator-aware containers and/or code.
 
-    Given that ut::malloc* and ut::free library functions already handle all
+    Given that `ut::malloc*` and ut::free library functions already handle all
     the PFS and non-PFS implementation bits and pieces, this allocator is a mere
     wrapper around them.
 

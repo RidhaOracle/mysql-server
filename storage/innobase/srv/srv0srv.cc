@@ -80,6 +80,8 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #include "os0thread-create.h"
 #include "pars0pars.h"
 #include "que0que.h"
+#include "read0mvcc_interface.h"
+#include "read0read_view_interface.h"
 #include "row0mysql.h"
 #include "sql/sql_class.h"
 #include "sql_thd_internal_api.h"
@@ -1479,8 +1481,8 @@ bool srv_printf_innodb_monitor(FILE *file, bool nowait, ulint *trx_start_pos,
           srv_conc_get_active_threads(), srv_conc_get_waiting_threads());
 
   /* This is a dirty read, without holding trx_sys->mutex. */
-  fprintf(file, ULINTPF " read views open inside InnoDB\n",
-          trx_sys->mvcc->size());
+  fprintf(file, "%zu read views open inside InnoDB\n",
+          trx_sys->mvcc->get_open_views_count());
 
   n_reserved = fil_space_get_n_reserved_extents(0);
   if (n_reserved > 0) {
@@ -1732,9 +1734,10 @@ void srv_export_innodb_status(void) {
   /* Purge always deals with transaction end points represented by
   transaction number. We are allowed to purge transactions with number
   below the low limit. */
-  ReadView oldest_view;
-  trx_sys->mvcc->clone_oldest_view(&oldest_view);
-  trx_id_t low_limit_no = oldest_view.low_limit_no();
+  Read_view_interface *oldest_view{};
+  trx_sys->mvcc->clone_oldest_view(oldest_view);
+  const trx_id_t low_limit_no = oldest_view->get_lowest_needed_trx_no();
+  trx_sys->mvcc->view_free(oldest_view);
 
   rw_lock_s_unlock(&purge_sys->latch);
 
