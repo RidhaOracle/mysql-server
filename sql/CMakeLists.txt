@@ -1065,6 +1065,9 @@ SET(RPL_CSA_SOURCES
 SET(BINLOG_SOURCE
   basic_istream.cc
   basic_ostream.cc
+  binlog/binlog_ofile.cc
+  binlog/binlog_tc_log.cc
+  binlog/thd_backup_and_restore.cc
   binlog/global.cc
   binlog/log_sanitizer.cc
   binlog/recovery.cc

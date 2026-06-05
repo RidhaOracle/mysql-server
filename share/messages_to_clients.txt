@@ -11039,6 +11039,9 @@ ER_CSA_CRST_REQUIREMENT_ROW_FORMAT
 ER_CSA_CRST_REQUIREMENT_GTID_ONLY
   eng "The Change Stream Applier currently supports row-based replication with GTIDs. Please set GTID_ONLY to 1 when using CSA."
 
+ER_DA_CANNOT_REPLICATE_WITHOUT_BINLOG
+  eng "Cannot replicate from source as it does not have logical log enabled. Check source configuration to enable it."
+
 #
 #  End of 10.x error messages (server-to-client).
 #

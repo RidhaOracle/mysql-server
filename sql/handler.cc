@@ -1984,6 +1984,13 @@ int ha_commit_low(THD *thd, bool all, bool run_after_commit) {
 
     if (is_ha_commit_low_invoking_commit_order(thd, all) ||
         Commit_order_manager::get_rollback_status(thd)) {
+      DBUG_EXECUTE_IF("ha_commit_low_invoking_commit_order_point", {
+        const char act[] =
+            "now signal signal.commit_low_reached wait_for "
+            "signal.commit_low_unblocked";
+        assert(!debug_sync_set_action(current_thd, STRING_WITH_LEN(act)));
+      });
+
       if (Commit_order_manager::wait(thd)) {
         error = 1;
         /*

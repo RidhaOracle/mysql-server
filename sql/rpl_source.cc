@@ -144,7 +144,7 @@ extern TYPELIB binlog_checksum_typelib;
   }
 
 // returns true if user successfully acquired a resource and false otherwise.
-// In case of failure to use a resource, it concatenates all blocking reeasons
+// In case of failure to use a resource, it concatenates all blocking reasons
 // and reports all as my_message.
 static bool check_and_report_dump_thread_blocked(
     resource_blocker::User &rpl_user) {
@@ -185,6 +185,11 @@ int register_replica(THD *thd, uchar *packet, size_t packet_length) {
 
   if (check_access(thd, REPL_SLAVE_ACL, any_db, nullptr, nullptr, false, false))
     return 1;
+
+  if (!mysql_bin_log.binlog_register_observer()) {
+    my_error(ER_DA_CANNOT_REPLICATE_WITHOUT_BINLOG, MYF(0));
+    return 1;
+  }
 
   thd->rpl_thd_ctx.dump_thread_user =
       resource_blocker::User(get_dump_thread_resource());
@@ -235,6 +240,7 @@ int register_replica(THD *thd, uchar *packet, size_t packet_length) {
   return res;
 
 err:
+  mysql_bin_log.binlog_unregister_observer();
   my_message(ER_UNKNOWN_ERROR, errmsg, MYF(0)); /* purecov: inspected */
   return 1;
 }
@@ -248,8 +254,10 @@ void unregister_replica(THD *thd, bool only_mine, bool need_lock_slave_list) {
 
     auto it = slave_list.find(thd->server_id);
     if (it != slave_list.end() &&
-        (!only_mine || it->second->thd_id == thd->thread_id()))
+        (!only_mine || it->second->thd_id == thd->thread_id())) {
+      mysql_bin_log.binlog_unregister_observer();
       slave_list.erase(it);
+    }
 
     if (need_lock_slave_list) mysql_mutex_unlock(&LOCK_replica_list);
   }
@@ -1336,7 +1344,7 @@ bool show_binary_log_status(THD *thd) {
   }
   protocol->start_row();
 
-  if (mysql_bin_log.is_open()) {
+  if (mysql_bin_log.is_open() && mysql_bin_log.is_persistence_enabled()) {
     Log_info li;
     mysql_bin_log.get_current_log(&li);
     size_t dir_len = dirname_length(li.log_file_name);

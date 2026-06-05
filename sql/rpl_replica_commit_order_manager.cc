@@ -340,7 +340,8 @@ bool Commit_order_manager::wait(Parallel_worker_context *worker) {
       group commit. The tx_commit_pending and next_to_commit variables are
       reset before thread enters group commit later.
     */
-    else if (worker_thd->is_current_stmt_binlog_disabled()) {
+    else if (worker_thd->is_current_stmt_binlog_disabled() ||
+             !mysql_bin_log.is_persistence_enabled()) {
       worker_thd->durability_property = HA_IGNORE_DURABILITY;
       worker_thd->tx_commit_pending = true;
       worker_thd->next_to_commit = nullptr;
