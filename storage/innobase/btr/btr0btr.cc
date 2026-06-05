@@ -865,6 +865,8 @@ ulint btr_create(ulint type, space_id_t space, space_index_t index_id,
 
   ut_ad(index_id != BTR_FREED_INDEX_ID);
 
+  buf_stat_per_index->reset(index_id_t(space, index_id));
+
   /* Create the two new segments (one, in the case of an ibuf tree) for
   the index tree; the segment headers are put on the allocated root page
   (for an ibuf tree, not in the root, but on a separate ibuf header

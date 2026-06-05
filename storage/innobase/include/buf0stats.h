@@ -67,6 +67,16 @@ class buf_stat_per_index_t {
     m_store->inc(id.conv_to_int());
   }
 
+  /** Set the count for given id to 0
+  @param[in]    id      id of the index whose count will be reset */
+  void reset(const index_id_t &id) {
+    if (should_skip(id)) {
+      return;
+    }
+
+    m_store->set(id.conv_to_int(), 0);
+  }
+
   /** Decrement the number of pages for a given index with 1.
   @param[in]    id      id of the index whose count to decrement */
   void dec(const index_id_t &id) {
