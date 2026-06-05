@@ -3713,9 +3713,8 @@ dberr_t row_drop_tablespace(space_id_t space_id, const char *filepath) {
     err = fil_delete_tablespace(space_id);
 
     if (err != DB_SUCCESS && err != DB_TABLESPACE_NOT_FOUND) {
-      ib::error(ER_IB_MSG_991)
-          << "Failed to delete the datafile of tablespace ID=" << space_id
-          << ", file '" << filepath << "'!";
+      ib::error(ER_IB_FAILED_TO_DELETE_TABLESPACE_FILE)
+          << "with space id=" << space_id << ", file '" << filepath << "'!";
     }
   }
 

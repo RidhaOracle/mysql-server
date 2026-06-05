@@ -1930,7 +1930,7 @@ class Fixup_data {
       /* In rare case, the undo might be kept halfway truncated due to some
       error during truncate. Check and add truncate log file as old file if
       present. */
-      undo::Tablespace undo_space(space_id);
+      undo_truncate::Tablespace undo_space(space_id);
       const char *log_file_name = undo_space.log_file_name();
 
       if (os_file_exists(log_file_name)) {

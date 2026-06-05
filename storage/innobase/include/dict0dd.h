@@ -1435,9 +1435,26 @@ for the named tablespace.
 @param[in]  space_name  tablespace name
 @param[in]  space_id    tablespace id
 @param[in]  state       value to set for key 'state'
-@return DB_SUCCESS or DD_FAILURE. */
+@return DD_SUCCESS or DD_FAILURE. */
 bool dd_tablespace_set_id_and_state(const char *space_name, space_id_t space_id,
                                     dd_space_states state);
+
+/** Set the Space ID and retrieve the attribute state from the `se_private_data`
+of the named tablespace.
+@param[in]  space_name  tablespace name
+@param[in]  space_id    tablespace id
+@param[out] out_state   return the state of tablespace
+@return DD_SUCCESS or DD_FAILURE. */
+[[nodiscard]] bool dd_tablespace_set_space_id_and_get_state(
+    const char *space_name, space_id_t space_id, dd_space_states &out_state);
+
+/** Set Space ID in se_private_data of mysql.tablespaces
+for the named tablespace.
+@param[in]  space_name  tablespace name
+@param[in]  space_id    tablespace id
+@return DD_SUCCESS or DD_FAILURE. */
+[[nodiscard]] bool dd_tablespace_set_space_id(const char *space_name,
+                                              space_id_t space_id);
 
 /** Get state attribute value in dd::Tablespace::se_private_data
 @param[in]     dd_space  dd::Tablespace object

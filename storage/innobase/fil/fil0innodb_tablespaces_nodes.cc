@@ -277,50 +277,9 @@ Tablespaces_nodes::Status Tablespaces_nodes::rename(
   return Tablespaces_nodes_interface::Status::SUCCESS;
 }
 
-Tablespaces_nodes::Status Tablespaces_nodes::remove_undo_tablespace(
-    const space_id_t space_id, const Node_hints &hints) {
-  if (!hints.m_path.empty()) {
-    return remove_if_exists(hints.m_path.c_str()
-#ifdef UNIV_PFS_IO
-                                ,
-                            innodb_data_file_key
-#endif
-    );
-  }
-#ifndef UNIV_HOTBACKUP
-  /* path is empty so UNDO tablespace file is to be discovered from the scanned
-  dirs populated. It is done during bootstrap, post REDO recovery, when UNDO
-  tablespaces are being opened. */
-  ut_a(tablespace_scanning != nullptr);
-  ut_a(!tablespace_scanning->is_cleared());
-
-  /* Search for a file for the given UNDO space ID. */
-  const auto scanned_name =
-      tablespace_scanning->get_tablespace_file_by_id(space_id);
-
-  ut_ad(scanned_name);
-  /* If the previous file still exists, delete it. */
-  if (scanned_name) {
-    /* Flush any changes recovered in REDO */
-    fil_flush(space_id);
-    fil_space_close(space_id);
-
-    os_file_delete_if_exists(innodb_data_file_key, scanned_name->c_str(),
-                             nullptr);
-  }
-  return Tablespaces_nodes_interface::Status::SUCCESS;
-#else
-  /* This code shall not be reachable for MEB */
-  ut_error;
-#endif
-}
-
 Tablespaces_nodes::Status Tablespaces_nodes::remove(Tablespace_id space_id,
                                                     size_t /* node_order */,
                                                     const Node_hints &hints) {
-  if (fsp_is_undo_tablespace(space_id)) {
-    return remove_undo_tablespace(space_id, hints);
-  }
 #ifdef UNIV_PFS_IO
   const auto &file_key = fsp_is_system_temporary(space_id)
                              ? innodb_temp_file_key

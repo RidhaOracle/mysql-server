@@ -455,6 +455,13 @@ void fsp_header_init_fields(
 @return offset on success, otherwise 0. */
 ulint fsp_header_get_encryption_offset(const page_size_t &page_size);
 
+/** Write the flag info into the space header.
+@param[in]      space_id                Tablespace id
+@param[in]      space_flags             Tablespace flags
+@param[in]      mtr                     Mini-transaction */
+void fsp_header_store_flags(space_id_t space_id, uint32_t space_flags,
+                            mtr_t *mtr);
+
 /** Write the encryption info into the space header.
 @param[in]      space_id                Tablespace id
 @param[in]      space_flags             Tablespace flags

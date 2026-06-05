@@ -38,7 +38,7 @@ static void log_free_check_validate() {
       SYNC_NO_ORDER_CHECK, /* used for non-labeled latches */
       SYNC_RSEGS,          /* rsegs->x_lock in trx_rseg_create() */
       SYNC_UNDO_DDL,       /* undo::ddl_mutex */
-      SYNC_UNDO_SPACES,    /* undo::spaces::m_latch */
+      SYNC_UNDO_SPACES,    /* undo_truncate::spaces::m_latch */
       SYNC_FTS_CACHE,      /* fts_cache_t::lock */
       SYNC_DICT,           /* dict_sys->mutex in commit_try_rebuild() */
       SYNC_DICT_OPERATION, /* X-latch in commit_try_rebuild() */

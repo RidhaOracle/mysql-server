@@ -427,7 +427,7 @@ void buf_flush_note_oldest_modification(buf_pool_t *buf_pool,
     off - or more specifically is not on, it can be both in DISABLED or
     ENABLED_RESTRICTED transient state. */
     ut_ad(!mtr_t::s_logging.is_enabled() ||
-          !undo::is_reserved(block->page.id.space()));
+          !undo_truncate::is_reserved(block->page.id.space()));
 
     ut_ad(log_is_data_lsn(start_lsn));
 

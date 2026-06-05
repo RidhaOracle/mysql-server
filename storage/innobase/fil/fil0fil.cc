@@ -624,7 +624,7 @@ class Fil_shard {
         continue;
       }
 
-      if (undo::id2num(deleted.first) == undo_num) {
+      if (undo_truncate::id2num(deleted.first) == undo_num) {
         count++;
       }
     }
@@ -4106,17 +4106,8 @@ dberr_t fil_close_tablespace(space_id_t space_id) {
 }
 
 #ifndef UNIV_HOTBACKUP
-/** Write a log record about an operation on a tablespace file.
-@param[in]      type            MLOG_FILE_DELETE or MLOG_FILE_CREATE or
-                                MLOG_FILE_RENAME
-@param[in]      space_id        Tablespace identifier
-@param[in]      path            File path
-@param[in]      new_path        If type is MLOG_FILE_RENAME, the new name
-@param[in]      flags           If type is MLOG_FILE_CREATE, the space flags
-@param[in,out]  mtr             Mini-transaction */
-static void fil_op_write_log(mlog_id_t type, space_id_t space_id,
-                             const char *path, const char *new_path,
-                             uint32_t flags, mtr_t *mtr) {
+void fil_op_write_log(mlog_id_t type, space_id_t space_id, const char *path,
+                      const char *new_path, uint32_t flags, mtr_t *mtr) {
   ut_ad(space_id != TRX_SYS_SPACE);
 
   byte *log_ptr = nullptr;
@@ -5206,9 +5197,13 @@ dberr_t fil_write_initial_pages(pfs_os_file_t file, const char *path,
         return DB_TOO_LONG_PATH;
 
       case Create_error::OUT_OF_DISK_SPACE:
+        ib::info(ER_IB_MSG_CREATE_FILE_OUT_OF_DISK_SPACE, name);
         return DB_OUT_OF_DISK_SPACE;
 
       case Create_error::IO_ERROR:
+        if (fsp_is_undo_tablespace(space_id)) {
+          ib::error(ER_IB_MSG_UNDO_TABLESPACE_CREATE_FAILED, name);
+        }
         return DB_ERROR;
 
       case Create_error::UNSUPPORTED:
@@ -5466,7 +5461,7 @@ std::string fil_path_to_space_name(const std::string &file_path,
   }
 #ifndef UNIV_HOTBACKUP
   if (fsp_is_undo_tablespace(space_id)) {
-    const auto name = undo::make_space_name(space_id);
+    const auto name = undo_truncate::make_space_name(space_id);
     std::string res{name};
     ut::free(name);
     return res;
@@ -5752,10 +5747,22 @@ fil_load_status Fil_system::ibd_open_for_recovery(space_id_t space_id,
   ut_a(space_id != TRX_SYS_SPACE);
 
 #ifndef UNIV_HOTBACKUP
-  /* Do not attempt to open or load for recovery any undo tablespace that
-  is currently being truncated. */
+  /* If we are recovering from a crash of MySQL 9.x, which used
+  undo_$num_trunc.log files to indicate ongoing Undo Space truncation, then we
+  keep the old behaviour of pretending that the file is not found, which
+  essentially skips any redo log recovery for it, which is fine as
+  srv_undo_tablespaces_open() will delete the file anyway.
+
+  TODO: Log files are still used when creating a completely new Undo Space
+  (--initialize or CREATE UNDO TABLESPACE) - in such case we also skip opening.
+
+  The current implementation of truncation marks the old and new Undo Spaces
+  by updating a flag in the FSP_FLAGS header which is set and reset using
+  redo-logged MTRs. Therefore, we have to perform redo log recovery on Undo
+  Spaces to learn the final state of the FSP_FLAGS header. */
   if (fsp_is_undo_tablespace(space_id) &&
-      undo::is_active_truncate_log_present(undo::id2num(space_id))) {
+      undo_truncate::is_active_truncate_log_present(
+          undo_truncate::id2num(space_id))) {
     return FIL_LOAD_NOT_FOUND;
   }
 #endif /* !UNIV_HOTBACKUP */
@@ -5803,13 +5810,14 @@ bool Fil_shard::adjust_space_name(fil_space_t *space,
     ut::free(old_space_name);
   }
 
-  /* Update the undo::Tablespace::name. Since the fil_shard mutex is held by
-  the caller, it would be a sync order violation to get undo::spaces->s_lock.
-  It is OK to skip this s_lock since this occurs during boot_tablespaces()
-  which is still single threaded. */
+  /* Update the undo_truncate::Tablespace::name. Since the fil_shard mutex is
+  held by the caller, it would be a sync order violation to get
+  undo_truncate::spaces->s_lock. It is OK to skip this s_lock since this occurs
+  during boot_tablespaces() which is still single threaded. */
   if (replace_undo) {
-    space_id_t space_num = undo::id2num(space->id);
-    undo::Tablespace *undo_space = undo::spaces->find(space_num);
+    space_id_t space_num = undo_truncate::id2num(space->id);
+    undo_truncate::Tablespace *undo_space =
+        undo_truncate::spaces->find(space_num);
     undo_space->set_space_name(dd_space_name);
   }
 
@@ -8249,7 +8257,7 @@ bool Fil_shard::needs_encryption_rotate(fil_space_t *space) {
     return false;
   }
 
-  /* Skip unencypted tablespaces. */
+  /* System and temporary tablespaces are not encrypted. */
   if (fsp_is_system_or_temp_tablespace(space->id)) {
     return false;
   }
@@ -9180,18 +9188,19 @@ Fil_state fil_tablespace_dir_equals(const space_id_t space_id,
   updated if the undo directory is different now from when the database was
   initialized.  The DD will be updated if we put it in fil_system->moved. */
   if (fsp_is_undo_tablespace(space_id)) {
-    undo::spaces->s_lock(UT_LOCATION_HERE);
-    space_id_t space_num = undo::id2num(space_id);
-    undo::Tablespace *undo_space = undo::spaces->find(space_num);
+    undo_truncate::spaces->s_lock(UT_LOCATION_HERE);
+    space_id_t space_num = undo_truncate::id2num(space_id);
+    undo_truncate::Tablespace *undo_space =
+        undo_truncate::spaces->find(space_num);
 
     if (undo_space != nullptr && undo_space->is_new()) {
       new_path = undo_space->file_name();
       Fil_state state =
           (old_path == new_path) ? Fil_state::MATCHES : Fil_state::MOVED;
-      undo::spaces->s_unlock();
+      undo_truncate::spaces->s_unlock();
       return state;
     }
-    undo::spaces->s_unlock();
+    undo_truncate::spaces->s_unlock();
   }
 
   ut_a(tablespace_scanning != nullptr);
@@ -9528,7 +9537,6 @@ const byte *fil_tablespace_redo_rename(const byte *ptr, const byte *end,
   pages_persistence->redo_rename_tablespace(space_id, from_name.c_str(),
                                             to_name.c_str());
 #endif /* UNIV_HOTBACKUP */
-
   return ptr;
 }
 
@@ -9557,7 +9565,8 @@ const byte *fil_tablespace_redo_extend_wrapper(const byte *ptr, const byte *end,
       In such a case, skip processing this redo log further and goto the
       next record without doing anything more here. */
       if (fsp_is_undo_tablespace(space_id) &&
-          undo::is_active_truncate_log_present(undo::id2num(space_id))) {
+          undo_truncate::is_active_truncate_log_present(
+              undo_truncate::id2num(space_id))) {
         return fil_tablespace_redo_extend(ptr, end, space_id, true);
       }
 

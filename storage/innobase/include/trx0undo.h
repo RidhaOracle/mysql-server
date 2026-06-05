@@ -275,7 +275,7 @@ the data can be discarded.
 @param[in]      noredo          whether the undo tablespace is redo logged */
 void trx_undo_insert_cleanup(trx_undo_ptr_t *undo_ptr, bool noredo);
 
-/** At shutdown, frees the undo logs of a transaction which was either
+/** Frees the trx_undo_t objects for logs of a transaction which was either
 PREPARED or (ACTIVE and recovered).
 @param[in]     trx       transaction which undo logs are freed
 @param[in]     prepared  whether or not the undo segment is in prepared or
@@ -292,7 +292,7 @@ class Truncate;
 /** Truncate UNDO tablespace, reinitialize header and rseg.
 @param[in]  marked_space  UNDO tablespace to truncate
 @return true if success else false. */
-bool trx_undo_truncate_tablespace(undo::Tablespace *marked_space);
+bool trx_undo_truncate_tablespace(undo_truncate::Tablespace *marked_space);
 
 #endif /* !UNIV_HOTBACKUP */
 

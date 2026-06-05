@@ -326,6 +326,7 @@ static constexpr const char *auto_event_names[] = {
     "trx0sys",
     "trx0trx",
     "trx0undo",
+    "trx0undo_trunc",
     "usr0sess",
     "ut0link_buf",
     "ut0list",

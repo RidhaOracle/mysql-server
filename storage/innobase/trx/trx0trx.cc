@@ -1146,15 +1146,15 @@ void trx_lists_init_at_db_start(void) {
   /* Look through the rollback segments in each RSEG_ARRAY for
   transaction undo logs. */
   ut::vector<trx_t *> trxs;
-  undo::spaces->s_lock(UT_LOCATION_HERE);
-  for (auto undo_space : undo::spaces->m_spaces) {
+  undo_truncate::spaces->s_lock(UT_LOCATION_HERE);
+  for (auto undo_space : undo_truncate::spaces->m_spaces) {
     undo_space->rsegs()->s_lock();
     for (auto rseg : *undo_space->rsegs()) {
       trx_resurrect(rseg, trxs);
     }
     undo_space->rsegs()->s_unlock();
   }
-  undo::spaces->s_unlock();
+  undo_truncate::spaces->s_unlock();
 
   for (auto &shard : trx_sys->shards) {
     shard.active_rw_trxs.latch_and_execute(
@@ -1194,14 +1194,14 @@ thread from truncating the undo tablespace that contains this rseg
 until the transaction is done with it.
 @return assigned rollback segment instance */
 static trx_rseg_t *get_next_redo_rseg() {
-  undo::Tablespace *undo_space;
+  undo_truncate::Tablespace *undo_space;
 
   /* The number of undo tablespaces cannot be changed while
   we have this s_lock. */
-  undo::spaces->s_lock(UT_LOCATION_HERE);
+  undo_truncate::spaces->s_lock(UT_LOCATION_HERE);
 
   /* Use all known undo tablespaces.  Some may be inactive. */
-  ulint target_undo_tablespaces = undo::spaces->size();
+  ulint target_undo_tablespaces = undo_truncate::spaces->size();
 
   ut_ad(target_undo_tablespaces > 0);
 
@@ -1229,7 +1229,7 @@ static trx_rseg_t *get_next_redo_rseg() {
 
     current++;
 
-    undo_space = undo::spaces->at(spaces_slot);
+    undo_space = undo_truncate::spaces->at(spaces_slot);
 
     /* Avoid any rseg that resides in a tablespace that has been made
     inactive either explicitly or by being marked for truncate. We do
@@ -1248,7 +1248,7 @@ static trx_rseg_t *get_next_redo_rseg() {
     rseg = undo_space->get_active(rseg_slot);
   }
 
-  undo::spaces->s_unlock();
+  undo_truncate::spaces->s_unlock();
 
   ut_ad(rseg->trx_ref_count > 0);
 

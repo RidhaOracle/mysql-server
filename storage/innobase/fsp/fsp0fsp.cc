@@ -718,7 +718,8 @@ static void fsp_space_modify_check(space_id_t id, const mtr_t *mtr) {
       ut_a(fsp_is_system_temporary(id) || !mtr_t::s_logging.is_enabled() ||
            fil_space_get_flags(id) == UINT32_UNDEFINED ||
            type == FIL_TYPE_TEMPORARY || type == FIL_TYPE_IMPORT ||
-           fil_space_is_redo_skipped(id) || !undo::is_active(id, false));
+           fil_space_is_redo_skipped(id) ||
+           !undo_truncate::is_active(id, false));
     }
 #endif /* UNIV_DEBUG */
       return;
@@ -804,6 +805,17 @@ ulint fsp_header_get_encryption_offset(const page_size_t &page_size) {
 }
 
 #ifndef UNIV_HOTBACKUP
+
+void fsp_header_store_flags(space_id_t space_id, uint32_t space_flags,
+                            mtr_t *mtr) {
+  buf_block_t *block = buf_page_get_gen(
+      page_id_t(space_id, 0), page_size_t{space_flags}, RW_X_LATCH, nullptr,
+      Page_fetch::NORMAL, UT_LOCATION_HERE, mtr);
+  ut_a(block != nullptr);
+  mlog_write_ulint(block->frame + FSP_HEADER_OFFSET + FSP_SPACE_FLAGS,
+                   space_flags, MLOG_4BYTES, mtr);
+}
+
 /** Write the (un)encryption progress info into the space header.
 @param[in]      space_id                Tablespace id
 @param[in]      space_flags             Tablespace flags

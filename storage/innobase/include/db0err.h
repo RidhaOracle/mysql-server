@@ -210,6 +210,8 @@ enum dberr_t {
   DB_BULK_TOO_BIG_RECORD,
   /** The data in CSV file for gcol is invalid */
   DB_BULK_GCOL_INVALID_DATA,
+  /* Undo file is under truncation */
+  DB_UNDO_FILE_UNDER_TRUNCATION,
 
   /* The following are partial failure codes */
 

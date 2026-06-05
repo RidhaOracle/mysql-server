@@ -84,8 +84,7 @@ Tablespace::~Tablespace() {
                                           &file_pre_exists);
 
   if (file_pre_exists && !success) {
-    ib::error(ER_IB_FAILED_TO_DELETE_TABLESPACE_FILE)
-        << "Failed to delete file " << path();
+    ib::error(ER_IB_FAILED_TO_DELETE_TABLESPACE_FILE, path().c_str());
     os_file_log_last_error();
     ut_d(ut_error);
   }

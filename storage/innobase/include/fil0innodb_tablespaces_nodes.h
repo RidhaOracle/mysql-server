@@ -71,18 +71,6 @@ class Tablespaces_nodes final : public Tablespaces_nodes_interface {
                              Open_error>
   open_undo_tablespace(space_id_t space_id, const Node_hints &hints,
                        size_t page_size, bool for_read_only);
-
-  /** Remove an UNDO tablespace file given its space id.
-  @param[in]  space_id  UNDO tablespace id
-  @param[in]  hints     Additional information that may be useful for removing
-                        the node's storage, including path to file. The path
-                        might be empty if it is to be fetched from
-                        tablespace_scanning mapping created during dir scan
-                        during recovery.
-  @return SUCCESS if UNDO tablespace file is removed successfully or if not
-          found, error code otherwise. */
-  [[nodiscard]] Tablespaces_nodes::Status remove_undo_tablespace(
-      space_id_t space_id, const Node_hints &hints);
 };
 
 } /* namespace ib::fil */

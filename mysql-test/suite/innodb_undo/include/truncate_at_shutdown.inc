@@ -1,3 +1,14 @@
+# As we forcefully delete the undo logs and restart, these errors
+# are expected while the server looks for the removed undo files
+--disable_query_log
+call mtr.add_suppression("\\[ERROR\\] .* Operating system error number 2 in a file operation.");
+call mtr.add_suppression("\\[ERROR\\] .* The error means the system cannot find the path specified.");
+call mtr.add_suppression("\\[ERROR\\] .* If you are installing InnoDB, remember that you must create directories yourself, InnoDB does not create them.");
+call mtr.add_suppression("\\[ERROR\\].* File .* 'open' returned OS error .*");
+call mtr.add_suppression("\\[ERROR\\].* File .* 'delete' returned OS error .*");
+call mtr.add_suppression("\\[ERROR\\] .* Cannot find undo tablespace innodb_undo_001 with filename '.*' as indicated by the Data Dictionary. Did you move or delete this tablespace. Any undo logs in it cannot be used");
+--enable_query_log
+
 --echo # While the purge thread is turned off, perform enough DML to cause
 --echo # undo tablespace sizes grow beyond the truncation threshold.
 
@@ -44,7 +55,7 @@ if ($USE_EXPLICIT == 0)
   ALTER UNDO TABLESPACE innodb_undo_001 SET ACTIVE;
   ALTER UNDO TABLESPACE innodb_undo_002 SET ACTIVE;
 
-  --echo # Get rid of the explcit undo tablespaces.
+  --echo # Get rid of the explicit undo tablespaces.
   ALTER UNDO TABLESPACE undo_003 SET INACTIVE;
   ALTER UNDO TABLESPACE undo_004 SET INACTIVE;
   let $inactive_undo_space = undo_003;

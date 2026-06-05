@@ -112,8 +112,12 @@ let SEARCH_PATTERN=\[ERROR\] .* The node 'ibdata1' with expected path of '.*ibda
 --file_exists $bugdir/data/undo_002
 --error 1,3,42
 --exec $MYSQLD $args --innodb-unknown-parameter-6
+let SEARCH_PATTERN=\[Note\] .* Creating UNDO Tablespace .*undo_002;
+--source include/search_pattern.inc
 # file is created now
 --file_exists $bugdir/data/undo_002
+
+
 --source ../include/bootstrap_cleanup.inc
 
 --echo # 7. Start mysqld without undo_001, undo_002
@@ -125,9 +129,8 @@ let SEARCH_PATTERN=\[ERROR\] .* The node 'ibdata1' with expected path of '.*ibda
 --file_exists $bugdir/data/undo_002
 --error 1,3,42
 --exec $MYSQLD $args --innodb-unknown-parameter-7
-# files are created now
---file_exists $bugdir/data/undo_001
---file_exists $bugdir/data/undo_002
+let SEARCH_PATTERN=\[ERROR\] .* No undo tablespaces found. Cannot continue operation;
+--source include/search_pattern.inc
 --source ../include/bootstrap_cleanup.inc
 
 --echo # 8. Start mysqld without #ib_redo*

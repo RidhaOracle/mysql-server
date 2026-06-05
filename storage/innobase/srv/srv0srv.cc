@@ -169,7 +169,7 @@ const char *deprecated_undo_logs =
 
 /** Rate at which UNDO records should be purged. */
 ulong srv_purge_rseg_truncate_frequency =
-    static_cast<ulong>(undo::TRUNCATE_FREQUENCY);
+    static_cast<ulong>(undo_truncate::TRUNCATE_FREQUENCY);
 #endif /* !UNIV_HOTBACKUP */
 
 /** Enable or Disable Truncate of UNDO tablespace.
@@ -1268,7 +1268,7 @@ static void srv_general_init() {
   trx_pool_init();
   que_init();
   row_mysql_init();
-  undo_spaces_init();
+  undo_truncate_spaces_init();
 }
 
 /** Boots the InnoDB server. */
@@ -1711,21 +1711,21 @@ void srv_export_innodb_status(void) {
 
   export_vars.innodb_undo_tablespaces_implicit = FSP_IMPLICIT_UNDO_TABLESPACES;
 
-  undo::spaces->s_lock(UT_LOCATION_HERE);
+  undo_truncate::spaces->s_lock(UT_LOCATION_HERE);
 
-  export_vars.innodb_undo_tablespaces_total = undo::spaces->size();
+  export_vars.innodb_undo_tablespaces_total = undo_truncate::spaces->size();
 
   export_vars.innodb_undo_tablespaces_explicit =
       export_vars.innodb_undo_tablespaces_total - FSP_IMPLICIT_UNDO_TABLESPACES;
 
   export_vars.innodb_undo_tablespaces_active = 0;
 
-  for (auto undo_space : undo::spaces->m_spaces) {
+  for (auto undo_space : undo_truncate::spaces->m_spaces) {
     if (undo_space->is_active()) {
       export_vars.innodb_undo_tablespaces_active++;
     }
   }
-  undo::spaces->s_unlock();
+  undo_truncate::spaces->s_unlock();
 
 #ifdef UNIV_DEBUG
   rw_lock_s_lock(&purge_sys->latch, UT_LOCATION_HERE);
@@ -2572,13 +2572,13 @@ bool set_undo_tablespace_encryption(space_id_t space_id, mtr_t *mtr) {
 
 /* Enable UNDO tablespace encryption */
 bool srv_enable_undo_encryption() {
-  /* Make sure undo::ddl_mutex is owned. */
-  ut_ad(mutex_own(&undo::ddl_mutex));
+  /* Make sure undo_truncate::ddl_mutex is owned. */
+  ut_ad(mutex_own(&undo_truncate::ddl_mutex));
   bool ret_val = false;
 
   /* Traverse over all UNDO tablespaces and mark them encrypted. */
-  undo::spaces->s_lock(UT_LOCATION_HERE);
-  for (auto undo_space : undo::spaces->m_spaces) {
+  undo_truncate::spaces->s_lock(UT_LOCATION_HERE);
+  for (auto undo_space : undo_truncate::spaces->m_spaces) {
     /* Skip system tablespace. */
     if (undo_space->id() == TRX_SYS_SPACE) {
       continue;
@@ -2623,7 +2623,7 @@ bool srv_enable_undo_encryption() {
     ib::info(ER_IB_MSG_1055, undo_space->space_name());
   }
 
-  undo::spaces->s_unlock();
+  undo_truncate::spaces->s_unlock();
   return ret_val;
 }
 
@@ -2943,10 +2943,11 @@ static ulint srv_do_purge(ulint *n_total_purged) {
 
     need_explicit_truncate = (n_pages_purged == 0);
     if (need_explicit_truncate) {
-      undo::spaces->s_lock(UT_LOCATION_HERE);
+      undo_truncate::spaces->s_lock(UT_LOCATION_HERE);
       need_explicit_truncate =
-          (undo::spaces->find_first_inactive_explicit(nullptr) != nullptr);
-      undo::spaces->s_unlock();
+          (undo_truncate::spaces->find_first_inactive_explicit(nullptr) !=
+           nullptr);
+      undo_truncate::spaces->s_unlock();
     }
   } while (purge_sys->state == PURGE_STATE_RUN &&
            (n_pages_purged > 0 || need_explicit_truncate) &&

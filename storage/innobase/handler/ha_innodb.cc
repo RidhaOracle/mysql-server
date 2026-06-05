@@ -230,6 +230,8 @@ this program; if not, write to the Free Software Foundation, Inc.,
 
 #ifndef UNIV_HOTBACKUP
 
+#include "trx0undo_trunc.h"
+
 namespace innobase {
 namespace component_services {
 SERVICE_TYPE(registry) *reg_srv = nullptr;
@@ -3292,7 +3294,8 @@ static bool innobase_ddse_dict_init(dict_init_mode_t dict_init_mode,
                                     List<const dd::Object_table> *tables,
                                     List<const Plugin_tablespace> *tablespaces);
 
-/** Save the state of undo tablespaces from the dd to the undo::Tablespace
+/** Save the state of undo tablespaces from the dd to the
+undo_truncate::Tablespace
 @param[in]  space_id    tablespace ID
 @param[in]  dd_space    dd::Tablespace object
 @return true if success and false if the undo tablespace state is not saved. */
@@ -3305,10 +3308,11 @@ bool apply_dd_undo_state(space_id_t space_id, const dd::Tablespace *dd_space) {
   /* Get the state of undo tablespaces from the DD. */
   dd_space_states state = dd_tablespace_get_state_enum(dd_space, space_id);
 
-  undo::spaces->s_lock(UT_LOCATION_HERE);
+  undo_truncate::spaces->s_lock(UT_LOCATION_HERE);
 
-  space_id_t space_num = undo::id2num(space_id);
-  undo::Tablespace *undo_space = undo::spaces->find(space_num);
+  space_id_t space_num = undo_truncate::id2num(space_id);
+  undo_truncate::Tablespace *undo_space =
+      undo_truncate::spaces->find(space_num);
 
   switch (state) {
     case DD_SPACE_STATE__LAST:
@@ -3337,7 +3341,7 @@ bool apply_dd_undo_state(space_id_t space_id, const dd::Tablespace *dd_space) {
       break;
   }
 
-  undo::spaces->s_unlock();
+  undo_truncate::spaces->s_unlock();
 
   return (success);
 }
@@ -3490,7 +3494,6 @@ void Validate_files::check(const Const_iter &begin, const Const_iter &end,
 
     const auto &p = dd_tablespace->se_private_data();
     const auto &o = dd_tablespace->options();
-    const char *space_name = dd_tablespace->name().c_str();
     const auto se_key_value = dd_space_key_strings;
 
     /* There should be exactly one file name associated
@@ -3520,6 +3523,7 @@ void Validate_files::check(const Const_iter &begin, const Const_iter &end,
     }
 
     /* Get the spacename for this tablespace from the DD. */
+    const char *space_name = dd_tablespace->name().c_str();
     if (dd_tablespace->files().size() != 1 &&
         strcmp(space_name, sys_space_name) != 0) {
       /* Only the InnoDB system tablespace has support for
@@ -3554,9 +3558,9 @@ void Validate_files::check(const Const_iter &begin, const Const_iter &end,
     /* If the trunc log file is still around, this undo tablespace needs to be
     rebuilt now. */
     if (fsp_is_undo_tablespace(space_id)) {
-      mutex_enter(&undo::ddl_mutex);
+      mutex_enter(&undo_truncate::ddl_mutex);
       dberr_t err = srv_undo_tablespace_fixup(space_name, filename, space_id);
-      mutex_exit(&undo::ddl_mutex);
+      mutex_exit(&undo_truncate::ddl_mutex);
       if (err != DB_SUCCESS) {
         ib::error(ER_IB_MSG_FAILED_TO_FINISH_TRUNCATE, prefix.c_str(),
                   space_name);
@@ -3715,24 +3719,24 @@ void Validate_files::check(const Const_iter &begin, const Const_iter &end,
 
     if (fsp_is_undo_tablespace(space_id)) {
       /* The undo space may be open with a alternate space_id */
-      space_id_t space_num = undo::id2num(space_id);
-      if (nullptr != undo::spaces->find(space_num)) {
+      space_id_t space_num = undo_truncate::id2num(space_id);
+      if (nullptr != undo_truncate::spaces->find(space_num)) {
         ++m_n_validated;
         continue;
       }
 
       /* If an undo tablespace from the DD is in an unknown location,
       it will not yet be open. */
-      undo::Tablespace undo_space(space_id);
+      undo_truncate::Tablespace undo_space(space_id);
       undo_space.set_space_name(space_name);
       undo_space.set_file_name(filename);
 
-      mutex_enter(&undo::ddl_mutex);
-      undo::spaces->x_lock(UT_LOCATION_HERE);
-      undo::use_space_id(space_id);
-      dberr_t err = srv_undo_tablespace_open(undo_space);
-      undo::spaces->x_unlock();
-      mutex_exit(&undo::ddl_mutex);
+      mutex_enter(&undo_truncate::ddl_mutex);
+      undo_truncate::spaces->x_lock(UT_LOCATION_HERE);
+      undo_truncate::use_space_id(space_id);
+      dberr_t err = srv_undo_tablespace_open(undo_space, false);
+      undo_truncate::spaces->x_unlock();
+      mutex_exit(&undo_truncate::ddl_mutex);
       if (err != DB_SUCCESS) {
         ib::error(ER_IB_MSG_CANNOT_FIND_DD_UNDO_SPACE, space_name, filename);
       }
@@ -3944,7 +3948,7 @@ static bool update_innodb_temporary_metadata(THD *thd) {
 static bool predefine_undo_tablespaces(
     dd::cache::Dictionary_client *dd_client) {
   /** Undo tablespaces use a reserved range of tablespace ID. */
-  for (auto undo_space : undo::spaces->m_spaces) {
+  for (auto undo_space : undo_truncate::spaces->m_spaces) {
     uint32_t flags = fsp_flags_init(univ_page_size, false, false, false, false);
 
     if (predefine_tablespace(dd_client, undo_space->id(), flags,
@@ -4127,19 +4131,19 @@ static void innobase_post_recover() {
     ut_ad(Encryption::check_keyring());
 
     /* There would be at least 2 UNDO tablespaces */
-    ut_ad(undo::spaces->size() >= FSP_IMPLICIT_UNDO_TABLESPACES);
+    ut_ad(undo_truncate::spaces->size() >= FSP_IMPLICIT_UNDO_TABLESPACES);
 
     if (srv_read_only_mode) {
       ib::error(ER_IB_MSG_1051);
       srv_undo_log_encrypt = false;
     } else {
       /* Enable encryption for UNDO tablespaces */
-      mutex_enter(&undo::ddl_mutex);
+      mutex_enter(&undo_truncate::ddl_mutex);
       if (srv_enable_undo_encryption()) {
         srv_undo_log_encrypt = false;
         ut_d(ut_error);
       }
-      mutex_exit(&undo::ddl_mutex);
+      mutex_exit(&undo_truncate::ddl_mutex);
 
       /* We have to ensure that the first page of the undo tablespaces gets
        flushed to disk.  Otherwise during recovery, since we read the first
@@ -15707,13 +15711,13 @@ static int validate_create_tablespace_info(ib_file_suffix type,
   }
 
   /* If this is an undo tablespace basename and the innodb-undo-directory
-  is not the datadir, then use an undo::Tablespace object to get the name
-  since it will to attach a basename to the undo directory instead of the
+  is not the datadir, then use an undo_truncate::Tablespace object to get the
+  name since it will to attach a basename to the undo directory instead of the
   datadir. */
   if (alter_info->ts_cmd_type == CREATE_UNDO_TABLESPACE &&
       std::string::npos == datafile_name.find_first_of(Fil_path::SEPARATOR) &&
       !MySQL_undo_path.is_same_as(MySQL_datadir_path)) {
-    undo::Tablespace undo_space(0);
+    undo_truncate::Tablespace undo_space(0);
     undo_space.set_file_name(datafile_name.c_str());
     datafile_name = undo_space.file_name();
   }
@@ -16363,7 +16367,7 @@ static int innodb_create_undo_tablespace(handlerton *hton, THD *thd,
   /* Create the tablespace object. */
 
   /* Serialize all undo tablespace DDLs */
-  mutex_enter(&undo::ddl_mutex);
+  mutex_enter(&undo_truncate::ddl_mutex);
 
   /* Get the transaction associated with the current thd and make
   sure it will not block this DDL. */
@@ -16375,9 +16379,9 @@ static int innodb_create_undo_tablespace(handlerton *hton, THD *thd,
   ++trx->will_lock;
 
   /* Find the next available undo space number and mark it in-use. */
-  space_id_t space_id = undo::get_next_available_space_num();
+  space_id_t space_id = undo_truncate::get_next_available_space_id();
   if (space_id == SPACE_UNKNOWN ||
-      undo::spaces->size() == FSP_MAX_UNDO_TABLESPACES) {
+      undo_truncate::spaces->size() == FSP_MAX_UNDO_TABLESPACES) {
     /* All available explicit undo tablespaces have been used. */
     ib::error(ER_IB_MSG_MAX_UNDO_SPACES_REACHED, alter_info->tablespace_name,
               alter_info->data_file_name, int{FSP_MAX_UNDO_TABLESPACES});
@@ -16401,14 +16405,14 @@ static int innodb_create_undo_tablespace(handlerton *hton, THD *thd,
   flags = fsp_flags_init(univ_page_size, false, false, false, false);
   dd_write_tablespace(dd_space, space_id, flags, DD_SPACE_STATE_ACTIVE);
 
-  /* Mark the undo tablespace 'active' in undo::spaces. */
-  undo::set_active(space_id);
+  /* Mark the undo tablespace 'active' in undo_truncate::spaces. */
+  undo_truncate::set_active(space_id);
   ut_d(ib::info(ER_IB_MSG_UNDO_MARKED_ACTIVE, alter_info->tablespace_name));
 
 cleanup:
   trx_free_for_mysql(trx);
 
-  mutex_exit(&undo::ddl_mutex);
+  mutex_exit(&undo_truncate::ddl_mutex);
 
   ib::info(ER_IB_MSG_CREATED_UNDO_SPACE, alter_info->tablespace_name);
 
@@ -16420,9 +16424,9 @@ cleanup:
 @param[in]      dd_state        Current state in the DD.
 @param[in]      dd_space        Tablespace metadata
 @return MySQL error code*/
-static int innodb_alter_undo_tablespace_active(undo::Tablespace *undo_space,
-                                               dd::String_type dd_state,
-                                               dd::Tablespace *dd_space) {
+[[nodiscard]] static int innodb_alter_undo_tablespace_active(
+    undo_truncate::Tablespace *undo_space, dd::String_type dd_state,
+    dd::Tablespace *dd_space) {
   /* Change the state of the undo tablespace.
   ALTER UNDO TABLESPACE is idempotent. */
   if (dd_state != dd_space_state_values[DD_SPACE_STATE_ACTIVE]) {
@@ -16440,9 +16444,9 @@ static int innodb_alter_undo_tablespace_active(undo::Tablespace *undo_space,
 @param[in]      dd_state        Current state in the DD.
 @param[in]      dd_space        Tablespace metadata
 @return MySQL error code*/
-static int innodb_alter_undo_tablespace_inactive(undo::Tablespace *undo_space,
-                                                 dd::String_type dd_state,
-                                                 dd::Tablespace *dd_space) {
+static int innodb_alter_undo_tablespace_inactive(
+    undo_truncate::Tablespace *undo_space, dd::String_type dd_state,
+    dd::Tablespace *dd_space) {
   /* If it is already empty, just return. */
   if (undo_space->is_empty() &&
       dd_state == dd_space_state_values[DD_SPACE_STATE_EMPTY]) {
@@ -16456,7 +16460,7 @@ static int innodb_alter_undo_tablespace_inactive(undo::Tablespace *undo_space,
     inactive_implicit, then it is being truncated and will be put back
     to active before this undo_space is truncated. */
     ulint other_active_spaces = 0;
-    for (auto undo_ts : undo::spaces->m_spaces) {
+    for (auto undo_ts : undo_truncate::spaces->m_spaces) {
       if (undo_ts != undo_space) {
         if (undo_ts->is_active()) {
           other_active_spaces++;
@@ -16545,12 +16549,13 @@ static int innodb_alter_undo_tablespace(handlerton *hton,
   dd_tablespace_get_state(dd_space, &dd_state, space_id);
 
   /* Serialize all undo tablespace DDLs */
-  mutex_enter(&undo::ddl_mutex);
+  mutex_enter(&undo_truncate::ddl_mutex);
 
   /* Get the current undo_space object. */
-  undo::spaces->s_lock(UT_LOCATION_HERE);
-  space_id_t space_num = undo::id2num(space_id);
-  undo::Tablespace *undo_space = undo::spaces->find(space_num);
+  undo_truncate::spaces->s_lock(UT_LOCATION_HERE);
+  space_id_t space_num = undo_truncate::id2num(space_id);
+  undo_truncate::Tablespace *undo_space =
+      undo_truncate::spaces->find(space_num);
 
   /* ALTER UNDO TABLESPACE is idempotent. */
   int err = 0;
@@ -16568,9 +16573,9 @@ static int innodb_alter_undo_tablespace(handlerton *hton,
       err = HA_ADMIN_NOT_IMPLEMENTED;
   }
 
-  undo::spaces->s_unlock();
+  undo_truncate::spaces->s_unlock();
 
-  mutex_exit(&undo::ddl_mutex);
+  mutex_exit(&undo_truncate::ddl_mutex);
 
   return err;
 }
@@ -16612,17 +16617,18 @@ static int innodb_drop_undo_tablespace(handlerton *hton, THD *thd,
   }
 
   /* Serialize all undo tablespace DDLs */
-  mutex_enter(&undo::ddl_mutex);
+  mutex_enter(&undo_truncate::ddl_mutex);
 
-  undo::spaces->x_lock(UT_LOCATION_HERE);
-  space_id_t space_num = undo::id2num(space_id);
-  undo::Tablespace *undo_space = undo::spaces->find(space_num);
+  undo_truncate::spaces->x_lock(UT_LOCATION_HERE);
+  space_id_t space_num = undo_truncate::id2num(space_id);
+  undo_truncate::Tablespace *undo_space =
+      undo_truncate::spaces->find(space_num);
 
   /*  If the undo space is missing, allow the DROP UNDO TABLESPACE to
   continue to completion. */
   if (undo_space == nullptr) {
-    undo::spaces->x_unlock();
-    mutex_exit(&undo::ddl_mutex);
+    undo_truncate::spaces->x_unlock();
+    mutex_exit(&undo_truncate::ddl_mutex);
 
     /* Start the transaction associated with the current thd so that MySQL
     can continue. */
@@ -16650,8 +16656,8 @@ static int innodb_drop_undo_tablespace(handlerton *hton, THD *thd,
                  " Please try again later.";
     }
 
-    undo::spaces->x_unlock();
-    mutex_exit(&undo::ddl_mutex);
+    undo_truncate::spaces->x_unlock();
+    mutex_exit(&undo_truncate::ddl_mutex);
 
     return HA_ERR_TABLESPACE_IS_NOT_EMPTY;
   }
@@ -16664,8 +16670,8 @@ static int innodb_drop_undo_tablespace(handlerton *hton, THD *thd,
   std::string file_name{undo_space->file_name()};
 
   /* Empty and inactive, take it out of view. */
-  undo::spaces->drop(undo_space);
-  undo::spaces->x_unlock();
+  undo_truncate::spaces->drop(undo_space);
+  undo_truncate::spaces->x_unlock();
 
   /* Get the transaction associated with the current thd and write a
   delete_space record to the DDL_LOG. */
@@ -16681,7 +16687,7 @@ static int innodb_drop_undo_tablespace(handlerton *hton, THD *thd,
     error = convert_error_code_to_mysql(err, 0, nullptr);
   }
 
-  mutex_exit(&undo::ddl_mutex);
+  mutex_exit(&undo_truncate::ddl_mutex);
 
   ib::info(ER_IB_MSG_DROPPED_UNDO_SPACE, alter_info->tablespace_name);
 
@@ -18167,19 +18173,20 @@ static bool innobase_get_tablespace_statistics(
   if (fsp_is_undo_tablespace(space_id)) {
     /* Get the ddl_mutex so that if an undo truncation is happening by
     the purge thread, it will complete before we continue.  */
-    mutex_enter(&undo::ddl_mutex);
+    mutex_enter(&undo_truncate::ddl_mutex);
 
     /* When selecting information_schema.files, no MVCC is used.  So it is
     possible to read an uncommitted DD record that indicates the undo
     space is empty and shows the new space_id after a truncation.
     Adjust for that possibility by always using the current space_id. */
-    undo::spaces->s_lock(UT_LOCATION_HERE);
-    space_id_t undo_num = undo::id2num(space_id);
-    undo::Tablespace *undo_space = undo::spaces->find(undo_num);
+    undo_truncate::spaces->s_lock(UT_LOCATION_HERE);
+    space_id_t undo_num = undo_truncate::id2num(space_id);
+    undo_truncate::Tablespace *undo_space =
+        undo_truncate::spaces->find(undo_num);
     if (undo_space != nullptr) {
       space_id = undo_space->id();
     }
-    undo::spaces->s_unlock();
+    undo_truncate::spaces->s_unlock();
   }
 
   auto space = fil_space_acquire(space_id);
@@ -18188,7 +18195,7 @@ static bool innobase_get_tablespace_statistics(
   if (space == nullptr) {
     my_error(ER_TABLESPACE_MISSING, MYF(0), tablespace_name);
     if (fsp_is_undo_tablespace(space_id)) {
-      mutex_exit(&undo::ddl_mutex);
+      mutex_exit(&undo_truncate::ddl_mutex);
     }
     return (DD_FAILURE);
   }
@@ -18278,7 +18285,7 @@ static bool innobase_get_tablespace_statistics(
     my_error(ER_TABLESPACE_MISSING, MYF(0), tablespace_name);
 
     if (fsp_is_undo_tablespace(space_id)) {
-      mutex_exit(&undo::ddl_mutex);
+      mutex_exit(&undo_truncate::ddl_mutex);
     }
 
     return (DD_FAILURE);
@@ -18318,7 +18325,7 @@ static bool innobase_get_tablespace_statistics(
   fil_space_release(space);
 
   if (fsp_is_undo_tablespace(space_id)) {
-    mutex_exit(&undo::ddl_mutex);
+    mutex_exit(&undo_truncate::ddl_mutex);
   }
 
   return (DD_SUCCESS);
@@ -21615,7 +21622,7 @@ static int validate_innodb_undo_log_encrypt(THD *thd, SYS_VAR *var, void *save,
   }
 
   /* There would be at least 2 UNDO tablespaces */
-  ut_ad(undo::spaces->size() >= FSP_IMPLICIT_UNDO_TABLESPACES);
+  ut_ad(undo_truncate::spaces->size() >= FSP_IMPLICIT_UNDO_TABLESPACES);
 
   if (srv_read_only_mode) {
     ib::error(ER_IB_MSG_1051);
@@ -21623,7 +21630,7 @@ static int validate_innodb_undo_log_encrypt(THD *thd, SYS_VAR *var, void *save,
   }
 
   /* UNDO tablespace encryption to be mutually exclusive with any UNDO DDL */
-  mutex_enter(&undo::ddl_mutex);
+  mutex_enter(&undo_truncate::ddl_mutex);
 
   /* Enable encryption for UNDO tablespaces */
   bool ret = srv_enable_undo_encryption();
@@ -21633,7 +21640,7 @@ static int validate_innodb_undo_log_encrypt(THD *thd, SYS_VAR *var, void *save,
     *static_cast<bool *>(save) = true;
   }
 
-  mutex_exit(&undo::ddl_mutex);
+  mutex_exit(&undo_truncate::ddl_mutex);
   return (0);
 }
 
@@ -21712,7 +21719,7 @@ static void innodb_rollback_segments_update(THD *, SYS_VAR *, void *,
   }
 
   /* Serialize this adjustment with all undo tablespace DDLs. */
-  mutex_enter(&undo::ddl_mutex);
+  mutex_enter(&undo_truncate::ddl_mutex);
 
   if (!trx_rseg_adjust_rollback_segments(target)) {
     ib::warn(ER_IB_MSG_580)
@@ -21722,7 +21729,7 @@ static void innodb_rollback_segments_update(THD *, SYS_VAR *, void *,
 
   srv_rollback_segments = target;
 
-  mutex_exit(&undo::ddl_mutex);
+  mutex_exit(&undo_truncate::ddl_mutex);
 }
 
 /** Parse and enable InnoDB monitor counters during server startup.

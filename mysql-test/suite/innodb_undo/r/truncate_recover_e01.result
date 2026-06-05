@@ -1,6 +1,6 @@
 #
 # WL#6965: Truncate UNDO logs during recovery.
-# Crash before MDL with encryption on.
+# Crash before taking MDL for truncate operation with encryption.
 #
 # ----------------------------------------------------------------------
 # Setup
@@ -22,7 +22,7 @@ ALTER UNDO TABLESPACE innodb_undo_002 SET INACTIVE;
 # Make the 2 implicit undo tablespaces active.
 ALTER UNDO TABLESPACE innodb_undo_001 SET ACTIVE;
 ALTER UNDO TABLESPACE innodb_undo_002 SET ACTIVE;
-# Get rid of the explcit undo tablespaces.
+# Get rid of the explicit undo tablespaces.
 ALTER UNDO TABLESPACE undo_003 SET INACTIVE;
 ALTER UNDO TABLESPACE undo_004 SET INACTIVE;
 DROP UNDO TABLESPACE undo_003;

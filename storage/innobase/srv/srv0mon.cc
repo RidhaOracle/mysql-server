@@ -1587,8 +1587,8 @@ static ulint srv_mon_get_rseg_size(void) {
   }
   trx_sys->tmp_rsegs.s_unlock();
 
-  undo::spaces->s_lock(UT_LOCATION_HERE);
-  for (auto undo_space : undo::spaces->m_spaces) {
+  undo_truncate::spaces->s_lock(UT_LOCATION_HERE);
+  for (auto undo_space : undo_truncate::spaces->m_spaces) {
     for (auto rseg : *undo_space->rsegs()) {
       if (rseg->id >= cur_rsegs) {
         break;
@@ -1597,7 +1597,7 @@ static ulint srv_mon_get_rseg_size(void) {
       value += rseg->get_curr_size();
     }
   }
-  undo::spaces->s_unlock();
+  undo_truncate::spaces->s_unlock();
 
   return (value);
 }

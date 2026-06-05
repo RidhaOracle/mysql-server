@@ -1074,8 +1074,7 @@ void srv_purge_wakeup(void);
 @return true if any thread is active, false if no thread is active */
 bool srv_purge_threads_active();
 
-/** Create an undo tablespace with an explicit file name
-This is called during CREATE UNDO TABLESPACE.
+/** Create an undo tablespace
 @param[in]  space_name  tablespace name
 @param[in]  file_name   file name
 @param[in]  space_id    Tablespace ID
@@ -1083,13 +1082,13 @@ This is called during CREATE UNDO TABLESPACE.
 dberr_t srv_undo_tablespace_create(const char *space_name,
                                    const char *file_name, space_id_t space_id);
 
-/** Initialize undo::spaces,
+/** Initialize undo_truncate::spaces,
 called once during srv_start(). */
-void undo_spaces_init();
+void undo_truncate_spaces_init();
 
-/** Free the resources occupied by undo::spaces,
-called once during thread de-initialization. */
-void undo_spaces_deinit();
+/** Free the resources occupied by undo_truncate::spaces,
+called once during srv_shutdown(). */
+void undo_truncate_spaces_deinit();
 
 /** Set redo log variable for performance schema global status.
 @param[in]      enable  true => redo log enabled, false => redo log disabled */

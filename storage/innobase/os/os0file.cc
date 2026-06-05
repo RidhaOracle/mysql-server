@@ -4948,6 +4948,10 @@ ulint os_file_get_and_log_last_error() {
 
 void os_file_log_last_error() { (void)os_file_get_and_log_last_error(); }
 
+ulint os_file_get_last_error(bool report_all_errors) {
+  return (os_file_get_last_error_low(report_all_errors, false));
+}
+
 /** Does error handling when a file operation fails.
 Conditionally exits (calling ib::fatal) based on should_exit value
 and the error type, if should_exit is true then on_error_silent is ignored.

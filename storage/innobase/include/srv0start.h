@@ -47,7 +47,7 @@ this program; if not, write to the Free Software Foundation, Inc.,
 
 // Forward declaration
 struct dict_table_t;
-namespace undo {
+namespace undo_truncate {
 struct Tablespace;
 }
 
@@ -79,9 +79,12 @@ char *srv_add_path_separator_if_needed(
 #ifndef UNIV_HOTBACKUP
 
 /** Open an undo tablespace.
-@param[in]  undo_space  Undo tablespace
+@param[in]  undo_space                  Undo tablespace
+@param[in]  expected_to_be_unusable     true if tablespace is expected to be
+                                        unusable
 @return DB_SUCCESS or error code */
-dberr_t srv_undo_tablespace_open(undo::Tablespace &undo_space);
+[[nodiscard]] dberr_t srv_undo_tablespace_open(
+    undo_truncate::Tablespace &undo_space, bool expected_to_be_unusable);
 
 /** Start InnoDB.
 @param[in]      create_new_db           Whether to create a new database
@@ -94,7 +97,7 @@ is available so now we know the space_name, file_name and previous space_id.
 @param[in]  space_name  undo tablespace name
 @param[in]  file_name   undo tablespace file name
 @param[in]  space_id    undo tablespace ID
-@return error code */
+@return DB_SUCCESS or error code */
 dberr_t srv_undo_tablespace_fixup(const char *space_name, const char *file_name,
                                   space_id_t space_id);
 

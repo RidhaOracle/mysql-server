@@ -8769,7 +8769,7 @@ ER_IB_MSG_UNDO_TRUNCATE_DURING_SHUTDOWN_OR_CRASH
 ER_IB_MSG_UNDO_RECOVER_FAILED_READ_ONLY_MODE
   eng "Cannot recover a truncated undo tablespace in read-only mode"
 
-ER_IB_MSG_1079
+ER_IB_MSG_UNDO_TABLESPACE_RECONSTRUCTING
   eng "Reconstructing undo tablespace number %lu."
 
 ER_IB_MSG_UNDO_TABLESPACE_CREATE_FAILED_ALREADY_EXIST
@@ -8790,10 +8790,10 @@ OBSOLETE_ER_IB_MSG_CANNOT_OPEN_57_UNDO
 ER_IB_MSG_OPENED_N_UNDO_TS
   eng "Opened %zu existing undo tablespaces."
 
-ER_IB_MSG_CANT_CREATE_UNDO_TS_IN_READONLY_OR_RECOVERY
+OBSOLETE_ER_IB_MSG_CANT_CREATE_UNDO_TS_IN_READONLY_OR_RECOVERY
   eng "Cannot create undo tablespaces since innodb_%s has been set. Using %llu existing undo tablespaces."
 
-ER_IB_MSG_STARTUP_FAIL_NO_UNDO_TS
+OBSOLETE_ER_IB_MSG_STARTUP_FAIL_NO_UNDO_TS
   eng "Cannot continue InnoDB startup in %s mode because there are no existing undo tablespaces found."
 
 ER_IB_MSG_UNDO_TABLESPACE_CREATE_FAILED
@@ -8803,7 +8803,7 @@ ER_IB_MSG_NEW_UNDO_TABLESPACE_OPEN_ERROR
   eng "Error %d - %s - opening newly created undo tablespace '%s'."
 
 ER_IB_MSG_CREATED_N_UNDO_TABLESPACES
-  eng "Created %llu undo tablespaces."
+  eng "Created %zu undo tablespaces."
 
 ER_IB_MSG_ENCRYPTED_UNDO_CREATE_FAILED
   eng "Unable to create encrypted undo tablespace number %lu. please check if the keyring is initialized correctly"
@@ -9045,7 +9045,7 @@ ER_IB_MSG_UNDO_TRUNCATE_START
 OBSOLETE_ER_IB_MSG_UNDO_INJECT_BEFORE_DDL_LOG_START
   eng "%s"
 
-ER_IB_MSG_UNDO_TRUNCATE_DELAY_BY_LOG_CREATE
+OBSOLETE_ER_IB_MSG_UNDO_TRUNCATE_DELAY_BY_LOG_CREATE
   eng "Cannot create truncate log for undo tablespace '%s'."
 
 OBSOLETE_ER_IB_MSG_UNDO_INJECT_BEFORE_TRUNCATE
@@ -9174,7 +9174,7 @@ ER_IB_MSG_1212
 ER_IB_MSG_1213
   eng "gettimeofday() failed: %s"
 
-ER_IB_MSG_CANT_CREATE_UNDO_TABESPACE
+OBSOLETE_ER_IB_MSG_CANT_CREATE_UNDO_TABESPACE
   eng "Can't create UNDO tablespace %s %s"
 
 ER_IB_MSG_WILL_CREATE_N_UNDO_TS
@@ -10946,7 +10946,7 @@ ER_IB_MSG_1359
   eng "%s"
 
 ER_IB_FAILED_TO_DELETE_TABLESPACE_FILE
-  eng "%s"
+  eng "Failed to delete the tablespace file %s"
 
 ER_IB_UNABLE_TO_EXPAND_TEMPORARY_TABLESPACE_POOL
   eng "%s"
@@ -13515,6 +13515,8 @@ ER_INNODB_VIO_WRITE_FAILED
 ER_IB_UNEXPECTED_GET_NODE_INFO
   eng "Unexpected get_node_info(%s) result: %s."
 
+ER_IB_MSG_UNDO_TS_NOT_FOUND
+  eng "No undo tablespaces found. Cannot continue operation."
 #
 # End of 10.x error messages intended to be written to the server error log.
 #

@@ -1817,7 +1817,7 @@ void Log_DDL::replay_delete_space_log(space_id_t space_id,
 
   if (fsp_is_undo_tablespace(space_id)) {
     /* Serialize this delete with all undo tablespace DDLs. */
-    mutex_enter(&undo::ddl_mutex);
+    mutex_enter(&undo_truncate::ddl_mutex);
 
     /* If this is called during DROP UNDO TABLESPACE, then the undo_space
     is already gone. But if this is called at startup after a crash, that
@@ -1827,15 +1827,16 @@ void Log_DDL::replay_delete_space_log(space_id_t space_id,
     contain any undo logs was set to empty.  That prevented any new undo
     logs to be added during the startup process up till now.  So whether
     we are at runtime or startup, we assert that the undo tablespace is
-    empty and delete the undo::Tablespace object if it exists. */
-    undo::spaces->x_lock(UT_LOCATION_HERE);
-    space_id_t space_num = undo::id2num(space_id);
-    undo::Tablespace *undo_space = undo::spaces->find(space_num);
+    empty and delete the undo_truncate::Tablespace object if it exists. */
+    undo_truncate::spaces->x_lock(UT_LOCATION_HERE);
+    space_id_t space_num = undo_truncate::id2num(space_id);
+    undo_truncate::Tablespace *undo_space =
+        undo_truncate::spaces->find(space_num);
     if (undo_space != nullptr) {
       ut_a(undo_space->is_empty());
-      undo::spaces->drop(undo_space);
+      undo_truncate::spaces->drop(undo_space);
     }
-    undo::spaces->x_unlock();
+    undo_truncate::spaces->x_unlock();
   }
 
   if (thd != nullptr) {
@@ -1858,11 +1859,11 @@ void Log_DDL::replay_delete_space_log(space_id_t space_id,
   /* If this is an undo space_id, allow the undo number for it
   to be reused. */
   if (fsp_is_undo_tablespace(space_id)) {
-    undo::spaces->x_lock(UT_LOCATION_HERE);
-    undo::unuse_space_id(space_id);
-    undo::spaces->x_unlock();
+    undo_truncate::spaces->x_lock(UT_LOCATION_HERE);
+    undo_truncate::unuse_space_id(space_id);
+    undo_truncate::spaces->x_unlock();
 
-    mutex_exit(&undo::ddl_mutex);
+    mutex_exit(&undo_truncate::ddl_mutex);
   }
 
   DBUG_INJECT_CRASH("ddl_log_crash_after_replay", crash_after_replay_counter++);

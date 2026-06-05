@@ -38,7 +38,7 @@ size_t Scanned_tablespace_dir_and_files::add(Space_read_info space_info,
   const auto space_id = space_info.space_id;
   ut_a(space_id != TRX_SYS_SPACE);
 
-  if (undo::is_reserved(space_id)) {
+  if (undo_truncate::is_reserved(space_id)) {
     ut_ad(!Fil_path::has_suffix(IBD, name.c_str()));
   } else {
     ut_ad(!Fil_path::has_suffix(IBU, name.c_str()));

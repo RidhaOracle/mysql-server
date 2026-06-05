@@ -20,6 +20,7 @@ call mtr.add_suppression("\\[Warning\\] .* Failed to truncate undo tablespace");
 call mtr.add_suppression("\\[Warning\\] .* Purge reached the head of the history list");
 call mtr.add_suppression("\\[ERROR\\] .* Error 65 opening newly created undo tablespace");
 call mtr.add_suppression("\\[ERROR\\] .* Cannot create truncate log for undo tablespace");
+call mtr.add_suppression("\\[ERROR\\] .* Cannot create file './undo_006.ibu'");
 --enable_query_log
 
 CREATE UNDO TABLESPACE undo_003 ADD DATAFILE 'undo_003.ibu';

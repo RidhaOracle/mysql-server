@@ -501,7 +501,7 @@ static void log_test_run() {
 static void log_test_general_close() {
   clone_free();
 
-  undo_spaces_deinit();
+  undo_truncate_spaces_deinit();
 
   os_aio_free();
 

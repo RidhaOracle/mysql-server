@@ -2602,6 +2602,17 @@ void fil_adjust_name_import(dict_table_t *table, const char *path,
 
 #ifndef UNIV_HOTBACKUP
 
+/** Write a log record about an operation on a tablespace file.
+@param[in]      type            MLOG_FILE_OPEN or MLOG_FILE_DELETE
+                                or MLOG_FILE_CREATE or MLOG_FILE_RENAME
+@param[in]      space_id        Tablespace identifier
+@param[in]      path            File path
+@param[in]      new_path        If type is MLOG_FILE_RENAME, the new name
+@param[in]      flags           If type is MLOG_FILE_CREATE, the space flags
+@param[in,out]  mtr             Mini-transaction */
+void fil_op_write_log(mlog_id_t type, space_id_t space_id, const char *path,
+                      const char *new_path, uint32_t flags, mtr_t *mtr);
+
 /** Allows fil system to do periodical cleanup. */
 void fil_purge();
 

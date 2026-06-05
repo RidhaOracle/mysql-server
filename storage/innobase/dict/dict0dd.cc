@@ -6733,6 +6733,44 @@ bool dd_tablespace_set_id_and_state(const char *space_name, space_id_t space_id,
   return dd::commit_or_rollback_tablespace_change(thd, dd_space, dd_result);
 }
 
+bool dd_tablespace_set_space_id(const char *space_name, space_id_t space_id) {
+  THD *thd = current_thd;
+  dd::Tablespace *dd_space;
+
+  dd::cache::Dictionary_client *dc = dd::get_dd_client(thd);
+  dd::cache::Dictionary_client::Auto_releaser releaser{dc};
+  dd::String_type tsn{space_name};
+
+  bool dd_result = dc->acquire_for_modification(tsn, &dd_space);
+  if (dd_space == nullptr) {
+    return DD_FAILURE;
+  }
+
+  dd_tablespace_set_space_id(dd_space, space_id);
+
+  return dd::commit_or_rollback_tablespace_change(thd, dd_space, dd_result);
+}
+
+bool dd_tablespace_set_space_id_and_get_state(const char *space_name,
+                                              space_id_t space_id,
+                                              dd_space_states &out_state) {
+  THD *thd = current_thd;
+  dd::Tablespace *dd_space;
+
+  dd::cache::Dictionary_client *dc = dd::get_dd_client(thd);
+  dd::cache::Dictionary_client::Auto_releaser releaser{dc};
+  dd::String_type tsn{space_name};
+
+  bool dd_result = dc->acquire_for_modification(tsn, &dd_space);
+  if (dd_space == nullptr) {
+    return DD_FAILURE;
+  }
+
+  out_state = dd_tablespace_get_state_enum(dd_space, space_id);
+  dd_tablespace_set_space_id(dd_space, space_id);
+  return dd::commit_or_rollback_tablespace_change(thd, dd_space, dd_result);
+}
+
 void dd_set_discarded(dd::Table &table, bool discard) {
   ut_ad(!dd_table_is_partitioned(table));
 
@@ -6821,10 +6859,11 @@ dd_space_states dd_tablespace_get_state_enum_legacy(const dd::Properties *p,
   }
   ut_ad(space_id != SPACE_UNKNOWN);
 
-  /* Undo tablespaces have the state recorded in undo::spaces. */
+  /* Undo tablespaces have the state recorded in undo_truncate::spaces. */
   if (fsp_is_undo_tablespace(space_id)) {
-    undo::spaces->s_lock(UT_LOCATION_HERE);
-    undo::Tablespace *undo_space = undo::spaces->find(undo::id2num(space_id));
+    undo_truncate::spaces->s_lock(UT_LOCATION_HERE);
+    undo_truncate::Tablespace *undo_space =
+        undo_truncate::spaces->find(undo_truncate::id2num(space_id));
 
     if (undo_space->is_active()) {
       state_enum = DD_SPACE_STATE_ACTIVE;
@@ -6833,7 +6872,7 @@ dd_space_states dd_tablespace_get_state_enum_legacy(const dd::Properties *p,
     } else {
       state_enum = DD_SPACE_STATE_INACTIVE;
     }
-    undo::spaces->s_unlock();
+    undo_truncate::spaces->s_unlock();
 
     return state_enum;
   }

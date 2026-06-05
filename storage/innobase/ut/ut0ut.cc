@@ -489,6 +489,8 @@ const char *ut_strerr(dberr_t num) {
       return "Row is too big for LOAD BULK DATA operation.";
     case DB_BULK_GCOL_INVALID_DATA:
       return "Data for generated column is invalid";
+    case DB_UNDO_FILE_UNDER_TRUNCATION:
+      return "Undo file is undergoing truncation.";
     case DB_ERROR_UNSET:;
       /* Fall through. */
 
