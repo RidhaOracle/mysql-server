@@ -35,7 +35,8 @@ this program; if not, write to the Free Software Foundation, Inc.,
 
 #include <mysql/components/services/page_track_service.h>
 #include <list>
-#include "buf0buf.h" /* buf_page_t */
+#include "buf0buf.h"      /* buf_page_t */
+#include "log0consumer.h" /* Log_consumer */
 #include "ut0mem.h"
 #include "ut0mutex.h"
 

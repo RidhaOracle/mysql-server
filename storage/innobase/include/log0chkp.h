@@ -36,6 +36,9 @@ this program; if not, write to the Free Software Foundation, Inc.,
 
 #ifndef UNIV_HOTBACKUP
 
+/* pages_persistence */
+#include "fil0pages_persistence_interface.h"
+
 /* log_get_sn */
 #include "log0log.h"
 
@@ -108,8 +111,9 @@ class Log_checkpointing {
   /** @name Coordination with buffer pool and oldest_lsn */
   /** @{ */
 
-  /** Updates lsn available for checkpoint. (Never decreases it) */
-  void update_available_for_checkpoint_lsn();
+  /** Updates lsn available for checkpoint. (Never decreases it)
+  @return the updated value of m_available_for_checkpoint */
+  lsn_t update_available_for_checkpoint_lsn();
 
  public:
   [[nodiscard]] lsn_t get_available_for_checkpoint_lsn() const;
@@ -118,9 +122,10 @@ class Log_checkpointing {
   /** @{ */
 
   /** Requests a checkpoint written for lsn greater or equal to provided one.
-  Requires limits_mutex.
-  @param[in]      requested_lsn   checkpoint should be not older than this */
-  void request_checkpoint(lsn_t requested_lsn);
+  Caller must hold log_limits_mutex
+  @param[in]      requested_lsn   checkpoint should be not older than this
+  @return true iff checkpoints are enabled and request was made */
+  bool request_checkpoint(lsn_t requested_lsn);
 
   /** Requests a fuzzy checkpoint write (for currently available lsn).
   @param[in]       sync  whether request is sync (function should wait) */
@@ -403,7 +408,7 @@ However we do the best effort to avoid such situations, and if
 they happen, user threads wait until the space is reclaimed.
 @return checkpoint age as number of bytes */
 [[nodiscard]] inline lsn_t log_get_checkpoint_age() {
-  const lsn_t last_checkpoint_lsn = log_checkpointing->get_checkpoint();
+  const lsn_t last_checkpoint_lsn = pages_persistence->get_checkpoint_lsn();
 
   const lsn_t current_lsn = ib::redo::handler->peek_first_unassigned_lsn();
 

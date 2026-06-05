@@ -36,6 +36,7 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #include "clone0api.h"
 #include "clone0clone.h"
 #include "os0thread-create.h"
+#include "trx0purge.h"  // undo::Tablespace
 
 #include "sql/clone_handler.h"
 #include "sql/mysqld.h"
@@ -105,9 +106,9 @@ static void create_file(std::string &file_name) {
 /** Delete clone status file or directory.
 @param[in]      file    name of file */
 static void remove_file(const std::string &file) {
-  os_file_type_t file_type;
+  const auto file_type = os_file_type(file.c_str());
 
-  if (!os_file_status(file.c_str(), nullptr, &file_type)) {
+  if (!os_file_status_is_conclusive(file_type)) {
     ib::error(ER_IB_CLONE_STATUS_FILE)
         << "Error checking a file to remove : " << file.c_str();
     return;
@@ -2613,8 +2614,6 @@ Clone_notify::~Clone_notify() {
       break;
 
     case Wait_at::NONE:
-      [[fallthrough]];
-
     default:
       return;
   }

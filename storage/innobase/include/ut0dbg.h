@@ -46,6 +46,9 @@ this program; if not, write to the Free Software Foundation, Inc.,
 @param[in]      callback        user callback function */
 void ut_set_assert_callback(std::function<void()> &callback);
 
+/** Terminates execution of the current process. */
+[[noreturn]] void ut_fatal_error();
+
 /** Report a failed assertion.
 @param[in] expr The failed assertion
 @param[in] file Source file containing the assertion

@@ -46,6 +46,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 
 #include "db0err.h"
 #include "dict0dd.h"
+#include "fil0pages_persistence_interface.h"
 #include "ha_innodb.h"
 #include "log0chkp.h"
 #include "log0encryption.h"
@@ -1333,13 +1334,14 @@ static bool redo_log_archive_start(THD *thd, const char *label,
   pfs_os_file_t file_handle =
       os_file_create_simple_no_error_handling_with_umask(
           redo_log_archive_file_key, file_pathname.c_str(), OS_FILE_CREATE,
-          OS_FILE_READ_WRITE, /*read_only*/ false, S_IRUSR | S_IRGRP, &success);
+          OS_FILE_READ_WRITE, S_IRUSR | S_IRGRP, &success);
 
 #else
   pfs_os_file_t file_handle = os_file_create_simple_no_error_handling(
       redo_log_archive_file_key, file_pathname.c_str(), OS_FILE_CREATE,
-      OS_FILE_READ_WRITE, /*read_only*/ false, &success);
+      OS_FILE_READ_WRITE, &success);
 #endif
+
   if (!success) {
     int os_errno = errno;
     char errbuf[MYSYS_STRERROR_SIZE];
@@ -1676,7 +1678,7 @@ static innodb_session_t *log_meb_consumer_session;
 
 static bool redo_log_consumer_register(innodb_session_t *session) {
   log_t &log = *log_sys;
-
+  ut_a(log_checkpointing != nullptr);
   IB_mutex_guard checkpointer_latch{&(log_checkpointing->checkpoint_mutex),
                                     UT_LOCATION_HERE};
 
@@ -1691,7 +1693,7 @@ static bool redo_log_consumer_register(innodb_session_t *session) {
 
   log_meb_consumer = std::make_unique<Log_user_consumer>("MEB");
 
-  log_meb_consumer->set_consumed_lsn(log_checkpointing->get_checkpoint());
+  log_meb_consumer->set_consumed_lsn(pages_persistence->get_checkpoint_lsn());
 
   log_consumer_register(log, log_meb_consumer.get());
 
@@ -1960,7 +1962,7 @@ static void redo_log_archive_consumer() {
                                &log_sys->writer_mutex);
 
     /* Prepare an I/O request with potential encryption. */
-    IORequest request(IORequest::LOG | IORequest::WRITE);
+    IORequest request(IORequest::Type::LOG | IORequest::Type::WRITE);
 
     if (srv_redo_log_encrypt) {
       IB_mutex_guard files_latch{&(log_sys->m_files_mutex), UT_LOCATION_HERE};
@@ -2292,7 +2294,7 @@ long long innodb_redo_log_sharp_checkpoint(
   }
   LogErr(INFORMATION_LEVEL, ER_INNODB_ERROR_LOGGER_MSG,
          "innodb_redo_log_sharp_checkpoint() making checkpoint");
-  log_checkpointing->request_sharp_checkpoint();
+  pages_persistence->request_sharp_checkpoint();
   return 0;
 }
 

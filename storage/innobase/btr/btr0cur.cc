@@ -87,7 +87,6 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #ifndef UNIV_HOTBACKUP
 #include "srv0srv.h"
 #endif /* !UNIV_HOTBACKUP */
-#include "srv0start.h"
 #ifndef UNIV_HOTBACKUP
 #include "trx0rec.h"
 #include "trx0roll.h"
@@ -3924,8 +3923,10 @@ dberr_t btr_cur_pessimistic_update(ulint flags, btr_cur_t *cursor,
 
     ut_ad(index->is_clustered());
 
-    DBUG_EXECUTE_IF("ib_blob_update_rollback", DBUG_SUICIDE(););
-    RECOVERY_CRASH(99);
+    DBUG_EXECUTE_IF("ib_blob_update_rollback", {
+      fprintf(stderr, "ib_blob_update_rollback crash triggered\n");
+      DBUG_SUICIDE();
+    });
 
     lob::BtrContext ctx(mtr, pcur, index, rec, *offsets, block);
 

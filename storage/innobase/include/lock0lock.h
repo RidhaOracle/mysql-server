@@ -881,7 +881,7 @@ void lock_wait_request_check_for_cycles();
 void lock_wait_suspend_thread(que_thr_t *thr); /*!< in: query thread associated
                                                with the user OS thread */
 /** Unlocks AUTO_INC type locks that were possibly reserved by a trx. This
- function should be called at the the end of an SQL statement, by the
+ function should be called at the end of an SQL statement, by the
  connection thread that owns the transaction (trx->mysql_thd). */
 void lock_unlock_table_autoinc(trx_t *trx); /*!< in/out: transaction */
 

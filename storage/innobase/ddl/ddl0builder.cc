@@ -1969,7 +1969,7 @@ dberr_t Builder::fts_sort_and_build() noexcept {
   }
 }
 
-dberr_t Builder::finalize() noexcept {
+void Builder::finalize() noexcept {
   ut_a(m_ctx.m_need_observer);
   ut_a(get_state() == State::FINISH);
 
@@ -2001,8 +2001,6 @@ dberr_t Builder::finalize() noexcept {
   if (err != DB_SUCCESS) {
     set_error(err);
   }
-
-  return err;
 }
 
 dberr_t Builder::merge_sort(size_t thread_id) noexcept {
@@ -2071,23 +2069,15 @@ dberr_t Builder::finish() noexcept {
     thread_ctx->m_file.m_file.close();
   }
 
-  dberr_t err{DB_SUCCESS};
-
   if (get_error() != DB_SUCCESS || !m_ctx.m_online) {
     /* Do not apply any online log. */
   } else if (m_ctx.m_old_table != m_ctx.m_new_table) {
     ut_a(!m_index->online_log);
     ut_a(m_index->online_status == ONLINE_INDEX_COMPLETE);
 
-    auto observer = m_ctx.m_trx->flush_observer;
-    observer->flush();
-
+    m_ctx.m_trx->flush_observer->flush();
   } else {
-    err = finalize();
-
-    if (err != DB_SUCCESS) {
-      set_error(err);
-    }
+    finalize();
   }
 
   set_next_state();

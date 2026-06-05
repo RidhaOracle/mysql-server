@@ -73,6 +73,7 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #include "dict0priv.h"
 #include "dict0stats.h"
 #include "dict0stats_bg.h"
+#include "fil0pages_persistence_interface.h"
 #include "fsp0sysspace.h"
 #include "fts0plugin.h"
 #include "fts0priv.h"
@@ -966,10 +967,6 @@ while prepare_inplace_alter_table() is executing)
 enum_alter_inplace_result ha_innobase::check_if_supported_inplace_alter(
     TABLE *altered_table, Alter_inplace_info *ha_alter_info) {
   DBUG_TRACE;
-
-  if (srv_sys_space.created_new_raw()) {
-    return HA_ALTER_INPLACE_NOT_SUPPORTED;
-  }
 
   if (high_level_read_only || srv_force_recovery) {
     if (srv_force_recovery) {
@@ -2038,7 +2035,7 @@ added
       DBUG_EXECUTE_IF("innodb_test_no_foreign_idx", index = nullptr;);
 
       /* Check whether there exist such
-      index in the the index create clause */
+      index in the index create clause */
       if (!index &&
           !innobase_find_equiv_index(column_names, static_cast<uint>(i),
                                      ha_alter_info->key_info_buffer,
@@ -2121,7 +2118,7 @@ added
                         referenced_index = nullptr;);
 
         /* Check whether there exist such
-        index in the the index create clause */
+        index in the index create clause */
         if (!referenced_index) {
           dd_table_close(referenced_table, current_thd, &mdl, true);
           dict_sys_mutex_exit();
@@ -7094,6 +7091,15 @@ inline void commit_cache_rebuild(ha_innobase_inplace_ctx *ctx) {
 
   error = dict_table_rename_in_cache(ctx->new_table, old_name, false);
   ut_a(error == DB_SUCCESS);
+
+  DBUG_EXECUTE_IF("crash_after_alter_renames_are_complete", {
+    ib::redo::must_persist_all(UT_LOCATION_HERE);
+    /* Remove any mentions of the changed database from redolog, so it is not
+    opened for recovery during redolog recovery and thus is missing from the fil
+    subsystem during the Log_DDL recovery. */
+    pages_persistence->request_sharp_checkpoint();
+    DBUG_SUICIDE();
+  });
 }
 
 /** Set of column numbers */
@@ -7671,7 +7677,7 @@ rollback_trx:
     ut_ad(!trx->fts_trx);
 
     DBUG_EXECUTE_IF("innodb_alter_commit_crash_after_commit",
-                    log_checkpointing->request_sharp_checkpoint();
+                    pages_persistence->request_sharp_checkpoint();
                     ib::redo::must_persist_all(UT_LOCATION_HERE);
                     DBUG_SUICIDE(););
   }
@@ -11317,7 +11323,7 @@ void *ha_innobase::bulk_load_begin(THD *thd, size_t keynr, size_t data_size,
     trx_start_if_not_started(trx, true, UT_LOCATION_HERE);
 
     auto observer = ut::new_withkey<Flush_observer>(
-        ut::make_psi_memory_key(mem_key_ddl), table->space, trx, nullptr);
+        ut::make_psi_memory_key(mem_key_ddl), *trx, nullptr);
 
     trx_set_flush_observer(trx, observer);
   }

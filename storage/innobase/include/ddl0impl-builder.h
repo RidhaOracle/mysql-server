@@ -270,9 +270,8 @@ struct Builder {
   @return DB_SUCCESS or error code. */
   [[nodiscard]] dberr_t create_merge_sort_tasks() noexcept;
 
-  /** Flush all dirty pages, apply the row log and write the redo log record.
-  @return DB_SUCCESS or error code. */
-  dberr_t finalize() noexcept;
+  /** Flush all dirty pages, apply the row log and write the redo log record. */
+  void finalize() noexcept;
 
   /** Convert the field data from compact to redundant format.
   @param[in]    clust_index           Clustered index being built

@@ -48,6 +48,7 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #include "dict0dd.h"
 #include "dict0mem.h"
 #include "dict0stats.h"
+#include "fil0pages_persistence_interface.h"
 #include "ha_innodb.h"
 #include "log0chkp.h"
 #include "log0ddl.h"
@@ -1611,6 +1612,7 @@ dberr_t Log_DDL::replay_all() {
 
     err = delete_by_ids(current_records);
     ut_ad(err == DB_SUCCESS || err == DB_TOO_MANY_CONCURRENT_TRXS);
+
     if (err != DB_SUCCESS) {
       break;
     }
@@ -1825,7 +1827,7 @@ void Log_DDL::replay_delete_space_log(space_id_t space_id,
     logs to be added during the startup process up till now.  So whether
     we are at runtime or startup, we assert that the undo tablespace is
     empty and delete the undo::Tablespace object if it exists. */
-    undo::spaces->x_lock();
+    undo::spaces->x_lock(UT_LOCATION_HERE);
     space_id_t space_num = undo::id2num(space_id);
     undo::Tablespace *undo_space = undo::spaces->find(space_num);
     if (undo_space != nullptr) {
@@ -1855,7 +1857,7 @@ void Log_DDL::replay_delete_space_log(space_id_t space_id,
   /* If this is an undo space_id, allow the undo number for it
   to be reused. */
   if (fsp_is_undo_tablespace(space_id)) {
-    undo::spaces->x_lock();
+    undo::spaces->x_lock(UT_LOCATION_HERE);
     undo::unuse_space_id(space_id);
     undo::spaces->x_unlock();
 

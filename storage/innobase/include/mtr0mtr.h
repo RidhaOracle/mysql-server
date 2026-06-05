@@ -149,7 +149,7 @@ savepoint. */
   (m)->x_latch_at_savepoint((s), (b))
 
 /** Forward declaration of a tablespace object */
-struct fil_space_t;
+class fil_space_t;
 
 /** Mini-transaction memo stack slot. */
 struct mtr_memo_slot_t {

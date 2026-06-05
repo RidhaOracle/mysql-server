@@ -40,8 +40,9 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #include "os0enc.h"                /* Encryption_metadata */
 #ifndef UNIV_HOTBACKUP
 
-/* byte */
-#include "univ.i"
+#include "log0log.h" /* log_t */
+#include "os0enc.h"  /* Encryption_metadata */
+#include "univ.i"    /* byte */
 
 /**************************************************/ /**
 
@@ -62,7 +63,7 @@ this program; if not, write to the Free Software Foundation, Inc.,
 /** Reads the log encryption header to get the redo log encryption information.
 Read is done using the file which contains the current checkpoint_lsn.
 @param[in]  log          redo log
-@param[out] block        block to read encrytion information into
+@param[out] block        block to read encryption information into
 @return DB_SUCCESS or DB_ERROR */
 [[nodiscard]] dberr_t log_encryption_read(
     log_t &log, ib::redo::Handler_interface::Metadata_value &block);
@@ -74,9 +75,9 @@ log.m_encryption_metadata and log.m_encryption_buf.
 [[nodiscard]] dberr_t log_read_encryption_info(log_t &log);
 
 /** Update in-mem encryption information with the new information and also
-write this new information to encryotion header.
+write this new information to encryption header.
 @param[in,out] log   redo log
-@param[in]     block block containing new encryotion information
+@param[in]     block block containing new encryption information
 @return DB_SUCCESS or DB_ERROR */
 [[nodiscard]] dberr_t log_encryption_update_and_write_header(
     log_t &log, const ib::redo::Handler_interface::Metadata_value block);

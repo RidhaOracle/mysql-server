@@ -35,12 +35,14 @@
 #include "buf0flu.h"   /* buf_flush_list_wait_to_add, and other buf_flush_* */
 #include "clone0api.h" /* clone_init(), clone_free() */
 #include "fil0fil.h"
+#include "fil0tablespace_scan.h" /* tablespace_scanning */
 #include "log0buf.h"
 #include "log0chkp.h"
 #include "log0handler.h"
 #include "log0recv.h"
 #include "log0test.h"
 #include "log0write.h"
+#include "os0thread-create.h" /* os_thread_open(), os_thread_close() */
 #include "srv0srv.h"
 #include "srv0start.h" /* srv_is_being_started */
 #include "ut0byte.h"
@@ -203,7 +205,6 @@ static bool log_test_init() {
 
   ut_a(log_sys != nullptr);
 
-  fil_open_system_tablespace_files();
   log_checkpointing->set_checkpoint(flushed_lsn);
   buf_flush_list_added = Buf_flush_list_added_lsns::create();
   buf_flush_list_added->assume_added_up_to(flushed_lsn);
@@ -223,10 +224,17 @@ static bool log_test_recovery() {
 
   /** DBLWR directory is the current directory. */
   recv_sys_init();
+  {
+    dberr_t err = log_sys_init(false);
+    EXPECT_EQ(err, DB_SUCCESS);
+    ut_a(log_sys != nullptr);
+  }
 
-  dberr_t err = log_sys_init(false);
-  ut_a(err == DB_SUCCESS);
-  ut_a(log_sys != nullptr);
+  tablespace_scanning = ut::make_unique<ib::fil::Tablespace_scanning>();
+  {
+    const auto err = tablespace_scanning->scan();
+    EXPECT_EQ(err, DB_SUCCESS);
+  }
 
   /* Following events are not set for the test log system. Hence we need to set
   them explicitly */
@@ -239,7 +247,7 @@ static bool log_test_recovery() {
     }
   });
 
-  err = recv_recovery_from_checkpoint_start(LOG_START_LSN);
+  const auto err = recv_recovery_from_checkpoint_start(LOG_START_LSN);
 
   srv_is_being_started = false;
 

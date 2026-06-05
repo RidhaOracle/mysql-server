@@ -48,6 +48,9 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 /* buf_flush_fsync */
 #include "buf0flu.h"
 
+/* pages_persistence */
+#include "fil0pages_persistence_interface.h"
+
 /* log_buffer_ready_for_write_lsn */
 #include "log0buf.h"
 
@@ -86,6 +89,12 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 
 /* os_event_wait_time_low */
 #include "os0event.h"
+
+/* os_thread_create */
+#include "os0thread-create.h"
+
+/* create_internal_thd */
+#include "sql_thd_internal_api.h"
 
 /* MONITOR_INC, ... */
 #include "srv0mon.h"
@@ -233,11 +242,11 @@ the log_checkpointer.m_checkpoint_lsn.
   return lsn;
 }
 
-void Log_checkpointing::update_available_for_checkpoint_lsn() {
+lsn_t Log_checkpointing::update_available_for_checkpoint_lsn() {
   ut_ad(log_checkpointer_is_active());
 
   /* Update lsn available for checkpoint. */
-  const lsn_t oldest_lsn = log_compute_available_for_checkpoint_lsn();
+  lsn_t oldest_lsn = log_compute_available_for_checkpoint_lsn();
 
   log_limits_mutex_enter();
 
@@ -252,9 +261,12 @@ void Log_checkpointing::update_available_for_checkpoint_lsn() {
 
   if (oldest_lsn > m_available_for_checkpoint_lsn) {
     m_available_for_checkpoint_lsn = oldest_lsn;
+  } else {
+    oldest_lsn = m_available_for_checkpoint_lsn;
   }
 
   log_limits_mutex_exit();
+  return oldest_lsn;
 }
 
 lsn_t Log_checkpointing::determine_checkpoint_lsn() {
@@ -462,8 +474,9 @@ void Log_checkpointing::create_checkpoint() {
   meb::redo_log_consumer_register. Otherwise a race condition would be possible
   in which a consumer was registered at "new checkpoint lsn", but got the "old"
   when querying Innodb_redo_log_checkpoint_lsn and thus wrongly believed it is
-  at an older position than it really is (in worst case: leading to crash, when
-  it will try to read a file already reclaimed as no longer needed by consumers)
+  at an older position than it really is (in the worst case: leading to crash,
+  when it will try to read a file already reclaimed as no longer needed by
+  consumers)
   */
   log_update_exported_lsns();
   log_limits_mutex_exit();
@@ -510,33 +523,6 @@ dberr_t log_files_write_first_data_block_low(log_t &log,
                                OS_FILE_LOG_BLOCK_SIZE, block);
 }
 
-void Log_checkpointing::request_checkpoint(lsn_t requested_lsn) {
-  ut_a(requested_lsn <= ib::redo::handler->peek_first_unassigned_lsn());
-  ut_ad(log_limits_mutex_own());
-
-  ut_a(log_is_data_lsn(requested_lsn));
-
-  /* Update m_requested_checkpoint_lsn only to greater value. */
-
-  if (requested_lsn > m_requested_checkpoint_lsn) {
-    m_requested_checkpoint_lsn = requested_lsn;
-
-    if (requested_lsn > get_checkpoint()) {
-      os_event_set(m_event);
-    }
-  }
-}
-
-static void log_wait_for_checkpoint(lsn_t requested_lsn) {
-  ut_a(log_checkpointer_is_active());
-
-  auto stop_condition = [requested_lsn](bool) {
-    return log_checkpointing->get_checkpoint() >= requested_lsn;
-  };
-
-  ut::wait_for(0, std::chrono::microseconds{100}, stop_condition);
-}
-
 /** Check if the checkpointing is enabled
 @retval true  checkpointing is enabled
 @retval false checkpointing is disabled
@@ -556,24 +542,45 @@ static void log_wait_for_checkpoint(lsn_t requested_lsn) {
   return true;
 }
 
-void Log_checkpointing::request_fuzzy_checkpoint(bool sync) {
-  update_available_for_checkpoint_lsn();
+bool Log_checkpointing::request_checkpoint(lsn_t requested_lsn) {
+  ut_a(requested_lsn <= ib::redo::handler->peek_first_unassigned_lsn());
+  ut_ad(log_limits_mutex_own());
 
-  log_limits_mutex_enter();
+  ut_a(log_is_data_lsn(requested_lsn));
 
-  if (!log_request_checkpoint_validate()) {
-    log_limits_mutex_exit();
-    if (sync) {
-      ut_error;
+  const bool enabled = log_request_checkpoint_validate();
+  if (enabled) {
+    /* Update m_requested_checkpoint_lsn only to greater value. */
+    if (requested_lsn > m_requested_checkpoint_lsn) {
+      m_requested_checkpoint_lsn = requested_lsn;
+
+      if (requested_lsn > get_checkpoint()) {
+        os_event_set(m_event);
+      }
     }
-    return;
   }
+  return enabled;
+}
 
-  const lsn_t lsn = get_available_for_checkpoint_lsn();
-  request_checkpoint(lsn);
+static void log_wait_for_checkpoint(lsn_t requested_lsn) {
+  ut_a(log_checkpointer_is_active());
 
-  log_limits_mutex_exit();
+  auto stop_condition = [requested_lsn](bool) {
+    return log_checkpointing->get_checkpoint() >= requested_lsn;
+  };
 
+  ut::wait_for(0, std::chrono::microseconds{100}, stop_condition);
+}
+
+void Log_checkpointing::request_fuzzy_checkpoint(bool sync) {
+  const auto lsn = update_available_for_checkpoint_lsn();
+  {
+    IB_mutex_guard guard{&log_checkpointing->limits_mutex, UT_LOCATION_HERE};
+    if (!request_checkpoint(lsn)) {
+      ut_a(!sync);
+      return;
+    }
+  }
   if (sync) {
     log_wait_for_checkpoint(lsn);
   }
@@ -582,20 +589,12 @@ void Log_checkpointing::request_fuzzy_checkpoint(bool sync) {
 void Log_checkpointing::request_sharp_checkpoint() {
   const lsn_t lsn = ib::redo::handler->peek_first_unassigned_lsn();
 
-  if (lsn <= get_checkpoint()) {
-    return;
+  {
+    IB_mutex_guard guard{&log_checkpointing->limits_mutex, UT_LOCATION_HERE};
+    if (!request_checkpoint(lsn)) {
+      ut_error;
+    }
   }
-
-  log_limits_mutex_enter();
-
-  if (!log_request_checkpoint_validate()) {
-    log_limits_mutex_exit();
-    ut_error;
-  }
-
-  request_checkpoint(lsn);
-
-  log_limits_mutex_exit();
 
   log_wait_for_checkpoint(lsn);
 }
@@ -756,7 +755,9 @@ lsn_t Log_checkpointing::get_sync_flush_lsn() {
 void Log_checkpointing::consider_sync_flush() {
   ut_ad(log_checkpointer_mutex_own());
 
-  if (get_sync_flush_lsn() != 0) {
+  requested_sync_flush_lsn.store(get_sync_flush_lsn());
+
+  if (requested_sync_flush_lsn.load() != 0) {
     log_checkpointer_mutex_exit();
 
     log_request_sync_flush();
@@ -1030,7 +1031,7 @@ void log_update_exported_lsns() {
   The mutex only ensures that the writes to export_vars have defined behaviour
   even though they are not atomics. */
   export_vars.innodb_redo_log_checkpoint_lsn =
-      log_checkpointing->get_checkpoint();
+      pages_persistence->get_checkpoint_lsn();
 
   export_vars.innodb_redo_log_flushed_to_disk_lsn =
       ib::redo::handler->peek_first_nonpersisted_lsn();

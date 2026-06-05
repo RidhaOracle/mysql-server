@@ -32,40 +32,20 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 
 #ifndef UNIV_HOTBACKUP
 
-/* std::memcpy, std::memcmp, std::memset */
-#include <cstring>
-
-/* log_get_checkpoint_lsn */
-#include "log0chkp.h"
-
 #include "log0encryption.h"
-
-/* log_files_mutex_own */
-#include "log0files_governor.h"
-
-/* log_encryption_header_{read,write} */
-#include "log0files_io.h"
-
-/* log_t::m_encryption_metadata */
-#include "log0sys.h"
-
-/* LOG_HEADER_ENCRYPTION_INFO_OFFSET */
-#include "log0types.h"
-
-/* log_writer_mutex_own */
-#include "log0write.h"
-
-/* Encryption::X */
-#include "os0enc.h"
-
-/* srv_force_recovery */
-#include "srv0srv.h"
-
-/* IB_mutex_guard */
-#include "ut0mutex.h"
-
-/* Redo Log Handler */
-#include "log0handler_interface.h"
+#include <cstring>     /* std::memcpy, std::memcmp, std::memset */
+#include "dict0dict.h" /* dict_sys_t::s_invalid_space_id */
+#include "fil0pages_persistence_interface.h" /* pages_persistence */
+#include "log0chkp.h"                        /* log_get_checkpoint_lsn */
+#include "log0files_governor.h"              /* log_files_mutex_own */
+#include "log0files_io.h"          /* log_encryption_header_{read,write} */
+#include "log0handler_interface.h" /* Redo Log Handler */
+#include "log0sys.h"               /* log_t::m_encryption_metadata */
+#include "log0types.h"             /* LOG_HEADER_ENCRYPTION_INFO_OFFSET */
+#include "log0write.h"             /* log_writer_mutex_own */
+#include "os0enc.h"                /* Encryption::* */
+#include "srv0srv.h"               /* srv_force_recovery */
+#include "ut0mutex.h"              /* IB_mutex_guard */
 
 /**************************************************/ /**
 
@@ -81,7 +61,7 @@ Asserts that the file has been found.
 @return iterator to the file containing current log encryption header */
 static Log_files_dict::Const_iterator log_encryption_file(const log_t &log) {
   ut_ad(mutex_own(&log.m_files_mutex));
-  auto file = log.m_files.find(log_checkpointing->get_checkpoint());
+  auto file = log.m_files.find(pages_persistence->get_checkpoint_lsn());
   ut_a(file != log.m_files.end());
   return file;
 }

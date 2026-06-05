@@ -240,11 +240,6 @@ void ReadView::ids_t::reserve(ulint n) {
   }
 }
 
-/**
-Copy and overwrite this array contents
-@param start            Source array
-@param end              Pointer to end of array */
-
 void ReadView::ids_t::assign(const value_type *start, const value_type *end) {
   ut_ad(end >= start);
 
@@ -500,7 +495,7 @@ void MVCC::view_open(ReadView *&view, trx_t *trx) {
   ut_ad(!srv_read_only_mode);
 
   /** If no new RW transaction has been started since the last view
-  was created then reuse the the existing view. */
+  was created then reuse the existing view. */
   if (view != nullptr) {
     uintptr_t p = reinterpret_cast<uintptr_t>(view);
 

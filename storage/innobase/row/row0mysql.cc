@@ -54,6 +54,7 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #include "dict0stats.h"
 #include "dict0stats_bg.h"
 #include "fil0fil.h"
+#include "fil0pages_persistence_interface.h"
 #include "fsp0file.h"
 #include "fsp0sysspace.h"
 #include "fts0fts.h"
@@ -3229,10 +3230,10 @@ already_dropped:
  ALTER TABLE MySQL may call drop table even if the table has running queries on
  it. Also, if there are running foreign key checks on the table, we drop the
  table lazily.
+ @param[in] name Table name.
  @return true if the table was not yet in the drop list, and was added there */
-static bool row_add_table_to_background_drop_list(
-    const char *name [[maybe_unused]]) /*!< in: table name */
-{
+static bool row_add_table_to_background_drop_list(const char *name
+                                                  [[maybe_unused]]) {
   /* WL6049, remove after WL6049. */
   ut_d(ut_error);
 #ifndef UNIV_DEBUG
@@ -3377,11 +3378,11 @@ static dberr_t row_discard_tablespace_end(trx_t *trx, dict_table_t *table,
   }
 
   DBUG_EXECUTE_IF("ib_discard_before_commit_crash",
-                  log_checkpointing->request_sharp_checkpoint();
+                  pages_persistence->request_sharp_checkpoint();
                   DBUG_SUICIDE(););
 
   DBUG_EXECUTE_IF("ib_discard_after_commit_crash",
-                  log_checkpointing->request_sharp_checkpoint();
+                  pages_persistence->request_sharp_checkpoint();
                   DBUG_SUICIDE(););
 
   row_mysql_unlock_data_dictionary(trx);
@@ -3698,7 +3699,8 @@ dberr_t row_drop_tablespace(space_id_t space_id, const char *filepath) {
   /* If the tablespace is not in the cache, just delete the file. */
   if (!fil_space_exists_in_mem(space_id, nullptr, true, false)) {
     /* Force a delete of any discarded or temporary files. */
-    if (fil_delete_file(filepath)) {
+    if (tablespaces_nodes->remove(space_id, 0, {.m_path = filepath}) ==
+        ib::fil::Tablespaces_nodes_interface::Status::SUCCESS) {
       ib::info(ER_IB_MSG_989)
           << "Removed datafile=" << filepath << ", space_id=" << space_id;
 
@@ -3708,7 +3710,7 @@ dberr_t row_drop_tablespace(space_id_t space_id, const char *filepath) {
     }
 
   } else {
-    err = fil_delete_tablespace(space_id, BUF_REMOVE_NONE);
+    err = fil_delete_tablespace(space_id);
 
     if (err != DB_SUCCESS && err != DB_TABLESPACE_NOT_FOUND) {
       ib::error(ER_IB_MSG_991)

@@ -43,6 +43,7 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #include "clone0clone.h"
 #include "current_thd.h"
 #include "dict0dd.h"
+#include "fil0pages_persistence_interface.h"
 #include "fsp0sysspace.h"
 #include "ha_prototypes.h"
 #include "lock0lock.h"
@@ -88,8 +89,8 @@ typedef std::map<trx_t *, table_id_set, std::less<trx_t *>,
 static trx_table_map resurrected_trx_tables;
 
 /* std::vector to store the trx id & table id of tables that needs to be
- * rollbacked. We take SHARED MDL on these tables inside
- * trx_recovery_rollback_thread before letting server accept connections */
+rollbacked. We take SHARED MDL on these tables inside
+trx_recovery_rollback_thread before letting server accept connections */
 std::vector<std::pair<trx_id_t, table_id_t>> to_rollback_trx_tables;
 
 /** Dummy session used currently in MySQL interface */
@@ -132,6 +133,7 @@ static void trx_flush_logs(trx_t *trx, lsn_t lsn);
 @param[in,out]  trx             transaction struct
 @param[in]      observer        flush observer */
 void trx_set_flush_observer(trx_t *trx, Flush_observer *observer) {
+  ut_a_eq(trx->flush_observer, nullptr);
   trx->flush_observer = observer;
 }
 
@@ -1107,7 +1109,7 @@ void trx_lists_init_at_db_start(void) {
   /* Look through the rollback segments in each RSEG_ARRAY for
   transaction undo logs. */
   ut::vector<trx_t *> trxs;
-  undo::spaces->s_lock();
+  undo::spaces->s_lock(UT_LOCATION_HERE);
   for (auto undo_space : undo::spaces->m_spaces) {
     undo_space->rsegs()->s_lock();
     for (auto rseg : *undo_space->rsegs()) {
@@ -1159,7 +1161,7 @@ static trx_rseg_t *get_next_redo_rseg() {
 
   /* The number of undo tablespaces cannot be changed while
   we have this s_lock. */
-  undo::spaces->s_lock();
+  undo::spaces->s_lock(UT_LOCATION_HERE);
 
   /* Use all known undo tablespaces.  Some may be inactive. */
   ulint target_undo_tablespaces = undo::spaces->size();
@@ -2210,7 +2212,7 @@ void trx_commit_low(trx_t *trx, mtr_t *mtr) {
 
     DBUG_EXECUTE_IF(
         "ib_crash_during_trx_commit_in_mem", if (trx_is_rseg_updated(trx)) {
-          log_checkpointing->request_sharp_checkpoint();
+          pages_persistence->request_sharp_checkpoint();
           DBUG_SUICIDE();
         });
     /*--------------*/

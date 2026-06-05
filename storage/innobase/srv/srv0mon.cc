@@ -37,6 +37,7 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #include "arch0arch.h"
 #include "buf0buf.h"
 #include "dict0mem.h"
+#include "fil0pages_persistence_interface.h"
 #include "ibuf0ibuf.h"
 #include "lock0lock.h"
 #include "log0buf.h"
@@ -46,6 +47,7 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #include "mach0data.h"
 #include "os0file.h"
 #include "srv0mon.h"
+#include "srv0monitoring_interface.h"
 #include "srv0srv.h"
 #include "trx0purge.h"
 #include "trx0rseg.h"
@@ -1585,7 +1587,7 @@ static ulint srv_mon_get_rseg_size(void) {
   }
   trx_sys->tmp_rsegs.s_unlock();
 
-  undo::spaces->s_lock();
+  undo::spaces->s_lock(UT_LOCATION_HERE);
   for (auto undo_space : undo::spaces->m_spaces) {
     for (auto rseg : *undo_space->rsegs()) {
       if (rseg->id >= cur_rsegs) {
@@ -1969,32 +1971,22 @@ void srv_mon_process_existing_counter(
     } break;
 
     case MONITOR_OVLD_LSN_BUF_DIRTY_PAGES_ADDED:
-      value = (mon_type_t)buf_flush_list_added->smallest_not_added_lsn();
-      break;
-
     case MONITOR_OVLD_BUF_OLDEST_LSN_APPROX:
-      value = (mon_type_t)buf_pool_get_oldest_modification_approx();
-      break;
-
     case MONITOR_OVLD_BUF_OLDEST_LSN_LWM:
-      value = (mon_type_t)buf_pool_get_oldest_modification_lwm();
+    case MONITOR_OVLD_MAX_AGE_ASYNC:
+    case MONITOR_OVLD_MAX_AGE_SYNC:
+      value =
+          pages_persistence->get_monitoring().get_value(monitor_id).value_or(0);
       break;
 
     case MONITOR_OVLD_LSN_CHECKPOINT:
-      value = (mon_type_t)log_checkpointing->get_checkpoint();
+      value = (mon_type_t)pages_persistence->get_checkpoint_lsn();
       break;
 
     case MONITOR_OVLD_LSN_CHECKPOINT_AGE:
       value = (mon_type_t)log_get_checkpoint_age();
       break;
 
-    case MONITOR_OVLD_MAX_AGE_ASYNC:
-      value = log_checkpointing->adaptive_flush_min_age();
-      break;
-
-    case MONITOR_OVLD_MAX_AGE_SYNC:
-      value = log_checkpointing->adaptive_flush_max_age();
-      break;
     case MONITOR_OVLD_ADAPTIVE_HASH_SEARCH:
       value = btr_cur_n_sea;
       break;

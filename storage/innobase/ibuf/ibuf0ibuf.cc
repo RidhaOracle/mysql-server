@@ -61,6 +61,7 @@ constexpr uint32_t IBUF_BITMAP = PAGE_DATA;
 #include "buf0rea.h"
 #include "dict0boot.h"
 #include "fil0fil.h"
+#include "fil0pages_persistence_interface.h"
 #include "fsp0fsp.h"
 #include "fsp0sysspace.h"
 #include "fut0lst.h"
@@ -4413,10 +4414,6 @@ dberr_t ibuf_check_bitmap_on_import(
   }
 
   size = fil_space_get_size(space_id);
-
-  if (size == 0) {
-    return (DB_TABLE_NOT_FOUND);
-  }
 
   mutex_enter(&ibuf_mutex);
 

@@ -536,8 +536,6 @@ uint32_t Clone_Snapshot::get_blocks_per_chunk() const {
       break;
 
     case CLONE_SNAPSHOT_FILE_COPY:
-      [[fallthrough]];
-
     case CLONE_SNAPSHOT_REDO_COPY:
       num_blocks = blocks_per_chunk();
       break;
@@ -952,7 +950,7 @@ int Clone_Snapshot::get_page_for_write(const page_id_t &page_id,
     auto compressed_data = page_data + data_size;
     memset(compressed_data, 0, data_size);
 
-    IORequest request(IORequest::WRITE);
+    IORequest request(IORequest::Type::WRITE);
     request.compression_algorithm(file_meta->m_compress_type);
     ulint compressed_len = 0;
 
@@ -967,11 +965,11 @@ int Clone_Snapshot::get_page_for_write(const page_id_t &page_id,
     }
   }
 
-  IORequest request(IORequest::WRITE);
+  IORequest request(IORequest::Type::WRITE);
   set_page_encryption(request, page_id, file_ctx);
 
   /* Encrypt page if TDE is enabled. */
-  if (err == 0 && request.is_encrypted()) {
+  if (err == 0 && request.is_encryption_requested()) {
     Encryption encryption(request.encryption_algorithm());
     ulint encrypt_len = data_len;
 
@@ -1248,7 +1246,6 @@ const char *Clone_Snapshot::wait_string(Wait_type wait_type) const {
   switch (wait_type) {
     /* DDL waiting for clone state transition */
     case Wait_type::STATE_TRANSIT_WAIT:
-      [[fallthrough]];
     case Wait_type::STATE_TRANSIT:
       wait_info = "Waiting for clone state transition";
       break;
@@ -1260,7 +1257,6 @@ const char *Clone_Snapshot::wait_string(Wait_type wait_type) const {
 
     /*DDL waiting for clone file operation. */
     case Wait_type::DATA_FILE_WAIT:
-      [[fallthrough]];
     case Wait_type::DATA_FILE_CLOSE:
       wait_info = "Waiting for clone to close files";
       break;

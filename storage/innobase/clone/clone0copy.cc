@@ -246,6 +246,7 @@ int Clone_Snapshot::init_file_copy(Snapshot_State new_state) {
 }
 
 void Clone_Snapshot::init_disk_estimate() {
+  ut_a(log_checkpointing != nullptr);
   /* Initial size is set to the redo file size on disk. */
   IB_mutex_guard latch{&(log_checkpointing->limits_mutex), UT_LOCATION_HERE};
   m_data_bytes_disk = log_sys->m_capacity.current_physical_capacity();
@@ -814,8 +815,8 @@ int Clone_Snapshot::add_file(const char *name, uint64_t size_bytes,
   file_meta->m_compress_type = space->compression_type;
   file_meta->m_encryption_metadata = space->m_encryption_metadata;
   file_meta->m_fsp_flags = static_cast<uint32_t>(space->flags);
-  file_meta->m_punch_hole = node->punch_hole;
-  file_meta->m_fsblk_size = node->block_size;
+  file_meta->m_punch_hole = node->get_punch_hole();
+  file_meta->m_fsblk_size = node->get_block_size();
 
   /* Modify file meta encryption flag if space encryption or decryption
   already started. This would allow clone to send pages accordingly
@@ -922,8 +923,8 @@ dberr_t Clone_Snapshot::add_node(fil_node_t *node, bool by_ddl) {
 int Clone_Snapshot::add_page(space_id_t space_id, uint32_t page_num) {
   /* Skip pages belonging to tablespace not included for clone. This could
   be some left over pages from drop or truncate in buffer pool which
-  would eventually get removed. Or it may be a page for an undo tablespace
-  that was deleted with BUF_REMOVE_NONE. */
+  would eventually get removed. Or it may be a stale page for an undo tablespace
+  that was deleted. */
   auto count = m_data_file_map.count(space_id);
   if (count == 0) {
     return (0);

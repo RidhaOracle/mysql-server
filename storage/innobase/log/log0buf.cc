@@ -76,6 +76,9 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 /* DBUG_EXECUTE_IF, ... */
 #include "my_dbug.h"
 
+/* SRV_SHUTDOWN_FLUSH_PHASE */
+#include "srv0shutdown.h"
+
 /* srv_read_only_mode */
 #include "srv0srv.h"
 
@@ -816,6 +819,7 @@ static void log_wait_for_space_after_reserving(log_t &log,
     However, for extra safety, we prefer to acquire writer_mutex,
     and checkpointer_mutex. We consider this rare event. */
 
+    ut_a(log_checkpointing != nullptr);
     log_checkpointer_mutex_enter();
     log_writer_mutex_enter(log);
 

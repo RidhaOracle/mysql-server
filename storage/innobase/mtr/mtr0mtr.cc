@@ -36,6 +36,7 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #include "buf0buf.h"
 #include "buf0flu.h"
 #include "clone0api.h"
+#include "fil0pages_persistence_interface.h"
 #include "fsp0sysspace.h"
 #include "log0meb.h"
 #ifndef UNIV_HOTBACKUP
@@ -294,6 +295,7 @@ struct Release_all {
   }
 };
 
+#ifdef UNIV_DEBUG
 /** Check that all slots have been handled. */
 struct Debug_check {
   /** @return true always. */
@@ -303,7 +305,6 @@ struct Debug_check {
   }
 };
 
-#ifdef UNIV_DEBUG
 /** Assure that there are no slots that are latching any resources. Only buffer
  fixing a page is allowed. */
 struct Debug_check_no_latching {
@@ -320,40 +321,31 @@ struct Debug_check_no_latching {
 };
 #endif /* UNIV_DEBUG */
 
-/** Add blocks modified by the mini-transaction to the flush list. */
-struct Add_dirty_blocks_to_flush_list {
-  /** Constructor.
-  @param[in]    start_lsn       LSN of the first entry that was
-                                  added to REDO by the MTR
-  @param[in]    end_lsn         LSN after the last entry was
-                                  added to REDO by the MTR
-  @param[in,out]        observer        flush observer */
-  Add_dirty_blocks_to_flush_list(lsn_t start_lsn, lsn_t end_lsn,
-                                 Flush_observer *observer);
-
-  /** Add the modified page to the buffer flush list. */
-  void add_dirty_page_to_flush_list(mtr_memo_slot_t *slot) const {
-    ut_ad(m_end_lsn > m_start_lsn || (m_end_lsn == 0 && m_start_lsn == 0));
-
 #ifndef UNIV_HOTBACKUP
-    buf_block_t *block = reinterpret_cast<buf_block_t *>(slot->object);
-    buf_flush_note_modification(block, m_start_lsn, m_end_lsn,
-                                m_flush_observer);
-#endif /* !UNIV_HOTBACKUP */
-  }
+/** A filter which, if passed to for_each_block_in_reverse, calls the provided
+visitor only for the blocks which were modified by this mtr.
+Note: the pages are considered to be modified if they were X or SX latched, or
+made_dirty_with_no_latch, so there could be false-positives.
+Note: as a side effect made_dirty_with_no_latch gets cleared.
+*/
+struct Process_dirty_blocks {
+  /** Constructor.
+  @param[in]   dirty_page_visitor   A callback to be called for each page
+  dirtied by this mtr*/
+  Process_dirty_blocks(
+      ut::Function_reference<void(buf_block_t *)> dirty_page_visitor)
+      : m_dirty_page_visitor(dirty_page_visitor) {}
 
   /** @return true always. */
   bool operator()(mtr_memo_slot_t *slot) const {
     if (slot->object != nullptr) {
+      auto *block = reinterpret_cast<buf_block_t *>(slot->object);
       if (slot->type == MTR_MEMO_PAGE_X_FIX ||
           slot->type == MTR_MEMO_PAGE_SX_FIX) {
-        add_dirty_page_to_flush_list(slot);
-
+        m_dirty_page_visitor(block);
       } else if (slot->type == MTR_MEMO_BUF_FIX) {
-        buf_block_t *block;
-        block = reinterpret_cast<buf_block_t *>(slot->object);
         if (block->made_dirty_with_no_latch) {
-          add_dirty_page_to_flush_list(slot);
+          m_dirty_page_visitor(block);
           block->made_dirty_with_no_latch = false;
         }
       }
@@ -361,28 +353,9 @@ struct Add_dirty_blocks_to_flush_list {
 
     return true;
   }
-
-  /** Mini-transaction REDO end LSN */
-  const lsn_t m_end_lsn;
-
-  /** Mini-transaction REDO start LSN */
-  const lsn_t m_start_lsn;
-
-  /** Flush observer */
-  Flush_observer *const m_flush_observer;
+  ut::Function_reference<void(buf_block_t *)> m_dirty_page_visitor;
 };
-
-/** Constructor.
-@param[in]      start_lsn       LSN of the first entry that was added
-                                to REDO by the MTR
-@param[in]      end_lsn         LSN after the last entry was added
-                                to REDO by the MTR
-@param[in,out]  observer        flush observer */
-Add_dirty_blocks_to_flush_list::Add_dirty_blocks_to_flush_list(
-    lsn_t start_lsn, lsn_t end_lsn, Flush_observer *observer)
-    : m_end_lsn(end_lsn), m_start_lsn(start_lsn), m_flush_observer(observer) {
-  /* Do nothing */
-}
+#endif /*!UNIV_HOTBACKUP*/
 
 class mtr_t::Command {
  public:
@@ -402,9 +375,6 @@ class mtr_t::Command {
   /** Write the redo log record, add dirty pages to the flush list and
   release the resources. */
   void execute();
-
-  /** Add blocks modified in this mini-transaction to the flush list. */
-  void add_dirty_blocks_to_flush_list(lsn_t start_lsn, lsn_t end_lsn);
 
   /** Release both the latches and blocks used in the mini-transaction. */
   void release_all();
@@ -806,41 +776,23 @@ void mtr_t::Command::release_all() {
   m_locks_released = 1;
 }
 
-/** Add blocks modified in this mini-transaction to the flush list. */
-void mtr_t::Command::add_dirty_blocks_to_flush_list(lsn_t start_lsn,
-                                                    lsn_t end_lsn) {
-  Add_dirty_blocks_to_flush_list add_to_flush(start_lsn, end_lsn,
-                                              m_impl->m_flush_observer);
-
-  Iterate<Add_dirty_blocks_to_flush_list> iterator(add_to_flush);
-
-  m_impl->m_memo.for_each_block_in_reverse(iterator);
-}
-
 /** Write the redo log record, add dirty pages to the flush list and release
 the resources. */
 void mtr_t::Command::execute() {
   ut_ad(m_impl->m_log_mode != MTR_LOG_NONE);
 
 #ifndef UNIV_HOTBACKUP
-  if (prepare_write()) {
-    Log_handle handle = write();
-
-    buf_flush_list_added->wait_to_add(handle.start_lsn);
-
-    DEBUG_SYNC_C("mtr_redo_before_add_dirty_blocks");
-
-    add_dirty_blocks_to_flush_list(handle.start_lsn, handle.end_lsn);
-
-    buf_flush_list_added->report_added(handle.start_lsn, handle.end_lsn);
-
-    m_impl->m_mtr->m_commit_lsn = handle.end_lsn;
-
-  } else {
-    DEBUG_SYNC_C("mtr_noredo_before_add_dirty_blocks");
-
-    add_dirty_blocks_to_flush_list(0, 0);
-  }
+  const auto handle = prepare_write() ? write() : Log_handle{};
+  auto iterate_over_dirty_pages =
+      [&](ut::Function_reference<void(buf_block_t *)> dirty_page_visitor) {
+        Process_dirty_blocks process_dirty_only(dirty_page_visitor);
+        m_impl->m_memo.for_each_block_in_reverse(
+            Iterate<Process_dirty_blocks>{process_dirty_only});
+      };
+  pages_persistence->mtr_has_dirtied_pages(handle.start_lsn, handle.end_lsn,
+                                           m_impl->m_flush_observer,
+                                           &iterate_over_dirty_pages);
+  m_impl->m_mtr->m_commit_lsn = handle.end_lsn;
 #endif /* !UNIV_HOTBACKUP */
 
   release_all();
@@ -891,12 +843,12 @@ int mtr_t::Logging::enable(THD *thd) {
   pages modified before are flushed to disk. Since there could be large
   number of left over pages from LAD operation, we still don't enable
   double-write at this stage. */
-  log_checkpointing->request_sharp_checkpoint();
+  pages_persistence->request_sharp_checkpoint();
   m_state.store(ENABLED_DBLWR);
 
   /* 3. Take another checkpoint after enabling double write to ensure any page
   being written without double write are already synced to disk. */
-  log_checkpointing->request_sharp_checkpoint();
+  pages_persistence->request_sharp_checkpoint();
 
   /* 4. Mark that it is safe to recover from crash. */
   log_persist_enable(*log_sys);

@@ -55,6 +55,7 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #include "que0que.h"
 #include "row0ins.h"
 #include "row0mysql.h"
+#include "scope_guard.h"
 #include "srv0start.h"
 #include "trx0roll.h"
 #include "usr0sess.h"
@@ -93,7 +94,7 @@ dberr_t dict_build_table_def(dict_table_t *table,
 @param[in,out]  trx             DD transaction
 @param[in,out]  tablespace      Tablespace object describing what to build.
 @return DB_SUCCESS or error code. */
-dberr_t dict_build_tablespace(trx_t *trx, Tablespace *tablespace) {
+dberr_t dict_build_tablespace(trx_t *trx, ib::fsp::Tablespace<> *tablespace) {
   dberr_t err = DB_SUCCESS;
   mtr_t mtr;
   space_id_t space = 0;
@@ -110,21 +111,21 @@ dberr_t dict_build_tablespace(trx_t *trx, Tablespace *tablespace) {
   }
   tablespace->set_space_id(space);
 
-  Datafile *datafile = tablespace->first_datafile();
+  ut_a(tablespace->get_nodes_count() == 1);
+  const auto node_path = tablespace->get_node_full_path(0);
 
   /* If file already exists we cannot write delete space to ddl log. */
-  os_file_type_t type;
-  bool exists;
-  if (os_file_status(datafile->filepath(), &exists, &type)) {
-    if (exists) {
+  const auto type = os_file_type(node_path.c_str());
+  if (os_file_status_is_conclusive(type)) {
+    if (os_file_exists(type)) {
       return DB_TABLESPACE_EXISTS;
     }
   } else {
     return DB_IO_ERROR;
   }
 
-  err = log_ddl->write_delete_space_log(trx, nullptr, space,
-                                        datafile->filepath(), false, true);
+  err = log_ddl->write_delete_space_log(trx, nullptr, space, node_path.c_str(),
+                                        false, true);
   if (err != DB_SUCCESS) {
     return err;
   }
@@ -144,7 +145,7 @@ dberr_t dict_build_tablespace(trx_t *trx, Tablespace *tablespace) {
              ? (tablespace->get_autoextend_size() / srv_page_size)
              : FIL_IBD_FILE_INITIAL_SIZE;
 
-  err = fil_ibd_create(space, tablespace->name(), datafile->filepath(),
+  err = fil_ibd_create(space, tablespace->name(), node_path.c_str(),
                        tablespace->flags(), size);
 
   DBUG_INJECT_CRASH("ddl_crash_after_create_tablespace",
@@ -215,7 +216,13 @@ dberr_t dict_build_tablespace_for_table(dict_table_t *table,
       fsp_flags_set_encryption(fsp_flags);
     }
 
-    char *filepath;
+    char *filepath = nullptr;
+    auto filepath_guard = create_scope_guard([&]() {
+      if (filepath != nullptr) {
+        ut::free(filepath);
+      }
+    });
+
     if (DICT_TF_HAS_DATA_DIR(table->flags)) {
       std::string path;
 
@@ -227,23 +234,25 @@ dberr_t dict_build_tablespace_for_table(dict_table_t *table,
       filepath = Fil_path::make_ibd_from_table_name(table->name.m_name);
     }
 
-    /* If file already exists we cannot write delete space to ddl log. */
-    os_file_type_t type;
-    bool exists;
-    if (os_file_status(filepath, &exists, &type)) {
-      if (exists) {
-        ut::free(filepath);
-        return DB_TABLESPACE_EXISTS;
-      }
+    const auto info =
+        tablespaces_nodes->get_node_info(space_id, 0, {.m_path = filepath}, 0);
+
+    if (info) {
+      return DB_TABLESPACE_EXISTS;
     } else {
-      ut::free(filepath);
-      return DB_IO_ERROR;
+      using Node_error = ib::fil::Tablespaces_nodes_interface::Node_error;
+      switch (info.error()) {
+        case Node_error::NOT_A_NODE:
+        case Node_error::IO_ERROR:
+          return DB_IO_ERROR;
+        case Node_error::NODE_DOES_NOT_EXIST:
+          break;
+      }
     }
 
     err = log_ddl->write_delete_space_log(trx, table, space_id, filepath, false,
                                           false);
     if (err != DB_SUCCESS) {
-      ut::free(filepath);
       return err;
     }
 
@@ -265,8 +274,6 @@ dberr_t dict_build_tablespace_for_table(dict_table_t *table,
                : FIL_IBD_FILE_INITIAL_SIZE;
     err = fil_ibd_create(space_id, tablespace_name.c_str(), filepath, fsp_flags,
                          size);
-
-    ut::free(filepath);
 
     DBUG_INJECT_CRASH("ddl_crash_after_create_tablespace",
                       crash_injection_after_create_counter++);

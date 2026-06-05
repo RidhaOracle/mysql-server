@@ -430,7 +430,6 @@ void dict_table_stats_lock(dict_table_t *table, ulint latch_mode) {
       rw_lock_x_lock(table->stats_latch, UT_LOCATION_HERE);
       break;
     case RW_NO_LATCH:
-      [[fallthrough]];
     default:
       ut_error;
   }
@@ -458,7 +457,6 @@ void dict_table_stats_unlock(dict_table_t *table, ulint latch_mode) {
       rw_lock_x_unlock(table->stats_latch);
       break;
     case RW_NO_LATCH:
-      [[fallthrough]];
     default:
       ut_error;
   }
@@ -1604,7 +1602,7 @@ dberr_t dict_table_rename_in_cache(
       return (DB_OUT_OF_MEMORY);
     }
 
-    err = fil_delete_tablespace(table->space, BUF_REMOVE_NONE);
+    err = fil_delete_tablespace(table->space);
 
     ut_a(err == DB_SUCCESS || err == DB_TABLESPACE_NOT_FOUND ||
          err == DB_IO_ERROR);
@@ -1616,9 +1614,7 @@ dberr_t dict_table_rename_in_cache(
     }
 
     /* Delete any temp file hanging around. */
-    os_file_type_t ftype;
-    bool exists;
-    if (os_file_status(filepath, &exists, &ftype) && exists &&
+    if (os_file_exists(filepath) &&
         !os_file_delete_if_exists(innodb_temp_file_key, filepath, nullptr)) {
       ib::info(ER_IB_MSG_180) << "Delete of " << filepath << " failed.";
     }
@@ -5879,7 +5875,7 @@ dberr_t dict_set_compression(dict_table_t *table, const char *algorithm,
   if ((table->ibd_file_missing && !is_import_op) ||
       !DICT_TF2_FLAG_IS_SET(table, DICT_TF2_USE_FILE_PER_TABLE) ||
       DICT_TF2_FLAG_IS_SET(table, DICT_TF2_TEMPORARY) ||
-      page_size_t(table->flags).is_compressed()) {
+      DICT_TF_GET_ZIP_SSIZE(table->flags) > 0) {
     return (DB_IO_NO_PUNCH_HOLE_TABLESPACE);
   }
 

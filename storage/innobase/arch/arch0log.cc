@@ -32,6 +32,7 @@ this program; if not, write to the Free Software Foundation, Inc.,
 
 #include "arch0log.h"
 #include "clone0clone.h"
+#include "fil0pages_persistence_interface.h"
 #include "log0buf.h"
 #include "log0chkp.h"
 #include "log0encryption.h"
@@ -258,6 +259,7 @@ int Arch_Log_Sys::start(Arch_Group *&group, lsn_t &start_lsn, byte *header,
 
   memset(header, 0, LOG_FILE_HDR_SIZE);
 
+  ut_a(log_checkpointing != nullptr);
   log_checkpointing->request_fuzzy_checkpoint(true);
 
   arch_mutex_enter();
@@ -309,7 +311,7 @@ int Arch_Log_Sys::start(Arch_Group *&group, lsn_t &start_lsn, byte *header,
   log_writer_mutex_enter(*log_sys); /* protects checkpoint lsn */
   log_files_mutex_enter(*log_sys);  /* protects log_sys->m_files */
 
-  start_lsn = log_checkpointing->get_checkpoint();
+  start_lsn = pages_persistence->get_checkpoint_lsn();
 
   const auto file = log_sys->m_files.find(start_lsn);
 

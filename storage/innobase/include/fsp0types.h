@@ -206,6 +206,14 @@ bool fsp_is_session_temporary(space_id_t space_id);
 @return true if tablespace is global temporary. */
 bool fsp_is_global_temporary(space_id_t space_id);
 
+/** Check if tablespace can contain multiple storage nodes. This currently
+applies to the System Tablespace `srv_sys_space` and the Global Temporary
+Tablespace `srv_tmp_space`.
+@param[in]      space_id        tablespace ID
+@return true if tablespace is Global Temporary Tablespace or System Tablespace.
+*/
+bool fsp_allows_multiple_nodes(space_id_t space_id);
+
 /** Check if checksum is disabled for the given space.
 @param[in]      space_id        tablespace ID
 @return true if checksum is disabled for given space. */

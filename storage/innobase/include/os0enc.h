@@ -122,10 +122,10 @@ class Encryption {
   /** Encryption magic bytes size */
   static constexpr size_t MAGIC_SIZE = 3;
 
-  /** Encryption master key prifix size */
+  /** Encryption master key prefix size */
   static constexpr size_t MASTER_KEY_PRIFIX_LEN = 9;
 
-  /** Encryption master key prifix size */
+  /** Encryption master key prefix size */
   static constexpr size_t MASTER_KEY_NAME_MAX_LEN = 100;
 
   /** UUID of server instance, it's needed for composing master key name */

@@ -249,6 +249,48 @@ inline space_id_t id2next_id(space_id_t space_id) {
               : space_id - FSP_MAX_UNDO_TABLESPACES);
 }
 
+/** Map from undo tablespce number to space id to allow a reserved undo space
+ID to be found quickly. */
+class Undo_num2id_map {
+ public:
+  /** Constructor which will create the mapping from UNDO space number to UNDO
+  space id from the given space_id list.
+  @param[in] space_ids list of space ids */
+  Undo_num2id_map(const std::vector<space_id_t> &space_ids) {
+    for (auto &id : space_ids) {
+      if (fsp_is_undo_tablespace(id)) {
+        const auto num = id2num(id);
+        ut_a(m_num2id.count(num) == 0);
+        m_num2id[num] = id;
+      }
+    }
+  }
+
+  /** Find the UNDO space_id for a given UNDO space number from the mapping.
+  @param[in]  num  Undo space number
+  @return UNDO space_id */
+  space_id_t get(space_id_t num) {
+    ut_a(m_num2id.count(num) != 0);
+
+    return m_num2id[num];
+  }
+
+  /** check if mapping contains an entry for given UNDO space number.
+  @param[in]  num  UNDO space number
+  @return True if entry is there, false otherwise */
+  bool contains(space_id_t num) { return (m_num2id.count(num) != 0); }
+
+ private:
+  /** Map from undo space_num to undo space_id */
+  std::unordered_map<space_id_t, space_id_t> m_num2id{};
+};
+
+/* A pointer to an instance of Undo_num2id_map. It is initialized after we get
+the space_ids from tablespace directory scan and is released after bootstrap.
+It is used only during bootstrap when UNDO tablespaces are being opened post
+REDO recovery. */
+extern ut::unique_ptr<Undo_num2id_map> num2id_map;
+
 /** Initialize the undo tablespace space_id bank which is a lock free
 repository for information about the space IDs used for undo tablespaces.
 It is used during creation in order to assign an unused space number and
@@ -759,13 +801,13 @@ class Tablespaces {
 #endif /* UNIV_DEBUG */
 
   /** Get a shared lock on m_spaces. */
-  void s_lock() { rw_lock_s_lock(m_latch, UT_LOCATION_HERE); }
+  void s_lock(ut::Location location) { rw_lock_s_lock(m_latch, location); }
 
   /** Release a shared lock on m_spaces. */
   void s_unlock() { rw_lock_s_unlock(m_latch); }
 
   /** Get an exclusive lock on m_spaces. */
-  void x_lock() { rw_lock_x_lock(m_latch, UT_LOCATION_HERE); }
+  void x_lock(ut::Location location) { rw_lock_x_lock(m_latch, location); }
 
   /** Release an exclusive lock on m_spaces. */
   void x_unlock() { rw_lock_x_unlock(m_latch); }

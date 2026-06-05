@@ -5756,7 +5756,7 @@ void lock_cancel_waiting_and_release(trx_t *trx) {
 }
 
 /** Unlocks AUTO_INC type locks that were possibly reserved by a trx. This
- function should be called at the the end of an SQL statement, by the
+ function should be called at the end of an SQL statement, by the
  connection thread that owns the transaction (trx->mysql_thd). */
 void lock_unlock_table_autoinc(trx_t *trx) /*!< in/out: transaction */
 {

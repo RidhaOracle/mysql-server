@@ -105,10 +105,8 @@ Context::Context(trx_t *trx, dict_table_t *old_table, dict_table_t *new_table,
   trx_start_if_not_started(m_trx, true, UT_LOCATION_HERE);
 
   if (m_need_observer) {
-    const auto space_id = m_new_table->space;
-
     auto observer = ut::new_withkey<Flush_observer>(
-        ut::make_psi_memory_key(mem_key_ddl), space_id, m_trx, m_stage);
+        ut::make_psi_memory_key(mem_key_ddl), *m_trx, m_stage);
 
     trx_set_flush_observer(m_trx, observer);
   }

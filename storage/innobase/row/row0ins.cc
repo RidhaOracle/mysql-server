@@ -43,6 +43,7 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #include "dict0dd.h"
 #include "dict0dict.h"
 #include "eval0eval.h"
+#include "fil0pages_persistence_interface.h"
 #include "fts0fts.h"
 #include "fts0types.h"
 #include "gis0geo.h"
@@ -2604,7 +2605,7 @@ dberr_t row_ins_clust_index_entry_low(uint32_t flags, ulint mode,
       row_ins_index_entry_big_rec() will write log. */
 
       DBUG_EXECUTE_IF("row_ins_extern_checkpoint",
-                      log_checkpointing->request_sharp_checkpoint(););
+                      pages_persistence->request_sharp_checkpoint(););
       err = row_ins_index_entry_big_rec(thr_get_trx(thr), entry, big_rec,
                                         offsets, &offsets_heap, index,
                                         thr_get_trx(thr)->mysql_thd);

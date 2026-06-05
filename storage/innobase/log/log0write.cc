@@ -58,6 +58,9 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 /* log_update_buf_limit, ... */
 #include "log0buf.h"
 
+/* pages_persistence */
+#include "fil0pages_persistence_interface.h"
+
 /* log_checkpointing */
 #include "log0chkp.h"
 
@@ -1812,7 +1815,7 @@ static dberr_t log_write_buffer(log_t &log, byte *buffer, size_t buffer_size,
   /* The free space may be negative (up to -extra_margin),
   in which case we are in the emergency mode, eating the
   extra margin and asking to pause next user threads. */
-  free_space -= new_write_lsn - log_checkpointing->get_checkpoint();
+  free_space -= new_write_lsn - pages_persistence->get_checkpoint_lsn();
 
   MONITOR_SET(MONITOR_LOG_FREE_SPACE, free_space);
 
@@ -1825,6 +1828,7 @@ static dberr_t log_write_buffer(log_t &log, byte *buffer, size_t buffer_size,
 
 static void log_writer_enter_extra_margin(log_t &log) {
   ut_ad(log_writer_mutex_own(log));
+  ut_a(log_checkpointing != nullptr);
   ut_ad(!log.m_writer_inside_extra_margin);
   log_limits_mutex_enter();
   log.m_writer_inside_extra_margin = true;
@@ -1835,6 +1839,7 @@ static void log_writer_enter_extra_margin(log_t &log) {
 
 static void log_writer_exit_extra_margin(log_t &log) {
   ut_ad(log_writer_mutex_own(log));
+  ut_a(log_checkpointing != nullptr);
   ut_ad(log.m_writer_inside_extra_margin);
   log_limits_mutex_enter();
   log.m_writer_inside_extra_margin = false;
@@ -1847,6 +1852,7 @@ static inline bool log_writer_extra_margin_check(log_t &log,
                                                  lsn_t checkpoint_lsn,
                                                  lsn_t next_write_lsn) {
   ut_ad(log_writer_mutex_own(log));
+  ut_a(log_checkpointing != nullptr);
 
   const lsn_t soft_limited_lsn =
       ut_uint64_align_down(checkpoint_lsn, OS_FILE_LOG_BLOCK_SIZE) +
@@ -1867,6 +1873,7 @@ static inline bool log_writer_extra_margin_check(log_t &log,
 
 void log_writer_check_if_exited_extra_margin(log_t &log) {
   ut_ad(log_writer_mutex_own(log));
+  ut_a(log_checkpointing != nullptr);
   ut_ad(log.m_writer_inside_extra_margin);
 
   const lsn_t checkpoint_lsn = log_checkpointing->get_checkpoint();
@@ -1888,7 +1895,7 @@ static inline std::pair<lsn_t, bool> log_writer_wait_on_checkpoint_optimistic(
     log_t &log, lsn_t last_write_lsn, lsn_t next_write_lsn) {
   ut_ad(log_writer_mutex_own(log));
 
-  const lsn_t checkpoint_lsn = log_checkpointing->get_checkpoint();
+  const lsn_t checkpoint_lsn = pages_persistence->get_checkpoint_lsn();
 
   const lsn_t hard_limited_lsn =
       ut_uint64_align_down(checkpoint_lsn, OS_FILE_LOG_BLOCK_SIZE) +
@@ -1905,6 +1912,7 @@ static lsn_t log_writer_wait_on_checkpoint_pessimistic(log_t &log,
                                                        lsn_t last_write_lsn,
                                                        lsn_t next_write_lsn) {
   ut_ad(log_writer_mutex_own(log));
+  ut_a(log_checkpointing != nullptr);
 
   auto missing_space_started = Log_clock::now();
 

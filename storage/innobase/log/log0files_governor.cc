@@ -64,6 +64,9 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 /* std::for_each */
 #include <algorithm>
 
+/* pages_persistence */
+#include "fil0pages_persistence_interface.h"
+
 /* log_files_write_first_data_block_low, log_files_write_checkpoint_low */
 #include "log0chkp.h"
 
@@ -93,6 +96,12 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 /* log_writer_mutex_own, log_write_up_to */
 #include "log0write.h"
 
+/* mlog_open(), mlog_close() */
+#include "mtr0log.h"
+
+/* mtr_t */
+#include "mtr0mtr.h"
+
 /* os_offset_t */
 #include "os0file.h"
 
@@ -109,10 +118,13 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 /* create_internal_thd, destroy_internal_thd */
 #include "sql/sql_thd_internal_api.h"
 
+/* srv_shutdown_state */
+#include "srv0shutdown.h"
+
 /* srv_read_only_mode */
 #include "srv0srv.h"
 
-/* RECOVERY_CRASH, ... */
+/* srv_recovery_crash, ... */
 #include "srv0start.h"
 
 /* ut_uint64_align_down */
@@ -384,7 +396,7 @@ static void log_files_update_capacity_limits(log_t &log);
 /** Generates at least a given bytes of intake to the redo log.
 
 Requirement: none of log.m_files_mutex, log.writer_mutex, log.flusher_mutex,
-log.checkpoint_mutex is acquired when the function is called.
+log_checkpointing->checkpoint_mutex is acquired when the function is called.
 
 Requirement: the log_files_governor thread still hasn't promised not to
 generate dummy redo records (!log.m_no_more_dummy_records_promised).
@@ -614,7 +626,7 @@ static std::pair<lsn_t, lsn_t> log_files_logical_size_and_checkpoint_age(
   lsn_t oldest_lsn;
   log_consumer_get_oldest(log, oldest_lsn);
 
-  const lsn_t checkpoint_lsn = log_checkpointing->get_checkpoint();
+  const lsn_t checkpoint_lsn = pages_persistence->get_checkpoint_lsn();
 
   const lsn_t newest_lsn = log_files_newest_needed_lsn(log);
 
@@ -1063,7 +1075,7 @@ dberr_t log_files_produce_file(log_t &log) {
 
   log_sync_point("log_before_file_produced");
 
-  ut_a(start_lsn >= log_checkpointing->get_checkpoint());
+  ut_a(pages_persistence->get_checkpoint_lsn() <= start_lsn);
 
   {
     const dberr_t err =
@@ -1109,7 +1121,7 @@ dberr_t log_files_produce_file(log_t &log) {
 
 static void log_files_update_capacity_limits(log_t &log) {
   log_files_access_allowed_validate(log);
-
+  ut_a(log_checkpointing != nullptr);
   IB_mutex_guard limits_lock{&log_checkpointing->limits_mutex,
                              UT_LOCATION_HERE};
 
@@ -1473,7 +1485,7 @@ static dberr_t log_files_prepare_unused_file(log_t &log, Log_file_id file_id,
     return err;
   }
 
-  RECOVERY_CRASH(9);
+  srv_recovery_crash(9);
 
   /* Write the first checkpoint twice to overwrite both checkpoint headers. */
   err = log_files_write_checkpoint_low(
@@ -1523,7 +1535,7 @@ static dberr_t log_files_create_file(log_t &log, Log_file_id file_id,
     return err;
   }
 
-  RECOVERY_CRASH(10);
+  srv_recovery_crash(10);
 
   err = log_mark_file_as_in_use(log.m_files_ctx, file_id);
 
@@ -1547,7 +1559,7 @@ static dberr_t log_files_create_file(log_t &log, Log_file_id file_id,
                   log.m_encryption_metadata);
   log.m_unused_files_count--;
 
-  RECOVERY_CRASH(11);
+  srv_recovery_crash(11);
   return DB_SUCCESS;
 }
 
@@ -1557,7 +1569,7 @@ dberr_t log_files_create(log_t &log, lsn_t flushed_lsn) {
   dberr_t err;
   ut_a(log_is_data_lsn(flushed_lsn));
   log_files_create_allowed_validate();
-  RECOVERY_CRASH(8);
+  srv_recovery_crash(8);
 
   /* Do not allow to create new log files if redo log directory isn't empty. */
   ut::vector<Log_file_id> listed_files;
@@ -1585,6 +1597,7 @@ dberr_t log_files_create(log_t &log, lsn_t flushed_lsn) {
   ut_a(flushed_lsn % OS_FILE_LOG_BLOCK_SIZE == LOG_BLOCK_HDR_SIZE);
   const lsn_t file_start_lsn = flushed_lsn - LOG_BLOCK_HDR_SIZE;
 
+  ut_a(log_checkpointing != nullptr);
   ut_a(log_checkpointing->get_checkpoint() == 0);
 
   err = log_files_create_file(log, LOG_FIRST_FILE_ID, file_start_lsn,
@@ -1609,13 +1622,13 @@ dberr_t log_files_create(log_t &log, lsn_t flushed_lsn) {
     }
   }
 
-  RECOVERY_CRASH(12);
+  srv_recovery_crash(12);
 
   log_persist_initialized(log);
 
   ib::info(ER_IB_MSG_LOG_FILES_INITIALIZED, ulonglong{flushed_lsn});
 
-  RECOVERY_CRASH(13);
+  srv_recovery_crash(13);
 
   return DB_SUCCESS;
 }
@@ -1643,7 +1656,7 @@ void log_files_remove(log_t &log) {
   file should be recoverable. The buffer
   pool was clean, and we can simply create
   all log files from the scratch. */
-  RECOVERY_CRASH(7);
+  srv_recovery_crash(7);
 #endif /* UNIV_DEBUG */
 
   auto remove_files_ret = log_remove_files(log.m_files_ctx);
@@ -1666,6 +1679,7 @@ void log_files_remove(log_t &log) {
 }
 
 dberr_t log_files_start(log_t &log) {
+  ut_a(log_checkpointing != nullptr);
   ut_a(!log_writer_is_active());
   ut_a(!log_checkpointer_is_active());
   ut_a(!log_files_governor_is_active());
@@ -1902,6 +1916,7 @@ static void log_files_update_current_file_low(log_t &log) {
 }
 
 static void log_files_generate_dummy_records(log_t &log, lsn_t min_bytes) {
+  ut_a(log_checkpointing != nullptr);
   ut_ad(log_writer_is_active());
   ut_ad(!log_writer_mutex_own(log));
   ut_ad(log_checkpointer_is_active());
@@ -2017,6 +2032,7 @@ Requirement: srv_is_being_started is true.
 @param[in]      current_checkpoint_age  current checkpoint age */
 static void log_files_initialize(log_t &log, lsn_t current_logical_size,
                                  lsn_t current_checkpoint_age) {
+  ut_a(log_checkpointing != nullptr);
   ut_a(srv_is_being_started);
   ut_a(log.m_files_ctx.m_files_ruleset == Log_files_ruleset::CURRENT);
   log.m_capacity.initialize(log.m_files, current_logical_size,

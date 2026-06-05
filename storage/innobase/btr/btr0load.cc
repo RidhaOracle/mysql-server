@@ -1281,6 +1281,10 @@ dberr_t Btree_load::finish(dberr_t err) noexcept {
 
   err = finalize_page_loads(err, last_page_no);
 
+  /* Make sure the underlying storage has the generated pages persisted before
+  we will be reading last page in the `load_root_page()`. */
+  pages_persistence->persist_tablespaces(m_flush_observer);
+
   if (err == DB_SUCCESS) {
     err = load_root_page(last_page_no);
   }

@@ -1037,10 +1037,10 @@ class create_table_info_t {
                       the data directory location. */
   void log_error_invalid_location(std::string &msg, bool ignore);
 
- public:
   /** Validate DATA DIRECTORY option. */
   bool create_option_data_directory_is_valid(bool ignore = false);
 
+ public:
   /** Validate TABLESPACE option. */
   bool create_option_tablespace_is_valid();
 

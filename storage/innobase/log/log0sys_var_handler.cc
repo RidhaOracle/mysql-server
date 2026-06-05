@@ -24,15 +24,16 @@ this program; if not, write to the Free Software Foundation, Inc.,
 
 *****************************************************************************/
 
-#include "log0sys_var_handler.h"
-#include "log0buf.h"             // log_buffer_resize
-#include "log0chkp.h"            // log_checkpointing
-#include "log0files_governor.h"  // log_files_resize_requested
-#include "log0log.h"             // log_write_ahead_resize
-#include "log0write.h"           // log_control_writer_threads
-#include "my_sys.h"              // my_error
-#include "sql/sql_class.h"       // THD object
-#include "ut0dbg.h"              // ut_a
+#include "log0sys_var_handler.h"  // Sys_var_handler
+#include "log0buf.h"              // log_buffer_resize
+#include "log0chkp.h"             // log_checkpointing
+#include "log0files_governor.h"   // log_files_resize_requested
+#include "log0handler.h"          // update_free_check_limit
+#include "log0log.h"              // log_write_ahead_resize
+#include "log0write.h"            // log_control_writer_threads
+#include "my_sys.h"               // my_error
+#include "sql/sql_class.h"        // THD object
+#include "ut0dbg.h"               // ut_a
 
 namespace ib::redo {
 

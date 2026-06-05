@@ -77,6 +77,7 @@ Data dictionary interface */
 #include "sql/mysqld.h"  // lower_case_file_system
 #include "sql_base.h"
 #include "sql_table.h"
+#include "trx0purge.h"
 #include "univ.i"  // Using OS_PATH_SEPARATOR
 #endif             /* !UNIV_HOTBACKUP */
 
@@ -2037,7 +2038,7 @@ bool copy_dropped_columns(const dd::Table *old_dd_table,
     if (searchedColumn != nullptr) {
       if (!dd_column_is_dropped(searchedColumn)) {
         /* User is trying to add column with name same as existing hidden
-         * dropped column name. */
+        dropped column name. */
         ib::info(ER_IB_HIDDEN_NAME_CONFLICT, searchedColumn->name().c_str(),
                  col_name);
         my_error(ER_WRONG_COLUMN_NAME, MYF(0), searchedColumn->name().c_str());
@@ -6582,10 +6583,10 @@ bool dd_drop_fts_table(const char *name, bool file_per_table) {
   if (file_per_table) {
     dd::Object_id dd_space_id = (*dd_table->indexes().begin())->tablespace_id();
     /*
-     * In databases upgraded from MySQL versions 5.6.5 to 5.6.19,
-     * FTS tables may be located in system tablespace even if parent
-     * table is file-per-table. In this case we obviously don't want to
-     * drop the tablespace.
+    In databases upgraded from MySQL versions 5.6.5 to 5.6.19,
+    FTS tables may be located in system tablespace even if parent
+    table is file-per-table. In this case we obviously don't want to
+    drop the tablespace.
      */
     if (dd_space_id != dict_sys_t::s_dd_sys_space_id) {
       bool error = dd_drop_tablespace(client, dd_space_id);
@@ -6822,7 +6823,7 @@ dd_space_states dd_tablespace_get_state_enum_legacy(const dd::Properties *p,
 
   /* Undo tablespaces have the state recorded in undo::spaces. */
   if (fsp_is_undo_tablespace(space_id)) {
-    undo::spaces->s_lock();
+    undo::spaces->s_lock(UT_LOCATION_HERE);
     undo::Tablespace *undo_space = undo::spaces->find(undo::id2num(space_id));
 
     if (undo_space->is_active()) {

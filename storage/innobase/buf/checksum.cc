@@ -39,6 +39,7 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #include "fil0fil.h"
 #include "fil0types.h"
 #include "log0handler_interface.h" /* ib::redo::handler */
+#include "log0recv.h"              /* recv_lsn_checks_on */
 #include "mach0data.h"
 #include "my_dbug.h"
 #include "page0size.h"

@@ -448,6 +448,12 @@ typedef uint32_t page_no_t;
 /** Tablespace identifier */
 typedef uint32_t space_id_t;
 
+/** Maximum Page Number, one less than FIL_NULL */
+constexpr page_no_t PAGE_NO_MAX = std::numeric_limits<page_no_t>::max() - 1;
+
+/** Unknown space id */
+constexpr space_id_t SPACE_UNKNOWN = std::numeric_limits<space_id_t>::max();
+
 #define SPACE_ID_PF UINT32PF
 #define SPACE_ID_PFS UINT32PFS
 #define PAGE_NO_PF UINT32PF

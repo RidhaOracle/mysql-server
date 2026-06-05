@@ -133,9 +133,13 @@ SET(INNOBASE_SOURCES
   eval/eval0eval.cc
   eval/eval0proc.cc
   fil/fil0fil.cc
+  fil/fil0innodb_pages_persistence.cc
+  fil/fil0innodb_pages_persistence_sys_vars_handler.cc
+  fil/fil0innodb_tablespace_node_handle.cc
+  fil/fil0innodb_tablespaces_nodes.cc
+  fil/fil0tablespace_scan.cc
   fsp/fsp0fsp.cc
   fsp/fsp0file.cc
-  fsp/fsp0space.cc
   fsp/fsp0sysspace.cc
   fut/fut0lst.cc
   ha/ha0ha.cc

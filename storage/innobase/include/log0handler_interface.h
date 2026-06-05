@@ -137,8 +137,7 @@ class Handler_interface {
   [[nodiscard]] virtual Status start_writing(Lsn start_lsn) = 0;
 
   /** Informs Redo Log Handler that the caller no longer intends writing to the
-   * log.
-   */
+  log. */
   virtual void stop_writing() = 0;
 
   /** Performs any clean up (assumes stop_writing() was already called if

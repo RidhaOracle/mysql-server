@@ -69,6 +69,9 @@ this program; if not, write to the Free Software Foundation, Inc.,
 /* fil_space_t */
 #include "fil0fil.h"
 
+/* pages_persistence */
+#include "fil0pages_persistence_interface.h"
+
 /* log_update_buf_limit, ... */
 #include "log0buf.h"
 
@@ -703,7 +706,7 @@ static void log_fix_first_rec_group(lsn_t block_lsn,
 }
 
 dberr_t log_start(log_t &log, const lsn_t start_lsn) {
-  const lsn_t checkpoint_lsn = log_checkpointing->get_checkpoint();
+  const lsn_t checkpoint_lsn = pages_persistence->get_checkpoint_lsn();
 
   /* Declare function that figures out which of the two header locations stores
   the checkpoint_lsn. We don't expose it through header, because the header is
@@ -1004,6 +1007,7 @@ void log_stop_background_threads_nowait(log_t &log) {
 }
 
 void log_wake_threads(log_t &log) {
+  ut_a(log_checkpointing != nullptr);
   if (log_files_governor_is_active()) {
     os_event_set(log.m_files_governor_event);
   }
@@ -1118,8 +1122,7 @@ void log_print(const log_t &log, FILE *file) {
     log_files_mutex_enter(log);
   }
 
-  last_checkpoint_lsn = log_checkpointing->get_checkpoint();
-  dirty_pages_added_up_to_lsn = buf_flush_list_added->smallest_not_added_lsn();
+  last_checkpoint_lsn = pages_persistence->get_checkpoint_lsn();
   flush_lsn = ib::redo::handler->peek_first_nonpersisted_lsn();
   max_assigned_lsn = ib::redo::handler->peek_first_unassigned_lsn();
   current_lsn = max_assigned_lsn;
@@ -1130,10 +1133,17 @@ void log_print(const log_t &log, FILE *file) {
     file_min_id = log.m_files.begin()->m_id;
     file_max_id = log.m_current_file.m_id;
   }
+  if (log_checkpointing != nullptr) {
+    log_limits_mutex_enter();
+    dirty_pages_added_up_to_lsn =
+        buf_flush_list_added->smallest_not_added_lsn();
+    oldest_lsn = log_checkpointing->get_available_for_checkpoint_lsn();
+    log_limits_mutex_exit();
+  } else {
+    oldest_lsn = last_checkpoint_lsn;
+    dirty_pages_added_up_to_lsn = 0;
+  }
 
-  log_limits_mutex_enter();
-  oldest_lsn = log_checkpointing->get_available_for_checkpoint_lsn();
-  log_limits_mutex_exit();
   if (log_sys != nullptr) {
     log_files_mutex_exit(log);
   }
@@ -1207,6 +1217,7 @@ void log_update_exported_variables(const log_t &log) {
 /** @{ */
 
 bool log_buffer_resize_low(log_t &log, size_t new_size, lsn_t end_lsn) {
+  ut_a(log_checkpointing != nullptr);
   ut_ad(log_checkpointer_mutex_own());
   ut_ad(log_writer_mutex_own(log));
 
@@ -1420,12 +1431,14 @@ static void log_reset_encryption_buffer(log_t &log) {
 /** @{ */
 
 void log_position_lock(log_t &log) {
+  ut_a(log_checkpointing != nullptr);
   log_buffer_x_lock_enter(log);
 
   log_checkpointer_mutex_enter();
 }
 
 void log_position_unlock(log_t &log) {
+  ut_a(log_checkpointing != nullptr);
   log_checkpointer_mutex_exit();
 
   log_buffer_x_lock_exit(log);
@@ -1436,7 +1449,7 @@ void log_position_collect_lsn_info(const log_t &log, lsn_t *current_lsn,
   ut_ad(rw_lock_own(log.sn_lock_inst, RW_LOCK_X));
   ut_ad(log_checkpointer_mutex_own());
 
-  *checkpoint_lsn = log_checkpointing->get_checkpoint();
+  *checkpoint_lsn = pages_persistence->get_checkpoint_lsn();
 
   *current_lsn = log_get_lsn(log);
 

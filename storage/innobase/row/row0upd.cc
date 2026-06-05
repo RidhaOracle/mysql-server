@@ -2629,7 +2629,7 @@ static inline bool row_upd_clust_rec_by_insert_inherit(
         return (err);
       }
 
-      /* If the the new row inherits externally stored
+      /* If the new row inherits externally stored
       fields (off-page columns a.k.a. BLOBs) from the
       delete-marked old record, mark them disowned by the
       old record and owned by the new entry. */

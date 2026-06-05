@@ -478,8 +478,11 @@ const char *ut_strerr(dberr_t num) {
       return "Page was discarded, was not written to storage.";
     case DB_AUTOINC_READ_ERROR:
       return "Auto-increment read failed";
-    case DB_FILE_READ_BEYOND_SIZE:
-      return "File read failure because of the read being beyond file size.";
+    case DB_FILE_ACCESS_BEYOND_SIZE:
+      return "File operation failure because of the access being beyond file "
+             "size.";
+    case DB_SHUTTING_DOWN:
+      return "Current operation was interrupted by the server shutdown.";
     case DB_DATA_NOT_SORTED:
       return "Data is not sorted.";
     case DB_BULK_TOO_BIG_RECORD:

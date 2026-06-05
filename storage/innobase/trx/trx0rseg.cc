@@ -37,6 +37,7 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #include <algorithm>
 
 #include "clone0clone.h"
+#include "fil0pages_persistence_interface.h"
 #include "fsp0sysspace.h"
 #include "fut0lst.h"
 #include "log0chkp.h"
@@ -463,7 +464,7 @@ void trx_rsegs_init_start(purge_pq_t *purge_queue) {
 
   mtr_t mtr;
 
-  undo::spaces->s_lock();
+  undo::spaces->s_lock(UT_LOCATION_HERE);
   for (auto undo_space : undo::spaces->m_spaces) {
     /* Remember the size of the purge queue before processing this
     undo tablespace. */
@@ -593,7 +594,8 @@ void trx_rsegs_init(purge_pq_t *purge_queue) {
   auto &gtid_persistor = clone_sys->get_gtid_persistor();
   gtid_persistor.set_oldest_trx_no_recovery(gtid_trx_no);
 
-  undo::spaces->s_lock();
+  undo::spaces->s_lock(UT_LOCATION_HERE);
+
   for (auto undo_space : undo::spaces->m_spaces) {
     /* Remember the size of the purge queue before processing this
     undo tablespace. */
@@ -936,7 +938,7 @@ bool trx_rseg_adjust_rollback_segments(ulong target_rollback_segments) {
   to the tablespace, they will be checkpointed. But we cannot hold
   undo::spaces->s_lock while doing a checkpoint because of latch order
   violation.  So traverse the list by ID. */
-  undo::spaces->s_lock();
+  undo::spaces->s_lock(UT_LOCATION_HERE);
   for (auto undo_space : undo::spaces->m_spaces) {
     if (!trx_rseg_add_rollback_segments(
             undo_space->id(), target_rollback_segments, undo_space->rsegs(),
@@ -949,8 +951,7 @@ bool trx_rseg_adjust_rollback_segments(ulong target_rollback_segments) {
 
   /* Make sure these rollback segments are checkpointed. */
   if (n_total_created > 0 && !srv_read_only_mode && srv_force_recovery == 0) {
-    /* ignore if current lsn is already checkpointed */
-    log_checkpointing->request_sharp_checkpoint();
+    pages_persistence->request_sharp_checkpoint();
   }
 
   return (true);
@@ -967,7 +968,7 @@ bool trx_rseg_init_rollback_segments(space_id_t space_id,
   /** The number of rollback segments created in the datafile. */
   ulint n_total_created = 0;
 
-  undo::spaces->s_lock();
+  undo::spaces->s_lock(UT_LOCATION_HERE);
   space_id_t space_num = undo::id2num(space_id);
   undo::Tablespace *undo_space = undo::spaces->find(space_num);
   undo::spaces->s_unlock();

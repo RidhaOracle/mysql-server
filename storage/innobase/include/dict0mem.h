@@ -2402,7 +2402,7 @@ detect this and will eventually quit sooner. */
   be no conflict to access it, so no protection is needed. */
   ulint autoinc_field_no;
 
-  /** The transaction that currently holds the the AUTOINC lock on this table.
+  /** The transaction that currently holds the AUTOINC lock on this table.
   Protected by lock_sys table shard latch. To "peek" the current value one
   can read it without any latch, understanding that in general it may change.
   Such access pattern is correct if trx thread wants to check if it has the lock

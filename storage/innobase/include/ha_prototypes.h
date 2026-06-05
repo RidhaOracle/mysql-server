@@ -357,6 +357,7 @@ inline void send_errno_warn(THD *thd, int err, const std::string &context) {
 }  // namespace ib
 
 extern const char *TROUBLESHOOTING_MSG;
+extern const char *TROUBLESHOOT_DATADICT_URL;
 extern const char *TROUBLESHOOT_DATADICT_MSG;
 extern const char *FORCE_RECOVERY_MSG;
 extern const char *ERROR_CREATING_MSG;

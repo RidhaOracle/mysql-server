@@ -40,10 +40,12 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #include "sql/dd/types/column_type_element.h"
 
 #include "btr0pcur.h"
+#include "buf0flu.h" /*   buf_flush_get_dirty_pages_count_for_space */
 #include "dict0boot.h"
 #include "dict0crea.h"
 #include "dict0dd.h"
 #include "dict0upgrade.h"
+#include "fil0pages_persistence_interface.h"
 #include "ha_prototypes.h"
 #include "ibuf0ibuf.h"
 #include "lob0first.h"
@@ -2887,8 +2889,7 @@ static void row_import_discard_changes(
 
   DBUG_EXECUTE_IF("ib_import_before_checkpoint_crash", DBUG_SUICIDE(););
 
-  /* ignore if current lsn is already checkpointed */
-  log_checkpointing->request_sharp_checkpoint();
+  pages_persistence->request_sharp_checkpoint();
 
   return (err);
 }
@@ -4859,13 +4860,15 @@ dberr_t row_import_for_mysql(dict_table_t *table, dd::Table *table_def,
   The only dirty pages generated should be from the pessimistic purge
   of delete marked records that couldn't be purged in Phase I. */
 
-  buf_LRU_flush_or_remove_pages(prebuilt->table->space, BUF_REMOVE_FLUSH_WRITE,
-                                trx);
+  pages_persistence->persist_tablespace(prebuilt->table->space, trx);
 
   if (trx_is_interrupted(trx)) {
     ib::info(ER_IB_MSG_951) << "Phase III - Flush interrupted";
     return (row_import_error(prebuilt, trx, DB_INTERRUPTED));
   }
+
+  ut_ad_eq(buf_flush_get_dirty_pages_count_for_space(prebuilt->table->space),
+           0);
 
   ib::info(ER_IB_MSG_952) << "Phase IV - Flush complete";
   fil_space_set_imported(prebuilt->table->space);

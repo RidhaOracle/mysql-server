@@ -52,6 +52,8 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #include "clone0api.h"
 #include "dict0dd.h"
 #include "fil0fil.h"
+#include "fil0pages_persistence_interface.h" /* pages_persistence */
+#include "ha_prototypes.h"
 #include "ibuf0ibuf.h"
 #include "log0chkp.h"       /* log_next_checkpoint_header */
 #include "log0encryption.h" /* log_read_encryption_info */
@@ -519,8 +521,6 @@ void recv_sys_init() {
     recv_sys->flush_start = os_event_create();
     recv_sys->flush_end = os_event_create();
   }
-#else  /* !UNIV_HOTBACKUP */
-  recv_sys->apply_file_operations = false;
 #endif /* !UNIV_HOTBACKUP */
 
   recv_sys->buf_len =
@@ -1106,58 +1106,50 @@ void meb_apply_log_record(recv_addr_t *recv_addr, buf_block_t *block) {
   mutex_exit(&recv_sys->mutex);
 
   /* Read the page from the tablespace file. */
+  {
+    const auto data =
+        page_size.is_compressed() ? block->page.zip.data : block->frame;
+    const dberr_t err = fil_io(IORequest::Type::READ, true, page_id, page_size,
+                               page_size.physical(), data, nullptr, false);
 
-  dberr_t err;
-
-  if (page_size.is_compressed()) {
-    err = fil_io(IORequestRead, true, page_id, page_size, 0,
-                 page_size.physical(), block->page.zip.data, nullptr);
-
-    if (err == DB_SUCCESS && !buf_zip_decompress(block, true)) {
-      ut_error;
+    if (err != DB_SUCCESS) {
+      ib::fatal(UT_LOCATION_HERE, ER_IB_CANNOT_READ_FROM_TABLESPACE_PAGE,
+                ulong{recv_addr->space}, ulong{recv_addr->page_no});
     }
-  } else {
-    err = fil_io(IORequestRead, true, page_id, page_size, 0,
-                 page_size.logical(), block->frame, nullptr);
-  }
 
-  if (err != DB_SUCCESS) {
-    ib::fatal(UT_LOCATION_HERE, ER_IB_MSG_712)
-        << "Cannot read from tablespace " << recv_addr->space << " page number "
-        << recv_addr->page_no;
+    if (page_size.is_compressed()) {
+      if (!buf_zip_decompress(block, true)) {
+        ut_error;
+      }
+    }
   }
 
   apply_log_mutex.lock();
 
   /* Apply the log records to this page */
   recv_recover_page(false, block);
-
   apply_log_mutex.unlock();
 
   mutex_enter(&recv_sys->mutex);
 
   /* Write the page back to the tablespace file using the
   fil0fil.cc routines */
-
   buf_flush_init_for_writing(block, block->frame, buf_block_get_page_zip(block),
                              mach_read_from_8(block->frame + FIL_PAGE_LSN),
                              fsp_is_checksum_disabled(block->page.id.space()),
                              true /* skip_lsn_check */);
-
   mutex_exit(&recv_sys->mutex);
 
-  if (page_size.is_compressed()) {
-    err = fil_io(IORequestWrite, true, page_id, page_size, 0,
-                 page_size.physical(), block->page.zip.data, nullptr);
-  } else {
-    err = fil_io(IORequestWrite, true, page_id, page_size, 0,
-                 page_size.logical(), block->frame, nullptr);
-  }
+  {
+    const auto data =
+        page_size.is_compressed() ? block->page.zip.data : block->frame;
+    const dberr_t err = fil_io(IORequest::Type::WRITE, true, page_id, page_size,
+                               page_size.physical(), data, nullptr, false);
 
-  if (err != DB_SUCCESS) {
-    ib::fatal(UT_LOCATION_HERE, ER_IB_MSG_713)
-        << "Cannot write to tablespace " << recv_addr->space << " page number "
-        << recv_addr->page_no;
+    if (err != DB_SUCCESS) {
+      ib::fatal(UT_LOCATION_HERE, ER_IB_CANNOT_WRITE_TO_TABLESPACE_PAGE,
+                ulong{recv_addr->space}, ulong{recv_addr->page_no});
+    }
   }
 }
 
@@ -1299,13 +1291,13 @@ static const byte *recv_parse_or_apply_log_rec_body(
 #ifndef UNIV_HOTBACKUP
     case MLOG_FILE_DELETE:
 
-      return fil_tablespace_redo_delete(
+      return fil_tablespace_redo_delete_wrapper(
           ptr, end_ptr, page_id_t(space_id, page_no), parsed_bytes,
           recv_sys->bytes_to_ignore_before_checkpoint != 0);
 
     case MLOG_FILE_CREATE:
 
-      return fil_tablespace_redo_create(
+      return fil_tablespace_redo_create_wrapper(
           ptr, end_ptr, page_id_t(space_id, page_no), parsed_bytes,
           recv_sys->bytes_to_ignore_before_checkpoint != 0);
 
@@ -1317,7 +1309,7 @@ static const byte *recv_parse_or_apply_log_rec_body(
 
     case MLOG_FILE_EXTEND:
 
-      return fil_tablespace_redo_extend(
+      return fil_tablespace_redo_extend_wrapper(
           ptr, end_ptr, page_id_t(space_id, page_no), parsed_bytes,
           recv_sys->bytes_to_ignore_before_checkpoint != 0);
 #else  /* !UNIV_HOTBACKUP */
@@ -1604,9 +1596,9 @@ static const byte *recv_parse_or_apply_log_rec_body(
 
               case FSP_HEADER_OFFSET + FSP_SIZE:
 
-                space->size_in_header = val;
+                space->set_cached_fsp_size_in_header(val);
 
-                if (space->size >= val) {
+                if (val <= space->m_size_in_pages) {
                   break;
                 }
 
@@ -1622,11 +1614,11 @@ static const byte *recv_parse_or_apply_log_rec_body(
                 break;
 
               case FSP_HEADER_OFFSET + FSP_FREE_LIMIT:
-                space->free_limit = val;
+                space->set_cached_fsp_free_limit(val);
                 break;
 
               case FSP_HEADER_OFFSET + FSP_FREE + FLST_LEN:
-                space->free_len = val;
+                space->set_cached_fsp_free_len(val);
                 ut_ad(val == flst_get_len(page + offs));
                 break;
             }
@@ -2927,9 +2919,9 @@ If the hash table overflows then it keeps on applying the parsed logs.
     ut_a_lt(10, pages_to_be_kept_free);
     /* Simulated AIO is waken up after placing all requests in a read-ahead
     area, and there should be at least this much pages in BufferPool to
-    accommodate them (in worst case all in one pool instance). As the minimum
-    pool instance size is 1 chunk, which is minimum 1MB, this assertion should
-    always be true. */
+    accommodate them (in the worst case all in one pool instance). As the
+    minimum pool instance size is 1 chunk, which is minimum 1MB, this assertion
+    should always be true. */
     ut_a_le(RECV_READ_AHEAD_AREA, recv_n_frames_for_pages_per_pool_instance);
   } else {
     recv_n_frames_for_pages_per_pool_instance = 0;
@@ -3141,8 +3133,6 @@ static void recv_init_crash_recovery() {
   ib::info(ER_IB_MSG_726);
   ib::info(ER_IB_MSG_727);
 
-  recv_sys->dblwr->recover();
-
   if (srv_force_recovery < SRV_FORCE_NO_LOG_REDO) {
     /* Spawn the background thread to flush dirty pages
     from the buffer pools. */
@@ -3166,13 +3156,14 @@ dberr_t recv_recovery_from_checkpoint_start(lsn_t flush_lsn) {
 
   recv_recovery_on = true;
 
+  ut_a(log_checkpointing != nullptr);
   if (const auto err = log_checkpointing->load_checkpoint_value();
       err != DB_SUCCESS) {
     return err;
   }
 
   /* Start reading the log from the checkpoint LSN up. */
-  const lsn_t checkpoint_lsn = log_checkpointing->get_checkpoint();
+  const lsn_t checkpoint_lsn = pages_persistence->get_checkpoint_lsn();
 
   ut_ad(recv_sys->n_pages_to_recover.value() == 0);
 
@@ -3200,8 +3191,7 @@ dberr_t recv_recovery_from_checkpoint_start(lsn_t flush_lsn) {
     }
   }
 
-  const auto err = recv_recovery_begin(checkpoint_lsn);
-  if (err != DB_SUCCESS) {
+  if (const auto err = recv_recovery_begin(checkpoint_lsn); err != DB_SUCCESS) {
     return err;
   }
 
@@ -3224,7 +3214,7 @@ dberr_t recv_recovery_from_checkpoint_start(lsn_t flush_lsn) {
     return DB_ERROR;
   }
 
-  ut_a(log_checkpointing->get_checkpoint() == checkpoint_lsn);
+  ut_a(pages_persistence->get_checkpoint_lsn() == checkpoint_lsn);
   ut_a(recv_sys->spaces == nullptr || recv_sys->spaces->empty());
 
   return DB_SUCCESS;

@@ -38,7 +38,6 @@ this program; if not, write to the Free Software Foundation, Inc.,
 
 extern ulong srv_spin_wait_delay;
 extern ulong srv_n_spin_wait_rounds;
-extern ulong srv_force_recovery_crash;
 
 #ifdef UNIV_LIBRARY
 /* Mutexes are disabled under UNIV_LIBRARY */

@@ -50,7 +50,7 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #define srv0srv_h
 
 #include "buf0checksum.h"
-#include "fil0fil.h"
+#include "log0types.h" /* lsn_t */
 #include "mysql/psi/mysql_stage.h"
 #include "univ.i"
 
@@ -325,9 +325,10 @@ extern bool srv_buffer_pool_load_at_startup;
 extern bool srv_disable_sort_file_cache;
 
 /** Enable or disable writing of NULLs while extending a tablespace.
-If this is false, then the server will just allocate the space without
-actually initializing it with NULLs. If the variable is true, the
-server will allocate and initialize the space by writing NULLs in it. */
+If this is false, then the server will just call fallocate if it is available,
+which will zero the region in the file. Otherwise, the space will be actually
+initialized with NULLs. It is meant for situations where fallocate has bugs,
+like https://bugzilla.redhat.com/show_bug.cgi?id=CVE-2012-4508 */
 extern bool tbsp_extend_and_initialize;
 
 /* If the last data file is auto-extended, we add this many pages to it
@@ -721,6 +722,7 @@ extern bool srv_ibuf_disable_background_merge;
 extern bool srv_buf_pool_debug;
 extern bool srv_sync_debug;
 extern bool srv_purge_view_update_only_debug;
+extern ulong srv_saved_page_number_debug;
 
 /** Value of MySQL global used to disable master thread. */
 extern bool srv_master_thread_disabled_debug;
@@ -813,11 +815,11 @@ extern mysql_pfs_key_t bulk_alloc_thread_key;
 
 #ifdef HAVE_PSI_STAGE_INTERFACE
 /** Performance schema stage event for monitoring ALTER TABLE progress
-everything after flush log_checkpointing->request_sharp_checkpoint(). */
+everything after flush pages_persistence->request_sharp_checkpoint(). */
 extern PSI_stage_info srv_stage_alter_table_end;
 
 /** Performance schema stage event for monitoring ALTER TABLE progress
-log_checkpointing->request_sharp_checkpoint(). */
+pages_persistence->request_sharp_checkpoint(). */
 extern PSI_stage_info srv_stage_alter_table_flush;
 
 /** Performance schema stage event for monitoring ALTER TABLE progress

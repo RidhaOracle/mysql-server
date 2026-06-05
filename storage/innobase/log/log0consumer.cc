@@ -33,6 +33,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 #include "log0consumer.h" /* Log_consumer */
 #include "arch0arch.h"
 #include "arch0log.h"
+#include "fil0pages_persistence_interface.h" /* pages_persistence */
 #include "log0chkp.h"
 #include "log0files_governor.h"    /* log_files_mutex_own() */
 #include "log0handler_interface.h" /* ib::redo::handler */
@@ -68,7 +69,7 @@ const std::string &Log_checkpoint_consumer::get_name() const {
 }
 
 lsn_t Log_checkpoint_consumer::get_consumed_lsn() const {
-  return log_checkpointing->get_checkpoint();
+  return pages_persistence->get_checkpoint_lsn();
 }
 
 void Log_checkpoint_consumer::consumption_requested(lsn_t request_lsn) {

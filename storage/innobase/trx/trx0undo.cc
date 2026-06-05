@@ -46,6 +46,8 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #include "current_thd.h"
 #include "dict0dd.h"
 #include "fil0fil.h"
+#include "fil0pages_persistence_interface.h"
+#include "fil0tablespaces_nodes_interface.h"
 #include "log0chkp.h"
 #include "log0write.h"
 #include "mach0data.h"
@@ -2076,14 +2078,14 @@ bool trx_undo_truncate_tablespace(undo::Tablespace *marked_space) {
   if (space != nullptr) {
     is_encrypted = FSP_FLAGS_GET_ENCRYPTION(space->flags);
 
-    if (fil_delete_tablespace(old_space_id, BUF_REMOVE_NONE) != DB_SUCCESS) {
+    if (fil_delete_tablespace(old_space_id) != DB_SUCCESS) {
       return false;
     }
   } else {
     /* For example on Windows the file deletion can fail if the file
     is being used. Just try again to remove it if it still exists. */
-    os_file_delete_if_exists(innodb_data_file_key, marked_space->file_name(),
-                             nullptr);
+    (void)tablespaces_nodes->remove(old_space_id, 0,
+                                    {.m_path = marked_space->file_name()});
 
     /* We don't know if the undo was encrypted or not, just use the
     srv_undo_log_encrypt value. */
@@ -2094,8 +2096,9 @@ bool trx_undo_truncate_tablespace(undo::Tablespace *marked_space) {
   ulint flags = fsp_flags_init(univ_page_size, false, false, false, false);
 
   /* Create the new UNDO tablespace. */
-  if (fil_ibd_create(new_space_id, marked_space->space_name(),
-                     marked_space->file_name(), flags, n_pages) != DB_SUCCESS) {
+  if (fil_undo_create(new_space_id, marked_space->space_name(),
+                      marked_space->file_name(), flags, n_pages,
+                      marked_space->is_explicit()) != DB_SUCCESS) {
     return false;
   }
 

@@ -598,7 +598,7 @@ class Parallel_reader::Scan_ctx {
   void copy_row(const rec_t *rec, Iter *iter) const;
 
   /** Create the persistent cursor that will be used to traverse the
-  partition and position on the the start row.
+  partition and position on the start row.
   @param[in]      page_cursor   Current page cursor
   @param[in]      mtr           Mini-transaction covering the read.
   @return Start iterator. */

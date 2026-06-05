@@ -61,6 +61,7 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #include "dict0boot.h"
 #include "dict0load.h"
 #include "dict0stats_bg.h"
+#include "fil0pages_persistence_interface.h"
 #include "fsp0sysspace.h"
 #include "ha_prototypes.h"
 #endif /* !UNIV_HOTBACKUP */
@@ -217,8 +218,6 @@ bool srv_numa_interleave = false;
 #ifdef UNIV_DEBUG
 /** Force all user tables to use page compression. */
 ulong srv_debug_compress;
-/** Set when InnoDB has invoked exit(). */
-bool innodb_calling_exit;
 /** Used by SET GLOBAL innodb_master_thread_disabled_debug = X. */
 bool srv_master_thread_disabled_debug;
 #ifndef UNIV_HOTBACKUP
@@ -793,12 +792,12 @@ static const ulint SRV_MASTER_SLOT = 0;
 
 #ifdef HAVE_PSI_STAGE_INTERFACE
 /** Performance schema stage event for monitoring ALTER TABLE progress
-everything after flush log_checkpointing->request_sharp_checkpoint(). */
+everything after flush pages_persistence->request_sharp_checkpoint(). */
 PSI_stage_info srv_stage_alter_table_end = {
     0, "alter table (end)", PSI_FLAG_STAGE_PROGRESS, PSI_DOCUMENT_ME};
 
 /** Performance schema stage event for monitoring ALTER TABLE progress
-log_checkpointing->request_sharp_checkpoint(). */
+pages_persistence->request_sharp_checkpoint(). */
 PSI_stage_info srv_stage_alter_table_flush = {
     0, "alter table (flush)", PSI_FLAG_STAGE_PROGRESS, PSI_DOCUMENT_ME};
 
@@ -1259,6 +1258,7 @@ void srv_free(void) {
 /** Initializes the synchronization primitives, memory system, and the thread
  local storage. */
 static void srv_general_init() {
+  os_event_global_init();
   sync_check_init(srv_max_n_threads);
   /* Reset the system variables in the recovery module. */
   recv_sys_var_init();
@@ -1709,7 +1709,7 @@ void srv_export_innodb_status(void) {
 
   export_vars.innodb_undo_tablespaces_implicit = FSP_IMPLICIT_UNDO_TABLESPACES;
 
-  undo::spaces->s_lock();
+  undo::spaces->s_lock(UT_LOCATION_HERE);
 
   export_vars.innodb_undo_tablespaces_total = undo::spaces->size();
 
@@ -2574,7 +2574,7 @@ bool srv_enable_undo_encryption() {
   bool ret_val = false;
 
   /* Traverse over all UNDO tablespaces and mark them encrypted. */
-  undo::spaces->s_lock();
+  undo::spaces->s_lock(UT_LOCATION_HERE);
   for (auto undo_space : undo::spaces->m_spaces) {
     /* Skip system tablespace. */
     if (undo_space->id() == TRX_SYS_SPACE) {
@@ -2940,7 +2940,7 @@ static ulint srv_do_purge(ulint *n_total_purged) {
 
     need_explicit_truncate = (n_pages_purged == 0);
     if (need_explicit_truncate) {
-      undo::spaces->s_lock();
+      undo::spaces->s_lock(UT_LOCATION_HERE);
       need_explicit_truncate =
           (undo::spaces->find_first_inactive_explicit(nullptr) != nullptr);
       undo::spaces->s_unlock();
@@ -2978,7 +2978,7 @@ static void srv_purge_coordinator_suspend(
 
     rw_lock_x_unlock(&purge_sys->latch);
 
-    /* We don't wait right away on the the non-timed wait because
+    /* We don't wait right away on the non-timed wait because
     we want to signal the thread that wants to suspend purge. */
 
     if (stop) {

@@ -36,13 +36,13 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #include "log0helpers.h"
 #include "log0log.h"
 #include "log0pre_8_0_30.h"
-#include "log0recv.h"  //log_block_checksum_is_ok
+#include "log0recv.h"  //recv_sys
 #include "log0sys_var_handler.h"
 #include "log0test.h"  // log_sync_point
 #include "log0types.h"
 #include "log0write.h"  //log_write_up_to
 #include "srv0srv.h"    //srv_read_only_mode
-#include "srv0start.h"  //RECOVERY_CRASH
+#include "srv0start.h"  //srv_recovery_crash
 #include "ut0new.h"
 
 namespace {
@@ -79,7 +79,7 @@ struct Log_checkpoint_location {
                                   been added to the parsing buffer so that
                                   callers could ignore below that LSN if
                                   required.
-@param[out] parsing_buffer   Buffer where REDOs to be added
+@param[out] parsing_buffer   A buffer where REDOs to be added
 @param[out] parsed_length    Length of the REDOs added to parsing buffer
 @return true if all REDOs from the log block are added successfully,
 false otherwise */
@@ -752,6 +752,7 @@ void Handler::wait_for_space() {
   DBUG_EXECUTE_IF("log_free_check_skip", return;);
 
   const lsn_t current_lsn = peek_first_unassigned_lsn();
+
   /* We are not sure here if the Log Checkpointer is the most lagging consumer,
   but checking that requires acquiring two mutexes, and is a job of
   update_free_check_limit(), which is only executed infrequently from a few

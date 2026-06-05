@@ -37,6 +37,7 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #include "clone0api.h"
 #include "clone0clone.h"
 #include "dict0dict.h"
+#include "fil0tablespace_scan.h" /* tablespace_scanning */
 #include "log0files_io.h"
 #include "sql/handler.h"
 
@@ -211,7 +212,7 @@ int Clone_Snapshot::update_sys_file_name(bool replace,
   }
 
   auto last_file_index =
-      static_cast<decltype(node_index)>(srv_sys_space.m_files.size() - 1);
+      static_cast<decltype(node_index)>(srv_sys_space.get_nodes_count() - 1);
 
   /* Check if the file is beyond maximum configured files. */
   if (node_index > last_file_index) {
@@ -226,11 +227,12 @@ int Clone_Snapshot::update_sys_file_name(bool replace,
     return (ER_CLONE_SYS_CONFIG);
   }
 
-  auto &file = srv_sys_space.m_files[node_index];
-  page_size_t page_sz(srv_sys_space.flags());
-
-  auto size_bytes = static_cast<uint64_t>(file.size());
-  size_bytes *= page_sz.physical();
+  const auto &file = srv_sys_space.node(node_index);
+  const page_size_t page_sz(srv_sys_space.flags());
+  const auto size_bytes = uint64_t{fil_space_get_sys_space()
+                                       ->files[node_index]
+                                       .get_cached_size_in_pages()} *
+                          page_sz.physical();
 
   /* Check if the file size matches with configured files. */
   if (file_meta->m_file_size != size_bytes) {
@@ -254,7 +256,7 @@ int Clone_Snapshot::update_sys_file_name(bool replace,
   }
 
   /* Change filename to currently configured name. */
-  file_name.assign(file.filepath());
+  file_name = srv_sys_space.get_node_full_path(file);
   return (0);
 }
 
@@ -456,9 +458,10 @@ int Clone_Snapshot::build_file_path(const char *data_dir,
   if (err != 0) {
     return err;
   }
-  /* the only permited "unknown" paths are the destination data_dir, and redo
-  log dir, but in case data_dir is specified we put redo logs in it anyway.*/
-  if (!fil_path_is_known(built_path) &&
+  /* Unknown paths are only permitted under the destination data_dir or the redo
+  log dir. If data_dir is specified, redo logs are placed there too. */
+  ut_a(tablespace_scanning != nullptr);
+  if (!tablespace_scanning->is_known_path(built_path) &&
       !Fil_path(data_dir != nullptr ? data_dir : srv_log_group_home_dir, true)
            .is_ancestor(built_path)) {
     my_error(ER_WRONG_VALUE, MYF(0), "file path", built_path.c_str());
@@ -1102,10 +1105,10 @@ int Clone_Handle::set_compression(Clone_file_ctx *file_ctx) {
   std::string file_name;
   file_ctx->get_file_name(file_name);
 
-  os_file_get_status(file_name.c_str(), &stat_info, false, false);
+  const auto err = os_file_get_status(file_name.c_str(), &stat_info);
 
   /* Check and disable punch hole if recipient cannot support it. */
-  if (!IORequest::is_punch_hole_supported() ||
+  if (err != DB_SUCCESS || !IORequest::is_punch_hole_supported() ||
       stat_info.block_size * 2 > srv_page_size) {
     file_meta->m_punch_hole = false; /* purecov: inspected */
   } else {
@@ -1137,8 +1140,6 @@ int Clone_Handle::file_create_init(const Clone_file_ctx *file_ctx,
       return DB_SUCCESS;
     }
 
-    bool punch_hole = false;
-
     std::string file_name;
     file_ctx->get_file_name(file_name);
 
@@ -1169,9 +1170,15 @@ int Clone_Handle::file_create_init(const Clone_file_ctx *file_ctx,
     }
 
     if (db_err == DB_SUCCESS) {
-      db_err = fil_write_initial_pages(
-          file, file_name.c_str(), FIL_TYPE_TABLESPACE, size_in_pages,
-          encryption_ptr, file_meta->m_space_id, flags, punch_hole);
+      db_err = os_file_fill_range_with_zeros(
+          file_name.c_str(), file, 0,
+          size_in_pages * page_size_t{flags}.physical(), true,
+          tbsp_extend_and_initialize);
+      if (db_err == DB_SUCCESS) {
+        db_err =
+            fil_write_initial_pages(file, file_name.c_str(), encryption_ptr,
+                                    file_meta->m_space_id, flags);
+      }
     }
 
     mesg.append(file_name);
@@ -1351,9 +1358,7 @@ int Clone_Handle::sparse_file_write(Clone_File_Meta *file_meta,
   page_size_t page_size(file_meta->m_fsp_flags);
   auto page_len = page_size.physical();
 
-  IORequest request(IORequest::WRITE);
-  request.disable_compression();
-  request.clear_encrypted();
+  IORequest request(IORequest::Type::WRITE | IORequest::Type::NO_COMPRESSION);
 
   /* Loop through all pages in current data block */
   while (len >= page_len) {
@@ -1375,8 +1380,7 @@ int Clone_Handle::sparse_file_write(Clone_File_Meta *file_meta,
 
     /* Write Data Page */
     errno = 0;
-    err = os_file_write(request, "Clone data file", file,
-                        reinterpret_cast<char *>(buffer), start_off,
+    err = os_file_write(request, "Clone data file", file, buffer, start_off,
                         (start_off == 0) ? page_len : write_len);
     if (err != DB_SUCCESS) {
       char errbuf[MYSYS_STRERROR_SIZE];
@@ -1451,15 +1455,13 @@ int Clone_Handle::modify_and_write(const Clone_Task *task, uint64_t offset,
   }
 
   /* No more compression/encryption is needed. */
-  IORequest request(IORequest::WRITE);
-  request.disable_compression();
-  request.clear_encrypted();
+  IORequest request(IORequest::Type::WRITE | IORequest::Type::NO_COMPRESSION);
 
   /* For redo/undo log files and uncompressed tables ,directly write to file */
   errno = 0;
   auto db_err =
       os_file_write(request, "Clone data file", task->m_current_file_des,
-                    reinterpret_cast<char *>(buffer), offset, buf_len);
+                    buffer, offset, buf_len);
   if (db_err != DB_SUCCESS) {
     char errbuf[MYSYS_STRERROR_SIZE];
     my_error(ER_ERROR_ON_WRITE, MYF(0), file_meta->m_file_name, errno,
@@ -1857,11 +1859,23 @@ int Clone_Snapshot::extend_and_flush_files(bool flush_redo) {
     }
 
     if (file_size < file_meta->m_file_size) {
-      success = os_file_set_size(file_name.c_str(), file, file_size,
-                                 file_meta->m_file_size, true);
+      /* Clone data files are opened as OS_CLONE_DATA_FILE which might be
+      unbuffered, which requires proper offset and length alignment. */
+      ut_ad(file_size % UNIV_SECTOR_SIZE == 0);
+      ut_ad((file_meta->m_file_size - file_size) % UNIV_SECTOR_SIZE == 0);
+      success = os_file_fill_range_with_zeros(
+                    file_name.c_str(), file, file_size,
+                    file_meta->m_file_size - file_size, true,
+                    tbsp_extend_and_initialize) == DB_SUCCESS;
     } else if (file_size < aligned_size) {
-      success = os_file_set_size(file_name.c_str(), file, file_size,
-                                 aligned_size, true);
+      /* Clone data files are opened as OS_CLONE_DATA_FILE which might be
+      unbuffered, which requires proper offset and length alignment. */
+      ut_ad(file_size % UNIV_SECTOR_SIZE == 0);
+      ut_ad((aligned_size - file_size) % UNIV_SECTOR_SIZE == 0);
+      success =
+          os_file_fill_range_with_zeros(
+              file_name.c_str(), file, file_size, aligned_size - file_size,
+              true, tbsp_extend_and_initialize) == DB_SUCCESS;
     } else {
       success = os_file_flush(file);
     }

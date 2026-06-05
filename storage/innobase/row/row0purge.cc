@@ -448,7 +448,7 @@ if possible.
       goto func_exit_no_pcur;
     }
 
-    /* The index->online_status may change if the the
+    /* The index->online_status may change if the
     index is or was being created online, but not
     committed yet. It is protected by index->lock. */
     mtr_s_lock(dict_index_get_lock(index), &mtr, UT_LOCATION_HERE);

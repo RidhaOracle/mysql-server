@@ -82,10 +82,10 @@ class ReadView {
     ulint capacity() const { return (m_reserved); }
 
     /**
-    Copy and overwrite the current array contents
+    Copy and overwrite this array contents
 
-    @param start                Source array
-    @param end          Pointer to end of array */
+    @param start            Source array
+    @param end              Pointer to end of array */
     void assign(const value_type *start, const value_type *end);
 
     /**
