@@ -138,6 +138,12 @@ using Tablespaces = std::vector<Moved>;
 
 #ifndef UNIV_HOTBACKUP
 size_t fil_get_scan_threads(size_t num_files) {
+  DBUG_EXECUTE_IF("innodb_force_parallel_tablespace_scan", {
+    if (num_files > 0) {
+      return 1;
+    }
+  });
+
   /* Number of additional threads required to scan all the files.
   n_threads == 0 means that the main thread itself will do all the
   work instead of spawning any additional threads. */
@@ -9300,7 +9306,6 @@ Fil_state fil_tablespace_dir_equals(const space_id_t space_id,
       const auto table_info = components.value();
       const dd::Table *dd_table = nullptr;
       auto &dc = *thd->dd_client();
-      dd::cache::Dictionary_client::Auto_releaser releaser(&dc);
       MDL_ticket *mdl_tkt = nullptr;
 
       /* DD system thread is also one of the worker threads validating the
@@ -9319,6 +9324,9 @@ Fil_state fil_tablespace_dir_equals(const space_id_t space_id,
           dd_release_mdl(mdl_tkt);
         }
       });
+
+      /* Release the DD object before releasing the MDL ticket. */
+      dd::cache::Dictionary_client::Auto_releaser releaser(&dc);
 
       if (dc.acquire<dd::Table>(table_info.schema_name.c_str(),
                                 table_info.table_name.c_str(), &dd_table)) {
