@@ -2317,6 +2317,15 @@ void trx_cleanup_at_db_startup(trx_t *trx) /*!< in: transaction */
     trx_undo_insert_cleanup(&trx->rsegs.m_redo, false);
   }
 
+  ut_ad(trx->rsegs.m_redo.insert_undo == nullptr);
+  ut_ad(trx->rsegs.m_redo.update_undo == nullptr);
+
+  if (trx->rsegs.m_redo.rseg != nullptr) {
+    ut_a(trx->rsegs.m_redo.rseg->trx_ref_count > 0);
+    trx->rsegs.m_redo.rseg->trx_ref_count--;
+    trx->rsegs.m_redo.rseg = nullptr;
+  }
+
   memset(&trx->rsegs, 0x0, sizeof(trx->rsegs));
   trx->undo_no = 0;
   trx->undo_rseg_space = 0;

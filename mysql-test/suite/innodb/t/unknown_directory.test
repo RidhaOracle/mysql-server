@@ -3,6 +3,8 @@
 --echo # to ignore previously known directories.
 --echo #
 
+--source include/have_innodb_default_undo_tablespaces.inc
+
 SET default_storage_engine=InnoDB;
 
 --disable_query_log
@@ -310,7 +312,6 @@ call mtr.add_suppression("\\[Warning\\] .* Cannot create a tablespace for table 
 call mtr.add_suppression("\\[ERROR\\] .* Assertion failure: srv0start.cc *");
 call mtr.add_suppression("Attempting backtrace.*");
 --enable_query_log
-
 
 
 
