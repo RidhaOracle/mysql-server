@@ -157,6 +157,7 @@
 #include "sql/sql_list.h"
 #include "sql/sql_parse.h"   // execute_init_command
 #include "sql/sql_plugin.h"  // opt_plugin_dir_ptr
+#include "sql/sys_vars.h"
 #include "sql/system_variables.h"
 #include "sql/table.h"
 #include "sql/transaction.h"  // trans_begin
@@ -631,6 +632,7 @@ int ReplicaInitializer::init_replica() {
   print_channel_info();
 
   check_replica_configuration_restrictions();
+  adjust_startup_replication_force_pqc_for_tls_versions();
 
   if (check_slave_sql_config_conflict(nullptr)) {
     error = 1;
@@ -8666,6 +8668,10 @@ int connect_to_master(THD *thd, MYSQL *mysql, Master_info *mi, bool reconnect,
     mysql_options(mysql, MYSQL_OPT_BIND, mi->bind_addr);
   }
 
+  const bool force_pqc = replication_channel_force_pqc(mi);
+  const bool use_pqc_sign = replication_channel_use_pqc_sign(mi);
+  const std::string tls_kex = replication_channel_tls_kex(mi);
+
   /* By default the channel is not configured to use SSL */
   enum mysql_ssl_mode ssl_mode = SSL_MODE_DISABLED;
   if (mi->ssl) {
@@ -8690,6 +8696,9 @@ int connect_to_master(THD *thd, MYSQL *mysql, Master_info *mi, bool reconnect,
                       : mi->tls_ciphersuites.second.c_str());
     mysql_options(mysql, MYSQL_OPT_SSL_CRLPATH,
                   mi->ssl_crlpath[0] ? mi->ssl_crlpath : nullptr);
+    mysql_options(mysql, MYSQL_OPT_FORCE_PQC, &force_pqc);
+    mysql_options(mysql, MYSQL_OPT_USE_PQC_SIGN, &use_pqc_sign);
+    mysql_options(mysql, MYSQL_OPT_TLS_KEX, tls_kex.c_str());
     if (mi->ssl_verify_server_cert)
       ssl_mode = SSL_MODE_VERIFY_IDENTITY;
     else if (mi->ssl_ca[0] || mi->ssl_capath[0])

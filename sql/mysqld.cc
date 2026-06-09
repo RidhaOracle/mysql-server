@@ -11524,6 +11524,30 @@ static int show_ssl_get_default_timeout(THD *thd, SHOW_VAR *var, char *buff) {
   return 0;
 }
 
+static const char *ssl_get_key_exchange_group_name(SSL_handle ssl) {
+  if (ssl == nullptr) return "";
+
+#if OPENSSL_VERSION_NUMBER >= 0x30500000L
+  const char *group = SSL_get0_group_name(ssl);
+  if (group != nullptr) return group;
+#endif
+
+  return "";
+}
+
+static const char *ssl_get_local_signature_name(SSL_handle ssl) {
+  if (ssl == nullptr) return "";
+
+#if OPENSSL_VERSION_NUMBER >= 0x30500000L
+  const char *sigalg = nullptr;
+  if (SSL_get0_signature_name(ssl, &sigalg) == 1 && sigalg != nullptr) {
+    return sigalg;
+  }
+#endif
+
+  return "";
+}
+
 static int show_ssl_get_verify_mode(THD *thd, SHOW_VAR *var, char *buff) {
   SSL_handle ssl = thd->get_ssl();
   var->type = SHOW_LONG;
@@ -11553,6 +11577,20 @@ static int show_ssl_get_cipher(THD *thd, SHOW_VAR *var, char *) {
     var->value = const_cast<char *>(SSL_get_cipher(ssl));
   else
     var->value = const_cast<char *>("");
+  return 0;
+}
+
+static int show_ssl_get_kex_algorithm(THD *thd, SHOW_VAR *var, char *) {
+  SSL_handle ssl = thd->get_ssl();
+  var->type = SHOW_CHAR;
+  var->value = const_cast<char *>(ssl_get_key_exchange_group_name(ssl));
+  return 0;
+}
+
+static int show_ssl_get_sign_algorithm(THD *thd, SHOW_VAR *var, char *) {
+  SSL_handle ssl = thd->get_ssl();
+  var->type = SHOW_CHAR;
+  var->value = const_cast<char *>(ssl_get_local_signature_name(ssl));
   return 0;
 }
 
@@ -12058,8 +12096,12 @@ SHOW_VAR status_vars[] = {
     {"Ssl_session_cache_timeout",
      (char *)&Ssl_mysql_main_status::show_ssl_ctx_sess_timeout, SHOW_FUNC,
      SHOW_SCOPE_GLOBAL},
+    {"Tls_key_exchange_algorithm", (char *)&show_ssl_get_kex_algorithm,
+     SHOW_FUNC, SHOW_SCOPE_SESSION},
     {"Tls_library_version", (char *)&show_tls_library_version, SHOW_FUNC,
      SHOW_SCOPE_GLOBAL},
+    {"Tls_sign_algorithm", (char *)&show_ssl_get_sign_algorithm, SHOW_FUNC,
+     SHOW_SCOPE_SESSION},
     {"Resource_group_supported", (char *)show_resource_group_support, SHOW_FUNC,
      SHOW_SCOPE_GLOBAL},
     {"Telemetry_logs_supported", (char *)show_telemetry_logs_support, SHOW_FUNC,

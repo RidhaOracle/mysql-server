@@ -2112,6 +2112,9 @@ static const char *default_options[] = {"port",
                                         "optional-resultset-metadata",
                                         "ssl-fips-mode",
                                         "tls-ciphersuites",
+                                        "tls-kex",
+                                        "force-pqc",
+                                        "use-pqc-sign",
                                         NullS};
 enum option_id {
   OPT_port = 1,
@@ -2155,6 +2158,9 @@ enum option_id {
   OPT_optional_resultset_metadata,
   OPT_ssl_fips_mode,
   OPT_tls_ciphersuites,
+  OPT_tls_kex,
+  OPT_force_pqc,
+  OPT_use_pqc_sign,
   OPT_keep_this_one_last
 };
 
@@ -2323,6 +2329,19 @@ void mysql_read_default_options(struct st_mysql_options *options,
             break;
           case OPT_tls_ciphersuites:
             EXTENSION_SET_STRING(options, tls_ciphersuites, opt_arg);
+            break;
+          case OPT_tls_kex:
+            EXTENSION_SET_STRING(options, tls_kex, opt_arg);
+            break;
+          case OPT_force_pqc:
+            ENSURE_EXTENSIONS_PRESENT(options);
+            options->extension->force_pqc =
+                opt_arg ? (atoi(opt_arg) != 0) : false;
+            break;
+          case OPT_use_pqc_sign:
+            ENSURE_EXTENSIONS_PRESENT(options);
+            options->extension->use_pqc_sign =
+                opt_arg ? (atoi(opt_arg) != 0) : false;
             break;
           case OPT_tls_version:
             EXTENSION_SET_SSL_STRING(options, tls_version, opt_arg,
@@ -3677,6 +3696,7 @@ static void mysql_ssl_free(MYSQL *mysql) {
     my_free(mysql->options.extension->ssl_crl);
     my_free(mysql->options.extension->ssl_crlpath);
     my_free(mysql->options.extension->tls_ciphersuites);
+    my_free(mysql->options.extension->tls_kex);
     my_free(mysql->options.extension->load_data_dir);
     my_free(mysql->options.extension->tls_sni_servername);
     for (unsigned int idx = 0; idx < MAX_AUTHENTICATION_FACTOR; idx++) {
@@ -3703,6 +3723,9 @@ static void mysql_ssl_free(MYSQL *mysql) {
     mysql->options.extension->ssl_mode = SSL_MODE_DISABLED;
     mysql->options.extension->ssl_fips_mode = SSL_FIPS_MODE_OFF;
     mysql->options.extension->tls_ciphersuites = nullptr;
+    mysql->options.extension->tls_kex = nullptr;
+    mysql->options.extension->force_pqc = false;
+    mysql->options.extension->use_pqc_sign = false;
     mysql->options.extension->load_data_dir = nullptr;
     mysql->options.extension->tls_sni_servername = nullptr;
   }
@@ -4591,6 +4614,28 @@ static SSL_SESSION *ssl_session_deserialize_from_data(MYSQL *mysql) {
       reinterpret_cast<char *>(mysql->options.extension->ssl_session_data));
 }
 
+static bool adjust_tls_flags_for_force_pqc(long *ssl_ctx_flags [[maybe_unused]],
+                                           bool force_pqc,
+                                           enum enum_ssl_init_error *error) {
+#if OPENSSL_VERSION_NUMBER >= 0x30500000L
+  if (force_pqc) {
+    if (*ssl_ctx_flags & SSL_OP_NO_TLSv1_3) {
+      *error = SSL_INITERR_PQC_UNSUPPORTED;
+      return true;
+    }
+
+    *ssl_ctx_flags |= SSL_OP_NO_TLSv1_2;
+  }
+#else
+  if (force_pqc) {
+    *error = SSL_INITERR_PQC_UNSUPPORTED;
+    return true;
+  }
+#endif
+
+  return false;
+}
+
 /**
   Establishes SSL if requested and supported.
 
@@ -4642,6 +4687,11 @@ static int cli_establish_ssl(MYSQL *mysql) {
     char buff[33], *end;
     const bool verify_identity =
         mysql->client_flag & CLIENT_SSL_VERIFY_SERVER_CERT;
+    long ssl_ctx_flags =
+        options->extension ? options->extension->ssl_ctx_flags : 0;
+    const bool force_pqc = options->extension && options->extension->force_pqc;
+    const bool use_pqc_sign =
+        options->extension && options->extension->use_pqc_sign;
 
     /* check if server supports compression else turn off client capability */
     if (!(mysql->server_capabilities & CLIENT_ZSTD_COMPRESSION_ALGORITHM))
@@ -4669,6 +4719,14 @@ static int cli_establish_ssl(MYSQL *mysql) {
     MYSQL_TRACE_STAGE(mysql, SSL_NEGOTIATION);
 
     /* Create the VioSSLConnectorFd - init SSL and load certs */
+    if (adjust_tls_flags_for_force_pqc(&ssl_ctx_flags, force_pqc,
+                                       &ssl_init_error)) {
+      set_mysql_extended_error(mysql, CR_SSL_CONNECTION_ERROR, unknown_sqlstate,
+                               ER_CLIENT(CR_SSL_CONNECTION_ERROR),
+                               sslGetErrString(ssl_init_error));
+      goto error;
+    }
+
     if (!(ssl_fd = new_VioSSLConnectorFd(
               options->ssl_key, options->ssl_cert, options->ssl_ca,
               options->ssl_capath, options->ssl_cipher,
@@ -4677,7 +4735,8 @@ static int cli_establish_ssl(MYSQL *mysql) {
               &ssl_init_error,
               options->extension ? options->extension->ssl_crl : nullptr,
               options->extension ? options->extension->ssl_crlpath : nullptr,
-              options->extension ? options->extension->ssl_ctx_flags : 0,
+              ssl_ctx_flags, force_pqc, use_pqc_sign,
+              options->extension ? options->extension->tls_kex : nullptr,
               verify_identity ? mysql->host : nullptr))) {
       set_mysql_extended_error(mysql, CR_SSL_CONNECTION_ERROR, unknown_sqlstate,
                                ER_CLIENT(CR_SSL_CONNECTION_ERROR),
@@ -4833,12 +4892,23 @@ static net_async_status cli_establish_ssl_nonblocking(MYSQL *mysql, int *res) {
     size_t ret;
     const bool verify_identity =
         mysql->client_flag & CLIENT_SSL_VERIFY_SERVER_CERT;
+    long ssl_ctx_flags =
+        options->extension ? options->extension->ssl_ctx_flags : 0;
+    const bool force_pqc = options->extension && options->extension->force_pqc;
+    const bool use_pqc_sign =
+        options->extension && options->extension->use_pqc_sign;
 
     MYSQL_TRACE_STAGE(mysql, SSL_NEGOTIATION);
 
     if (!mysql->connector_fd) {
-      const long flags =
-          options->extension ? options->extension->ssl_ctx_flags : 0;
+      if (adjust_tls_flags_for_force_pqc(&ssl_ctx_flags, force_pqc,
+                                         &ssl_init_error)) {
+        set_mysql_extended_error(mysql, CR_SSL_CONNECTION_ERROR,
+                                 unknown_sqlstate,
+                                 ER_CLIENT(CR_SSL_CONNECTION_ERROR),
+                                 sslGetErrString(ssl_init_error));
+        goto error;
+      }
 
       /* Create the VioSSLConnectorFd - init SSL and load certs */
       if (!(ssl_fd = new_VioSSLConnectorFd(
@@ -4849,7 +4919,9 @@ static net_async_status cli_establish_ssl_nonblocking(MYSQL *mysql, int *res) {
                 &ssl_init_error,
                 options->extension ? options->extension->ssl_crl : nullptr,
                 options->extension ? options->extension->ssl_crlpath : nullptr,
-                flags, verify_identity ? mysql->host : nullptr))) {
+                ssl_ctx_flags, force_pqc, use_pqc_sign,
+                options->extension ? options->extension->tls_kex : nullptr,
+                verify_identity ? mysql->host : nullptr))) {
         set_mysql_extended_error(mysql, CR_SSL_CONNECTION_ERROR,
                                  unknown_sqlstate,
                                  ER_CLIENT(CR_SSL_CONNECTION_ERROR),
@@ -8896,6 +8968,18 @@ int STDCALL mysql_options(MYSQL *mysql, enum mysql_option option,
       EXTENSION_SET_STRING(&mysql->options, tls_ciphersuites,
                            static_cast<const char *>(arg));
       break;
+    case MYSQL_OPT_TLS_KEX:
+      EXTENSION_SET_STRING(&mysql->options, tls_kex,
+                           static_cast<const char *>(arg));
+      break;
+    case MYSQL_OPT_FORCE_PQC:
+      ENSURE_EXTENSIONS_PRESENT(&mysql->options);
+      mysql->options.extension->force_pqc = *static_cast<const bool *>(arg);
+      break;
+    case MYSQL_OPT_USE_PQC_SIGN:
+      ENSURE_EXTENSIONS_PRESENT(&mysql->options);
+      mysql->options.extension->use_pqc_sign = *static_cast<const bool *>(arg);
+      break;
     case MYSQL_OPT_SSL_CRL:
       if (mysql->options.extension)
         my_free(mysql->options.extension->ssl_crl);
@@ -9096,7 +9180,8 @@ int STDCALL mysql_options(MYSQL *mysql, enum mysql_option option,
     MYSQL_OPT_COMPRESS, MYSQL_OPT_LOCAL_INFILE,
     MYSQL_REPORT_DATA_TRUNCATION, MYSQL_OPT_RECONNECT,
     MYSQL_ENABLE_CLEARTEXT_PLUGIN, MYSQL_OPT_CAN_HANDLE_EXPIRED_PASSWORDS,
-    MYSQL_OPT_OPTIONAL_RESULTSET_METADATA
+    MYSQL_OPT_OPTIONAL_RESULTSET_METADATA, MYSQL_OPT_FORCE_PQC,
+    MYSQL_OPT_USE_PQC_SIGN
 
   const char *
     MYSQL_READ_DEFAULT_FILE, MYSQL_READ_DEFAULT_GROUP,
@@ -9104,7 +9189,8 @@ int STDCALL mysql_options(MYSQL *mysql, enum mysql_option option,
     MYSQL_SHARED_MEMORY_BASE_NAME, MYSQL_SET_CLIENT_IP, MYSQL_OPT_BIND,
     MYSQL_PLUGIN_DIR, MYSQL_DEFAULT_AUTH, MYSQL_OPT_SSL_KEY, MYSQL_OPT_SSL_CERT,
     MYSQL_OPT_SSL_CA, MYSQL_OPT_SSL_CAPATH, MYSQL_OPT_SSL_CIPHER,
-    MYSQL_OPT_TLS_CIPHERSUITES, MYSQL_OPT_SSL_CRL, MYSQL_OPT_SSL_CRLPATH,
+    MYSQL_OPT_TLS_CIPHERSUITES, MYSQL_OPT_TLS_KEX, MYSQL_OPT_SSL_CRL,
+    MYSQL_OPT_SSL_CRLPATH,
     MYSQL_OPT_TLS_VERSION, MYSQL_SERVER_PUBLIC_KEY, MYSQL_OPT_SSL_FIPS_MODE,
     MYSQL_OPT_TLS_SNI_SERVERNAME
 
@@ -9231,9 +9317,24 @@ int STDCALL mysql_get_option(MYSQL *mysql, enum mysql_option option,
           mysql->options.extension ? mysql->options.extension->tls_ciphersuites
                                    : nullptr;
       break;
+    case MYSQL_OPT_TLS_KEX:
+      *(static_cast<char **>(const_cast<void *>(arg))) =
+          mysql->options.extension ? mysql->options.extension->tls_kex
+                                   : nullptr;
+      break;
     case MYSQL_OPT_TLS_SNI_SERVERNAME:
       *(static_cast<char **>(const_cast<void *>(arg))) =
           MYSQL_OPTIONS_EXTENSION_PTR(mysql, tls_sni_servername);
+      break;
+    case MYSQL_OPT_FORCE_PQC:
+      *(const_cast<bool *>(static_cast<const bool *>(arg))) =
+          mysql->options.extension ? mysql->options.extension->force_pqc
+                                   : false;
+      break;
+    case MYSQL_OPT_USE_PQC_SIGN:
+      *(const_cast<bool *>(static_cast<const bool *>(arg))) =
+          mysql->options.extension ? mysql->options.extension->use_pqc_sign
+                                   : false;
       break;
     case MYSQL_OPT_RETRY_COUNT:
       *(const_cast<uint *>(static_cast<const uint *>(arg))) =

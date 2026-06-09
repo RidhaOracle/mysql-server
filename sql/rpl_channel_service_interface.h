@@ -112,6 +112,9 @@ struct Channel_creation_info {
   int m_source_connection_auto_failover{0};
   bool m_ignore_write_set_memory_limit;
   bool m_allow_drop_write_set;
+  bool force_pqc;       // Require PQC-compatible TLS key exchange
+  bool use_pqc_sign;    // Advertise PQC TLS signature algorithms
+  const char *tls_kex;  // TLS key exchange groups
 };
 
 void initialize_channel_creation_info(Channel_creation_info *channel_info);

@@ -13452,6 +13452,9 @@ ER_WARN_AUDIT_LOG_SYSVAR_ADJUSTED
 ER_WARN_AUDIT_LOG_SYSVAR_DISCARDED
   eng "Variable '%s' value change was discarded, to make pruning slower than rotation."
 
+ER_WARN_TLS_SESSION_WITHOUT_PQC
+  eng "TLS channel '%s' is not configured to require post-quantum key exchange algorithms; future TLS sessions may use a non-post-quantum key exchange algorithm because force_pqc is disabled"
+
 #
 # End of 9.7 error messages intended to be written to the server error log.
 #

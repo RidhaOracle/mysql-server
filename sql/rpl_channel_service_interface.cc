@@ -72,6 +72,7 @@
 #include "sql/sql_class.h"
 #include "sql/sql_lex.h"
 #include "sql/transaction.h"  // trans_begin
+#include "strmake.h"
 
 /**
   Auxiliary function to stop all the running channel threads according to the
@@ -106,6 +107,12 @@ static void set_mi_settings(Master_info *mi,
                             Channel_creation_info *channel_info) {
   mysql_mutex_lock(mi->rli->relay_log.get_log_lock());
   mysql_mutex_lock(&mi->data_lock);
+
+  mi->force_pqc = channel_info->force_pqc;
+  mi->use_pqc_sign = channel_info->use_pqc_sign;
+  mi->tls_kex[0] = 0;
+  if (channel_info->tls_kex != nullptr)
+    strmake(mi->tls_kex, channel_info->tls_kex, sizeof(mi->tls_kex) - 1);
 
   mi->rli->set_thd_tx_priority(channel_info->thd_tx_priority);
 
@@ -196,6 +203,9 @@ void initialize_channel_creation_info(Channel_creation_info *channel_info) {
   channel_info->zstd_compression_level = 0;
   channel_info->m_ignore_write_set_memory_limit = false;
   channel_info->m_allow_drop_write_set = false;
+  channel_info->force_pqc = false;
+  channel_info->use_pqc_sign = false;
+  channel_info->tls_kex = nullptr;
 }
 
 void initialize_channel_ssl_info(Channel_ssl_info *channel_ssl_info) {

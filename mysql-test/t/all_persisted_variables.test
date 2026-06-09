@@ -54,7 +54,9 @@ let $total_global_vars=`SELECT COUNT(*)
    FROM performance_schema.global_variables
    WHERE variable_name NOT LIKE 'ndb_%'
    AND variable_name NOT LIKE 'debug_%'
-   AND variable_name NOT LIKE '%telemetry%'`;
+   AND variable_name NOT LIKE '%telemetry%'
+   AND variable_name NOT LIKE '%pqc%'
+   AND variable_name NOT LIKE '%tls_kex%'`;
 
 let $total_persistent_vars=451;
 
@@ -138,6 +140,8 @@ WHERE variable_name NOT IN
 AND variable_name NOT LIKE 'ndb_%'
 AND variable_name NOT LIKE 'debug_%'
 AND variable_name NOT LIKE '%telemetry%'
+AND variable_name NOT LIKE '%pqc%'
+AND variable_name NOT LIKE '%tls_kex%'
 ORDER BY variable_name;
 
 --let $count_vars= `SELECT COUNT(*) FROM all_vars;`

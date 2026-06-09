@@ -196,6 +196,9 @@ struct st_mysql_options_extention {
   struct client_authentication_info client_auth_info[MAX_AUTHENTICATION_FACTOR];
   void *ssl_session_data;   /** the session serialization to use */
   char *tls_sni_servername; /* TLS sni server name */
+  char *tls_kex;
+  bool force_pqc;
+  bool use_pqc_sign;
 };
 
 #define MYSQL_OPTIONS_EXTENSION_PTR(H, what) \

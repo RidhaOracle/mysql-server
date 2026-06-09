@@ -84,6 +84,10 @@ int Replication_thread_api::initialize_channel(
   info.compression_algorithm = compression_algorithm;
   info.zstd_compression_level = zstd_compression_level;
 
+  info.force_pqc = get_group_replication_force_pqc_var();
+  info.use_pqc_sign = get_group_replication_use_pqc_sign_var();
+  info.tls_kex = get_group_replication_tls_kex_var();
+
   if (use_ssl || ssl_ca != nullptr || ssl_capath != nullptr ||
       ssl_cert != nullptr || ssl_cipher != nullptr || ssl_key != nullptr ||
       ssl_crl != nullptr || ssl_crlpath != nullptr || ssl_verify_server_cert ||

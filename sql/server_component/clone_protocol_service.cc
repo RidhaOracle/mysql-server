@@ -346,9 +346,9 @@ DEFINE_METHOD(MYSQL *, mysql_clone_connect,
 
     OptionalString capath, cipher, ciphersuites, crl, crlpath, version;
 
-    server_main_callback.read_parameters(nullptr, &capath, &version, nullptr,
-                                         &cipher, &ciphersuites, nullptr, &crl,
-                                         &crlpath, nullptr, nullptr);
+    server_main_callback.read_parameters(
+        nullptr, &capath, &version, nullptr, &cipher, &ciphersuites, nullptr,
+        &crl, &crlpath, nullptr, nullptr, nullptr, nullptr, nullptr);
 
     mysql_options(mysql, MYSQL_OPT_SSL_KEY, ssl_ctx->m_ssl_key);
     mysql_options(mysql, MYSQL_OPT_SSL_CERT, ssl_ctx->m_ssl_cert);
