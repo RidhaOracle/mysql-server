@@ -58,6 +58,7 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #include <list>
 #include <optional>
 #include <span>
+#include <unordered_set>
 #include <variant>
 #include <vector>
 
@@ -129,6 +130,26 @@ constexpr size_t FIL_SPACE_MAGIC_N = 89472;
 
 /** Value of fil_node_t::magic_n */
 constexpr size_t FIL_NODE_MAGIC_N = 89389;
+
+/** Real paths of dirs directly under the MySQL datadir (symlinks resolved) */
+class Dirs_in_datadir {
+ public:
+  /** Build the set of dirs directly under the MySQL datadir.
+  @return set of real paths of dirs directly under MySQL datadir */
+  [[nodiscard]] static Dirs_in_datadir make();
+
+  /** Check whether a dir path matches with one of the dirs directly under the
+  MySQL datadir.
+  @param[in]  discovered_dir  directory path to check
+  @return true if discovered_dir resolves to a known schema directory */
+  [[nodiscard]] bool contains(const std::string &discovered_dir) const;
+
+ private:
+  using Dirs = std::unordered_set<std::string>;
+
+  /** Normalized paths of all dirs directly under the MySQL datadir. */
+  Dirs m_dirs;
+};
 
 /** Result of comparing a path. */
 enum class Fil_state {
@@ -2532,14 +2553,14 @@ example it will return path is matching for `./test/a.ibd` and `./test/b.ibd`.
 @param[in]  space_id                tablespace ID to lookup
 @param[in]  space_name              tablespace name
 @param[in]  fsp_flags               tablespace flags
+@param[in]  dirs_in_datadir         full paths for dirs directly under datadir
 @param[in]  old_path                the path found in dd:Tablespace_files
 @param[out] new_path                the scanned path for this space_id
 @return status of the match. */
-[[nodiscard]] Fil_state fil_tablespace_dir_equals(const space_id_t space_id,
-                                                  const char *space_name,
-                                                  const ulint fsp_flags,
-                                                  const std::string old_path,
-                                                  std::string &new_path);
+[[nodiscard]] Fil_state fil_tablespace_dir_equals(
+    const space_id_t space_id, const char *space_name, const ulint fsp_flags,
+    const Dirs_in_datadir &dirs_in_datadir, const std::string old_path,
+    std::string &new_path);
 
 /** Open the tablespace and also get the tablespace filenames, space_id must
 already be known.
