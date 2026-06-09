@@ -8,7 +8,6 @@
 ##########################################################################
 
 --source include/not_valgrind.inc
---source include/have_lowercase0.inc
 --source include/have_innodb_16k.inc
 
 # ------------------------------------------------------------
@@ -56,7 +55,7 @@ let $DATADIR = $MYSQL_TMP_DIR/data;
 
 --echo # Restart the server against the unzipped datadir
 --replace_result $DATADIR DATADIR
---let $restart_parameters = restart: --datadir=$DATADIR --innodb-page-size=16k
+--let $restart_parameters = restart: --datadir=$DATADIR --innodb-page-size=16k --lower_case_table_names=1
 --let $wait_counter=3000
 --source include/start_mysqld.inc
 
