@@ -39,6 +39,7 @@
 #include "http/server/http_counters.h"
 #include "http/server/request.h"
 #include "http/server/request_handler_interface.h"
+#include "mysqlrouter/http_server_lib_export.h"
 #include "mysqlrouter/uri.h"
 
 namespace http {
@@ -50,7 +51,8 @@ class ServerConnection : public http::base::Connection<Socket> {
   using Parent = http::base::Connection<Socket>;
   using SessionId = uint32_t;
 
-  class ConnectionStatusCallbacks : public Parent::ConnectionStatusCallbacks {
+  class HTTP_SERVER_LIB_EXPORT ConnectionStatusCallbacks
+      : public Parent::ConnectionStatusCallbacks {
    public:
     virtual uint64_t max_request_body_size() const = 0;
     virtual uint64_t max_response_body_size() const = 0;
