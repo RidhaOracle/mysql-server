@@ -134,16 +134,14 @@ static void fill_index_entry(dtuple_t *entry, const dtuple_t *tuple,
 
 /** Sets up a dfield_t structure for a generated field based on src_dfield and
 user data in sql_col
-@param[in]  prebuilt      prebuilt structures from innodb table handler
 @param[in]  field         field metadata
 @param[in]  sql_col       sql column with user data
 @param[in]  src_dfield    dfield_t containing the computed gcol value
 @param[out] dst_dfield    target dfield_t
 @return innodb error code.
 */
-static dberr_t setup_dfield(const row_prebuilt_t *prebuilt, Field *field,
-                            const Column_mysql &sql_col, dfield_t *src_dfield,
-                            dfield_t *dst_dfield);
+static dberr_t setup_dfield(Field *field, const Column_mysql &sql_col,
+                            dfield_t *src_dfield, dfield_t *dst_dfield);
 
 /** Store integer column in Innodb format.
 @param[in]      col       sql column data
@@ -908,19 +906,13 @@ void fill_index_entry(dtuple_t *entry, const dtuple_t *tuple,
   }
 }
 
-dberr_t setup_dfield(const row_prebuilt_t *prebuilt, Field *field,
-                     const Column_mysql &sql_col, dfield_t *src_dfield,
-                     dfield_t *dst_dfield) {
-  const space_id_t space_id = prebuilt->space_id();
+dberr_t setup_dfield(Field *field, const Column_mysql &sql_col,
+                     dfield_t *src_dfield, dfield_t *dst_dfield) {
   auto dtype = dfield_get_type(src_dfield);
   auto data_ptr = (byte *)sql_col.get_data();
   size_t data_len = sql_col.m_data_len;
 
   dst_dfield->type = src_dfield->type;
-
-  if (sql_col.is_ext()) {
-    dfield_set_ext(dst_dfield);
-  }
 
   /* For integer data, the column is passed as integer and not in mysql
   format. We use empty column buffer to store column in innobase format. */
@@ -966,25 +958,15 @@ dberr_t setup_dfield(const row_prebuilt_t *prebuilt, Field *field,
     byte *field_data = data_ptr + length_size;
     dfield_set_data(dst_dfield, field_data, data_len);
 
-    if (sql_col.is_ext()) {
-      dfield_set_ext(dst_dfield);
-    }
-
-  } else if ((dtype->mtype == DATA_VARMYSQL || dtype->mtype == DATA_BINARY) &&
-             data_len == lob::ref_t::SIZE) {
-    byte *field_data = data_ptr;
-    dfield_set_data(dst_dfield, field_data, data_len);
-    lob::ref_t ref(field_data);
-    if (ref.space_id() == space_id) {
-      dfield_set_ext(dst_dfield);
-    } else {
-      /* Not an externally stored field. */
-    }
   } else if (dtype->mtype == DATA_SYS) {
     ut_ad(0);
   } else {
     assert(data_len <= dtype->len);
     dfield_set_data(dst_dfield, data_ptr, data_len);
+  }
+
+  if (sql_col.is_ext()) {
+    dfield_set_ext(dst_dfield);
   }
 
   return DB_SUCCESS;
@@ -1148,17 +1130,6 @@ dberr_t fill_tuple_up_to_n_cols(dtuple_t *tuple, const row_prebuilt_t *prebuilt,
         byte *tmp = field_data + data_len - BTR_EXTERN_FIELD_REF_SIZE;
         lob::ref_t ref(tmp);
         ut_ad(ref.space_id() == space_id);
-        dfield_set_ext(dfield);
-      }
-    } else if ((dtype->mtype == DATA_VARMYSQL || dtype->mtype == DATA_BINARY) &&
-               data_len == lob::ref_t::SIZE) {
-      byte *field_data = data_ptr;
-      dfield_set_data(dfield, field_data, data_len);
-      lob::ref_t ref(field_data);
-      if (ref.space_id() == space_id) {
-        dfield_set_ext(dfield);
-      } else {
-        /* Not an externally stored field. */
       }
     } else if (dtype->mtype == DATA_SYS) {
       ut_ad(!prebuilt->index->is_clustered());
@@ -1167,6 +1138,10 @@ dberr_t fill_tuple_up_to_n_cols(dtuple_t *tuple, const row_prebuilt_t *prebuilt,
     } else {
       assert(data_len <= dtype->len);
       dfield_set_data(dfield, data_ptr, data_len);
+    }
+
+    if (sql_col.is_ext()) {
+      dfield_set_ext(dfield);
     }
   }
 
@@ -1190,7 +1165,7 @@ dberr_t fill_tuple_up_to_n_cols(dtuple_t *tuple, const row_prebuilt_t *prebuilt,
 
         auto &sql_col = rows.read_column(row_offset, column_number);
         dfield_t fld2;
-        auto err = setup_dfield(prebuilt, field, sql_col, fld1, &fld2);
+        auto err = setup_dfield(field, sql_col, fld1, &fld2);
 
         if (err != DB_SUCCESS) {
           return err;
@@ -1235,7 +1210,7 @@ dberr_t fill_tuple_up_to_n_cols(dtuple_t *tuple, const row_prebuilt_t *prebuilt,
 
         auto &sql_col = rows.read_column(row_offset, column_number);
         dfield_t fld2;
-        auto err = setup_dfield(prebuilt, field, sql_col, fld1, &fld2);
+        auto err = setup_dfield(field, sql_col, fld1, &fld2);
 
         if (err != DB_SUCCESS) {
           return err;
