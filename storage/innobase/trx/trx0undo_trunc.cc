@@ -44,8 +44,6 @@ ut::unique_ptr<Undo_num2id_map> num2id_map;
 
 Tablespaces *spaces;
 
-Space_Ids s_under_construction;
-
 /*===================== Space_id_bank ========================= */
 /** A bank of UNDO space ids which is a lock free repository for information
 about the space IDs used for undo tablespaces. It is used during creation in
@@ -376,22 +374,6 @@ void remove_truncate_log_file(space_id_t space_num) {
 
 /*===================== Global Functions ========================= */
 
-void add_space_to_construction_list(space_id_t space_id) {
-  s_under_construction.push_back(space_id);
-}
-
-void clear_construction_list() { s_under_construction.clear(); }
-
-bool is_under_construction(space_id_t space_id) {
-  for (auto construct_id : s_under_construction) {
-    if (construct_id == space_id) {
-      return true;
-    }
-  }
-
-  return false;
-}
-
 void set_active(space_id_t space_id) {
   ut_ad(spaces != nullptr);
   ut_ad(fsp_is_undo_tablespace(space_id));
@@ -403,37 +385,6 @@ void set_active(space_id_t space_id) {
     undo_space->set_active();
   }
   spaces->s_unlock();
-}
-
-bool is_active(space_id_t space_id, bool get_latch) {
-  if (!fsp_is_undo_tablespace(space_id)) {
-    return (true);
-  }
-
-  if (spaces == nullptr) {
-    return (!is_under_construction(space_id));
-  }
-
-  if (get_latch) {
-    spaces->s_lock(UT_LOCATION_HERE);
-  }
-  Tablespace *undo_space = spaces->find(id2num(space_id));
-
-  if (undo_space == nullptr) {
-    if (get_latch) {
-      spaces->s_unlock();
-    }
-    return (!is_under_construction(space_id));
-  }
-
-  bool ret =
-      (get_latch ? undo_space->is_active() : undo_space->is_active_no_latch());
-
-  if (get_latch) {
-    spaces->s_unlock();
-  }
-
-  return ret;
 }
 
 char *make_space_name(space_id_t space_id) {

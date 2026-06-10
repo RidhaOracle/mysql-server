@@ -644,35 +644,8 @@ class Tablespaces {
  */
 extern Tablespaces *spaces;
 
-/** list of undo tablespaces that need header pages and rollback segments
-written to them. This can be because they are newly initialized (either as part
-of --initialize, or created with CREATE UNDO TABLESPACE), or were being
-truncated and the system crashed. */
-extern Space_Ids s_under_construction;
-
-/** Add undo tablespace to s_under_construction vector.
-@param[in]      space_id        space id of tablespace to
-truncate */
-void add_space_to_construction_list(space_id_t space_id);
-
-/** Clear the s_under_construction vector. */
-void clear_construction_list();
-
-/** Is an undo tablespace under construction at the moment.
-@param[in]      space_id        space id to check
-@return true if marked for truncate, else false. */
-bool is_under_construction(space_id_t space_id);
-
 /** Set an undo tablespace active. */
 void set_active(space_id_t space_id);
-
-/* Return whether the undo tablespace is active.  If this is a
-non-undo tablespace, then it will not be found in spaces and it
-will not be under construction, so this function will return true.
-@param[in]  space_id   Undo Tablespace ID
-@param[in]  get_latch  Specifies whether the rsegs->s_lock() is needed.
-@return true if active (non-undo spaces are always active) */
-bool is_active(space_id_t space_id, bool get_latch = true);
 
 constexpr ulint TRUNCATE_FREQUENCY = 128;
 

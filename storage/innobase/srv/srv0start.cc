@@ -246,7 +246,6 @@ static constexpr uint32_t SHUTDOWN_SLEEP_ROUNDS =
 
   undo_space.set_new();
   ut_a(undo_truncate::is_reserved(space_id));
-  undo_truncate::add_space_to_construction_list(space_id);
   return err;
 }
 
@@ -589,10 +588,10 @@ dberr_t srv_undo_tablespace_open(undo_truncate::Tablespace &undo_space,
   }
 
   /* Now that space and node exist, make sure this undo tablespace is open so
-  that it stays open until shutdown. But if it is under construction, we cannot
-  open it until the header page has been written, because it would fill the
-  FSP-related cache with invalid data. */
-  if (!undo_truncate::is_under_construction(space_id)) {
+  that it stays open until shutdown. But if it is still marked unusable, we
+  cannot open it until the header page has been written, because it would fill
+  the FSP-related cache with invalid data. */
+  if (!expected_to_be_unusable) {
     const auto open_res = fil_space_open(space_id);
     ut_a(open_res);
     fil_space_release(*open_res);
@@ -653,38 +652,44 @@ static dberr_t srv_undo_tablespace_open_by_num(const space_id_t space_num) {
   if (space == nullptr) {
     /* Try to open the undo file and read the header */
     using Open_error = ib::fil::Tablespaces_nodes_interface::Open_error;
-    const auto result = tablespaces_nodes->open(
-        space_id, 0, {.m_path = undo_space.file_name()}, srv_page_size, true);
-    if (!result) {
-      switch (result.error()) {
-        case Open_error::NO_ACCESS_PERMISSIONS:
-        case Open_error::NODE_DOES_NOT_EXIST:
-        case Open_error::IO_ERROR:
-          return DB_CANNOT_OPEN_FILE;
+    bool unusable_header;
+    {
+      const auto handle = tablespaces_nodes->open(
+          space_id, 0, {.m_path = undo_space.file_name()}, srv_page_size, true);
+      if (!handle) {
+        switch (handle.error()) {
+          case Open_error::NO_ACCESS_PERMISSIONS:
+          case Open_error::NODE_DOES_NOT_EXIST:
+          case Open_error::IO_ERROR:
+            return DB_CANNOT_OPEN_FILE;
 
-        default:
-          ut_d(ut_error);
-          ut_o(return DB_CANNOT_OPEN_FILE);
+          default:
+            ut_d(ut_error);
+            ut_o(return DB_CANNOT_OPEN_FILE);
+        }
       }
+
+      IORequest request{IORequest::Type::READ};
+
+      const auto first_page =
+          ut::make_unique_aligned<byte[]>(srv_page_size, srv_page_size);
+
+      ib::fil::Tablespace_node_handle_interface::Status_IO page_read_status =
+          handle->get()->read_page(request, first_page.get(), 0);
+
+      if (page_read_status !=
+          ib::fil::Tablespace_node_handle_interface::Status_IO::SUCCESS) {
+        ib::info(ER_IB_MSG_FIRST_PAGE_READ_FAILED, undo_space.file_name(),
+                 ut_strerr(DB_ERROR));
+        return DB_ERROR;
+      }
+      unusable_header =
+          (fsp_header_get_field(first_page.get(), FSP_SIZE) == 0) ||
+          FSP_FLAGS_GET_UNDO_UNUSABLE(fsp_header_get_flags(first_page.get()));
+      /* Releasing the handle at the end of scope, which is crucial for
+      Windows, where we have to close all handles before removing a file.*/
     }
-
-    IORequest request{IORequest::Type::READ};
-
-    const auto first_page =
-        ut::make_unique_aligned<byte[]>(srv_page_size, srv_page_size);
-
-    ib::fil::Tablespace_node_handle_interface::Status_IO page_read_status =
-        result->get()->read_page(request, first_page.get(), 0);
-
-    if (page_read_status !=
-        ib::fil::Tablespace_node_handle_interface::Status_IO::SUCCESS) {
-      ib::info(ER_IB_MSG_FIRST_PAGE_READ_FAILED, undo_space.file_name(),
-               ut_strerr(DB_ERROR));
-      return DB_ERROR;
-    }
-
-    if ((fsp_header_get_field(first_page.get(), FSP_SIZE) == 0) ||
-        (FSP_FLAGS_GET_UNDO_UNUSABLE(fsp_header_get_flags(first_page.get())))) {
+    if (unusable_header) {
       if (srv_read_only_mode) {
         ib::error(ER_IB_MSG_UNDO_RECOVER_FAILED_READ_ONLY_MODE);
         return DB_READ_ONLY;
@@ -815,9 +820,11 @@ static dberr_t srv_undo_tablespaces_open() {
   return (DB_SUCCESS);
 }
 
-/** Create the implicit undo tablespaces for the new instance
+/** Create the implicit undo tablespaces for the new instance. It only ensures
+the Undo Tablespace exists, has a minimal valid header and is open. It doesn't
+create rseg arrays, nor rollback segments.
 @return DB_SUCCESS or error code */
-static dberr_t srv_undo_implicit_tablespaces_create() {
+static dberr_t srv_undo_create_implicit_tablespaces() {
   dberr_t err = DB_SUCCESS;
   ut_a(!srv_read_only_mode);
   ut_a(srv_force_recovery == 0);
@@ -857,14 +864,16 @@ static dberr_t srv_undo_implicit_tablespaces_create() {
   return (err);
 }
 
-/** Finish building undo tablespaces. So far these tablespace files in the
-construction list should be created and filled with zeros.
+/** Initialize FSP structures (such as fragment and inode lists) and the (empty)
+rseg array of an undo tablespace. Before the call this tablespace file should be
+created and filled with zeros with a minimal tablespace header.
+This function does not create any rollback segments.
+@param[in]      space_id        undo tablespace id
+@param[in]      enable_undo_encryption  whether to update global undo
+                                        encryption metadata after construction
 @return DB_SUCCESS or error code */
-static dberr_t srv_undo_tablespaces_construct() {
-  if (undo_truncate::s_under_construction.empty()) {
-    return (DB_SUCCESS);
-  }
-
+static dberr_t srv_undo_prepare_empty_structure(space_id_t space_id,
+                                                bool enable_undo_encryption) {
   ut_a(!srv_read_only_mode);
   ut_a(!srv_force_recovery);
 
@@ -873,44 +882,42 @@ static dberr_t srv_undo_tablespaces_construct() {
     return (DB_ERROR);
   }
 
-  for (auto space_id : undo_truncate::s_under_construction) {
-    /* Enable undo log encryption if it's ON. */
-    if (srv_undo_log_encrypt) {
-      dberr_t err = srv_undo_tablespace_enable_encryption(space_id);
+  /* Enable undo log encryption if it's ON. */
+  if (srv_undo_log_encrypt) {
+    dberr_t err = srv_undo_tablespace_enable_encryption(space_id);
 
-      if (err != DB_SUCCESS) {
-        ib::error(ER_IB_MSG_ENCRYPTED_UNDO_CREATE_FAILED,
-                  ulong{undo_truncate::id2num(space_id)});
-
-        return (err);
-      }
-    }
-
-    log_free_check();
-
-    mtr_t mtr;
-    mtr_start(&mtr);
-
-    mtr_x_lock(fil_space_get_latch(space_id), &mtr, UT_LOCATION_HERE);
-
-    if (!fsp_header_init(space_id, UNDO_INITIAL_SIZE_IN_PAGES, &mtr)) {
-      ib::error(ER_IB_MSG_UNDO_HEADER_INITIALIZE_FAIL,
+    if (err != DB_SUCCESS) {
+      ib::error(ER_IB_MSG_ENCRYPTED_UNDO_CREATE_FAILED,
                 ulong{undo_truncate::id2num(space_id)});
 
-      mtr_commit(&mtr);
-      return (DB_ERROR);
+      return (err);
     }
-
-    /* Add the RSEG_ARRAY page. */
-    trx_rseg_array_create(space_id, &mtr);
-
-    mtr_commit(&mtr);
-
-    /* The rollback segments will get created later in
-    trx_rseg_add_rollback_segments(). */
   }
 
-  if (srv_undo_log_encrypt) {
+  log_free_check();
+
+  mtr_t mtr;
+  mtr_start(&mtr);
+
+  mtr_x_lock(fil_space_get_latch(space_id), &mtr, UT_LOCATION_HERE);
+
+  if (!fsp_header_init(space_id, UNDO_INITIAL_SIZE_IN_PAGES, &mtr)) {
+    ib::error(ER_IB_MSG_UNDO_HEADER_INITIALIZE_FAIL,
+              ulong{undo_truncate::id2num(space_id)});
+
+    mtr_commit(&mtr);
+    return (DB_ERROR);
+  }
+
+  /* Add the RSEG_ARRAY page. */
+  trx_rseg_array_create(space_id, &mtr);
+
+  mtr_commit(&mtr);
+
+  /* The rollback segments will get created later in
+  trx_rseg_add_rollback_segments(). */
+
+  if (srv_undo_log_encrypt && enable_undo_encryption) {
     ut_d(bool ret =) srv_enable_undo_encryption();
     ut_ad(!ret);
   }
@@ -918,22 +925,32 @@ static dberr_t srv_undo_tablespaces_construct() {
   return (DB_SUCCESS);
 }
 
-/** Mark the point in which the undo tablespaces in the construction list
-are fully constructed and ready to use. */
-static void srv_undo_tablespaces_mark_construction_done() {
-  /* Remove the truncate log files if they exist. */
-  for (auto space_id : undo_truncate::s_under_construction) {
-    const auto space = fil_space_get(space_id);
+/** Mark the point in which an undo tablespace is fully constructed and ready
+to use.
+@param[in]      space_id        undo tablespace id */
+static void srv_undo_mark_tablespace_usable(space_id_t space_id) {
+  const auto space = fil_space_get(space_id);
 
-    if (space && FSP_FLAGS_GET_UNDO_UNUSABLE(space->flags)) {
-      mtr_t mtr;
-      mtr.start();
-      undo_truncate::mark_undo_tablespace_usable(space_id, &mtr);
-      mtr.commit();
-    }
+  if (space && FSP_FLAGS_GET_UNDO_UNUSABLE(space->flags)) {
+    mtr_t mtr;
+    mtr.start();
+    undo_truncate::mark_undo_tablespace_usable(space_id, &mtr);
+    mtr.commit();
   }
+}
 
-  undo_truncate::clear_construction_list();
+/** Mark any fully constructed undo tablespaces ready to use. */
+static void srv_undo_mark_all_tablespaces_usable() {
+  Space_Ids space_ids;
+  undo_truncate::spaces->s_lock(UT_LOCATION_HERE);
+  for (auto undo_space : undo_truncate::spaces->m_spaces) {
+    space_ids.push_back(undo_space->id());
+  }
+  undo_truncate::spaces->s_unlock();
+
+  for (const auto space_id : space_ids) {
+    srv_undo_mark_tablespace_usable(space_id);
+  }
 }
 
 dberr_t srv_undo_tablespace_create(const char *space_name,
@@ -998,7 +1015,8 @@ dberr_t srv_undo_tablespace_create(const char *space_name,
   });
 
   /* Write header and RSEG_ARRAY pages to this undo tablespace. */
-  if (const auto err = srv_undo_tablespaces_construct(); err != DB_SUCCESS) {
+  if (const auto err = srv_undo_prepare_empty_structure(space_id, true);
+      err != DB_SUCCESS) {
     return err;
   }
 
@@ -1011,7 +1029,7 @@ dberr_t srv_undo_tablespace_create(const char *space_name,
   undo_space_list_guard.release();
   undo_space_create_guard.release();
 
-  srv_undo_tablespaces_mark_construction_done();
+  srv_undo_mark_tablespace_usable(space_id);
 
   return DB_SUCCESS;
 }
@@ -1033,39 +1051,45 @@ void undo_truncate_spaces_deinit() {
   }
 }
 
-/** Open the configured number of implicit undo tablespaces.
-@param[in]      create_new_db   true if new db being created
+/** Create the implicit undo tablespaces for the new instance, and create
+their rseg arrrays, but not their rollback segments.
 @return DB_SUCCESS or error code */
-static dberr_t srv_undo_tablespaces_init(bool create_new_db) {
+static dberr_t srv_undo_create_implicit_tablespaces_with_empty_structure() {
   dberr_t err = DB_SUCCESS;
-
-  if (!create_new_db) {
-    /* Open any existing undo tablespaces. */
-    return srv_undo_tablespaces_open();
-  }
 
   /* Create and open implicit undo tablespaces for the new DB. */
   mutex_enter(&undo_truncate::ddl_mutex);
-  err = srv_undo_implicit_tablespaces_create();
+  err = srv_undo_create_implicit_tablespaces();
   if (err != DB_SUCCESS) {
     mutex_exit(&undo_truncate::ddl_mutex);
     return (err);
   }
 
-  /* Finish building any undo tablespaces just created by adding
-  header pages, rseg_array pages, and rollback segments. Then delete
-  any undo truncation log files and clear the construction list.
-  This list includes any tablespace newly created or fixed-up. */
-  err = srv_undo_tablespaces_construct();
-  if (err != DB_SUCCESS) {
-    mutex_exit(&undo_truncate::ddl_mutex);
-    return (err);
+  Space_Ids new_space_ids;
+  undo_truncate::spaces->s_lock(UT_LOCATION_HERE);
+  for (auto undo_space : undo_truncate::spaces->m_spaces) {
+    if (undo_space->is_new()) {
+      new_space_ids.push_back(undo_space->id());
+    }
+  }
+  undo_truncate::spaces->s_unlock();
+
+  for (const auto space_id : new_space_ids) {
+    err = srv_undo_prepare_empty_structure(space_id, false);
+    if (err != DB_SUCCESS) {
+      mutex_exit(&undo_truncate::ddl_mutex);
+      return (err);
+    }
   }
 
-  /* We don't want to call srv_undo_tablespaces_mark_construction_done() here as
-  we will call it later in the srv_start() after doing
-  trx_rseg_adjust_rollback_segments(), which will finalize construction of the
-  undo tablespaces. */
+  if (srv_undo_log_encrypt) {
+    ut_d(bool ret =) srv_enable_undo_encryption();
+    ut_ad(!ret);
+  }
+
+  /* We don't want to mark construction done here as we will do it later in
+  srv_start() after doing trx_rseg_adjust_rollback_segments(), which will
+  finalize construction of the undo tablespaces. */
 
   mutex_exit(&undo_truncate::ddl_mutex);
   return (DB_SUCCESS);
@@ -1719,8 +1743,9 @@ dberr_t srv_start(bool create_new_db) {
     ut_a(ib::redo::handler->peek_first_unassigned_lsn() == flushed_lsn);
     ut_a(ib::redo::handler->peek_first_nonpersisted_lsn() == flushed_lsn);
 
-    /* Create and initialize implicit UNDO tablespaces */
-    if (const auto err = srv_undo_tablespaces_init(true); err != DB_SUCCESS) {
+    if (const auto err =
+            srv_undo_create_implicit_tablespaces_with_empty_structure();
+        err != DB_SUCCESS) {
       return srv_init_abort(err);
     }
 
@@ -1907,7 +1932,7 @@ dberr_t srv_start(bool create_new_db) {
     }
 
     /* Open implicit UNDO tablespaces */
-    if (const auto err = srv_undo_tablespaces_init(false);
+    if (const auto err = srv_undo_tablespaces_open();
         err != DB_SUCCESS && srv_force_recovery < SRV_FORCE_NO_UNDO_LOG_SCAN) {
       return srv_init_abort(err);
     }
@@ -1962,9 +1987,8 @@ dberr_t srv_start(bool create_new_db) {
   }
 
   /* Any undo tablespaces under construction are now fully built
-  with all needed rsegs. Delete the trunc.log files and clear the
-  construction list. */
-  srv_undo_tablespaces_mark_construction_done();
+  with all needed rsegs. */
+  srv_undo_mark_all_tablespaces_usable();
 
   /* Now that all rsegs are ready for use, make them active. */
   undo_truncate::spaces->s_lock(UT_LOCATION_HERE);

@@ -718,8 +718,7 @@ static void fsp_space_modify_check(space_id_t id, const mtr_t *mtr) {
       ut_a(fsp_is_system_temporary(id) || !mtr_t::s_logging.is_enabled() ||
            fil_space_get_flags(id) == UINT32_UNDEFINED ||
            type == FIL_TYPE_TEMPORARY || type == FIL_TYPE_IMPORT ||
-           fil_space_is_redo_skipped(id) ||
-           !undo_truncate::is_active(id, false));
+           fil_space_is_redo_skipped(id));
     }
 #endif /* UNIV_DEBUG */
       return;

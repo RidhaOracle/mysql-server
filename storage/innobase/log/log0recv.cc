@@ -1629,21 +1629,7 @@ void recv_recover_page_func(
       }
     }
 
-    /* Ignore applying the redo logs for tablespace that is
-    truncated. Truncated tablespaces are handled explicitly
-    post-recovery, where we will restore the tablespace back
-    to a normal state.
-
-    Applying redo at this stage will cause problems because the
-    redo will have action recorded on page before tablespace
-    was re-inited and that would lead to a problem later. */
-
-    if (recv->start_lsn >= page_lsn
-#ifndef UNIV_HOTBACKUP
-        && undo_truncate::is_active(recv_addr->space)
-#endif /* !UNIV_HOTBACKUP */
-    ) {
-
+    if (recv->start_lsn >= page_lsn) {
       if (!modification_to_page) {
 #ifndef UNIV_HOTBACKUP
         ut_a(recv_needed_recovery);

@@ -417,12 +417,6 @@ class Pages {
 bool Pages::is_actual_page_corrupted(const fil_space_t &space,
                                      const page_id_t &page_id) {
   if (space.m_size_in_pages <= page_id.page_no()) {
-    /* Do not report the corruption if it is an inactive undo tablespace that is
-    going to be truncated, or already was truncated. Instead, we want to ignore
-    this Double-write page. */
-    if (!undo_truncate::is_active(space.id)) {
-      return false;
-    }
     const auto node_and_page = get_node_and_page_no_for_error(space, page_id);
     ib::fatal(UT_LOCATION_HERE, ER_IB_MSG_INNODB_DBLWR_OUT_OF_BOUNDS,
               ulong{space.m_size_in_pages}, page_id.to_string().c_str(),
