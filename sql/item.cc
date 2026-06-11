@@ -2478,50 +2478,7 @@ bool Item::split_sum_func2(THD *thd, Ref_item_array ref_item_array,
   // We need to handle outer references in subqueries in presence of wf with
   // frame buffering
   bool outer_refs_wf = false;
-  /*
-    For an expressions that is not itself an aggregate function, a
-    grouping function or a window function but contain underlying
-    aggregate functions, grouping functions or window functions,
-    possibly split the expression.
-    Do not attempt to split helper functions from transformations
-    (ISNOTNULLTEST_FUNC or TRIG_COND_FUNC), or row constructs.
-  */
-  if (((has_aggregation() || has_wf() || has_grouping_func()) &&
-       !is_aggr_func && !m_is_window_function && !is_grouping) ||
-      (type() == FUNC_ITEM && (down_cast<Item_func *>(this)->functype() ==
-                                   Item_func::ISNOTNULLTEST_FUNC ||
-                               down_cast<Item_func *>(this)->functype() ==
-                                   Item_func::TRIG_COND_FUNC)) ||
-      type() == ROW_ITEM) {
-    // Do not add item to hidden list; possibly split it
-    if (split_sum_func(thd, ref_item_array, fields)) {
-      return true;
-    }
-    if (type() == SUBQUERY_ITEM) {
-      (void)subquery_split(thd, this, &outer_refs_wf);  // (3)
-    }
-  } else if (!const_for_execution() &&                       // (1)
-             (type() != REF_ITEM ||                          // (2)
-              down_cast<Item_ref *>(this)->ref_type() ==     //
-                  Item_ref::VIEW_REF) &&                     //
-             (type() != SUBQUERY_ITEM ||                     //
-              subquery_split(thd, this, &outer_refs_wf))) {  // (3)
-    /*
-      (1) Replace non-constant item with a reference so that we can easily
-      calculate it (in case of aggregate functions, grouping functions or
-      window functions) or copy it (in case of fields).
-
-      (2) Exception from (1) is Item_view_ref which we need to wrap in
-      Item_ref to allow fields from view being stored in tmp table.
-
-      (3) In order to handle queries like:
-           SELECT FIRST_VALUE((SELECT .. FROM .. LIMIT 1)) OVER (..) FROM ...;
-      If subquery_split returns false, we must evaluate the subquery after the
-      window functions. If so, we need to know whether there are any outer
-      references, since those will need to be carried forward with the windowing
-      temporary tables and references re-written to point to the windowing
-      buffers, cf. outer_refs_wf and code below.
-    */
+  const auto add_self_to_hidden_fields = [&]() {
     DBUG_PRINT("info", ("replacing %s with reference", item_name.ptr()));
 
     const bool old_hidden = hidden;  // May be overwritten below.
@@ -2573,6 +2530,59 @@ bool Item::split_sum_func2(THD *thd, Ref_item_array ref_item_array,
       assert(ref != nullptr);
     }
     *ref = item_ref;
+
+    return false;
+  };
+  /*
+    For an expressions that is not itself an aggregate function, a
+    grouping function or a window function but contain underlying
+    aggregate functions, grouping functions or window functions,
+    possibly split the expression.
+    Do not attempt to split helper functions from transformations
+    (ISNOTNULLTEST_FUNC or TRIG_COND_FUNC), or row constructs.
+  */
+  if (((has_aggregation() || has_wf() || has_grouping_func()) &&
+       !is_aggr_func && !m_is_window_function && !is_grouping) ||
+      (type() == FUNC_ITEM && (down_cast<Item_func *>(this)->functype() ==
+                                   Item_func::ISNOTNULLTEST_FUNC ||
+                               down_cast<Item_func *>(this)->functype() ==
+                                   Item_func::TRIG_COND_FUNC)) ||
+      type() == ROW_ITEM) {
+    // Do not add item to hidden list; possibly split it
+    if (split_sum_func(thd, ref_item_array, fields)) {
+      return true;
+    }
+    if (type() == SUBQUERY_ITEM) {
+      // For hypergraph, also add early-evaluable subqueries as hidden fields:
+      const bool split_subquery = subquery_split(thd, this, &outer_refs_wf);
+      if (thd->lex->using_hypergraph_optimizer() && split_subquery &&
+          add_self_to_hidden_fields()) {
+        return true;
+      }
+    }
+  } else if (!const_for_execution() &&                       // (1)
+             (type() != REF_ITEM ||                          // (2)
+              down_cast<Item_ref *>(this)->ref_type() ==     //
+                  Item_ref::VIEW_REF) &&                     //
+             (type() != SUBQUERY_ITEM ||                     //
+              subquery_split(thd, this, &outer_refs_wf))) {  // (3)
+    /*
+      (1) Replace non-constant item with a reference so that we can easily
+      calculate it (in case of aggregate functions, grouping functions or
+      window functions) or copy it (in case of fields).
+
+      (2) Exception from (1) is Item_view_ref which we need to wrap in
+      Item_ref to allow fields from view being stored in tmp table.
+
+      (3) In order to handle queries like:
+           SELECT FIRST_VALUE((SELECT .. FROM .. LIMIT 1)) OVER (..) FROM ...;
+      If subquery_split returns false, we must evaluate the subquery after the
+      window functions. If so, we need to know whether there are any outer
+      references, since those will need to be carried forward with the windowing
+      temporary tables and references re-written to point to the windowing
+      buffers, cf. outer_refs_wf and code below.
+    */
+    if (add_self_to_hidden_fields()) return true;
 
     /*
       A WF must both be added to hidden list (done above), and be split so its

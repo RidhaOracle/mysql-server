@@ -3044,4 +3044,52 @@ SELECT 1 FROM t2r JOIN t_large ON t_large.y = t2r.a
 
 DROP TABLE num10, t2r, t30, t_large, t_sub;
 
+--echo #
+--echo # Bug#37126568 Window function with subquery argument containing outer
+--echo # aggregate gives wrong result
+--echo #
+
+# When a window function has a subquery argument that contains an "outer"
+# aggregate, the subquery must be evaluated once per group row and buffered,
+# not re-evaluated during frame buffer processing with stale aggregate values.
+
+CREATE TABLE tt (c0 INT, c1 INT);
+INSERT INTO tt VALUES (1,2), (1,3), (1,4), (2,1), (3,5), (3,6);
+
+# MIN(c1) per group: c0=1->2, c0=2->1, c0=3->5; SUM=8 for all rows
+SELECT SUM((SELECT MIN(c1))) OVER () FROM tt GROUP BY c0;
+
+# The subquery may be nested inside the window function argument.
+SELECT SUM(1 + (SELECT MIN(c1))) OVER () FROM tt GROUP BY c0;
+
+# EXISTS subqueries can also be evaluated before windowing.
+SELECT SUM(EXISTS(SELECT * WHERE MIN(c1) > 1)) OVER () FROM tt GROUP BY c0;
+
+# EXISTS may be nested inside the window function argument expression too.
+SELECT SUM(1 + EXISTS(SELECT * WHERE MIN(c1) > 1)) OVER () FROM tt GROUP BY c0;
+
+# The buffered subquery value must not depend on the order in which multiple
+# window functions are materialized.
+SELECT SUM((SELECT MIN(c1))) OVER (),
+       SUM(c0) OVER (ORDER BY c0)
+FROM tt GROUP BY c0;
+
+SELECT SUM(c0) OVER (ORDER BY c0),
+       SUM((SELECT MIN(c1))) OVER ()
+FROM tt GROUP BY c0;
+
+# Original reproduction from the bug report
+CREATE TABLE t (c0 INT, KEY i1 (c0));
+INSERT INTO t VALUES (1), (1), (1), (2), (2), (3);
+
+SELECT SUM((SELECT c0
+            FROM t
+            WHERE MIN(tt.c1) > 1
+            GROUP BY c0
+            ORDER BY c0 LIMIT 1)) OVER() sum_wf
+FROM tt
+GROUP BY c0;
+
+DROP TABLE tt, t;
+
 --source include/disable_hypergraph.inc
