@@ -53,20 +53,20 @@ FOREACH(test ${TESTS})
     COMPILE_DEFINITIONS "${DISABLE_PSI_DEFINITIONS}" "STANDALONE_LIBS_MYSQL")
 ENDFOREACH()
 
-FOREACH(test ${TESTS})
-  # When the unit-test library is shared, link to the library file directly
-  # to avoid pulling the same scheduler objects into the test executable
-  # through the target's transitive link interface, which trips ASan ODR
-  # checks. Keep linking to the target otherwise so platform-specific target
-  # properties still apply. Add the Abseil sampler explicitly because this
-  # path also bypasses the target's transitive shared-library dependencies.
-  IF(WITH_SHARED_UNITTEST_LIBRARY)
-    SET(SCHEDULER_SERVER_UNITTEST_LINK
-      $<TARGET_FILE:server_unittest_library> absl::hashtablez_sampler)
-  ELSE()
-    SET(SCHEDULER_SERVER_UNITTEST_LINK server_unittest_library)
+IF(WITH_SHARED_UNITTEST_LIBRARY)
+  # Link to the library file directly to avoid pulling the same scheduler
+  # objects into the test executable through the target's transitive link
+  # interface, which trips ASan ODR checks.
+  SET(SCHEDULER_SERVER_UNITTEST_LINK $<TARGET_FILE:server_unittest_library>)
+  # Newer Abseil packages may split this dependency into a separate target.
+  IF(TARGET absl::hashtablez_sampler)
+    LIST(APPEND SCHEDULER_SERVER_UNITTEST_LINK absl::hashtablez_sampler)
   ENDIF()
+ELSE()
+  SET(SCHEDULER_SERVER_UNITTEST_LINK server_unittest_library)
+ENDIF()
 
+FOREACH(test ${TESTS})
   MYSQL_ADD_EXECUTABLE(${test}-srv-t ${test}-t.cc
     ADD_TEST ${test}
     LINK_LIBRARIES mysql_concurrency_server
