@@ -32,6 +32,10 @@ FROM performance_schema.pfs_example_country;
 --echo # restart_innodb_read_only.inc adds the standard warning suppressions.
 --echo #
 
+--disable_query_log
+CALL mtr.add_suppression("Failed to compress the gtid_executed table.");
+--enable_query_log
+
 --source include/restart_innodb_read_only.inc
 
 SELECT @@global.innodb_read_only;
