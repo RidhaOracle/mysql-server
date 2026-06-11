@@ -2496,7 +2496,7 @@ bool srv_enable_redo_encryption() {
   if (log_can_encrypt(log)) {
     return false;
   }
-
+  DEBUG_SYNC_C("srv_enable_redo_encryption_after_log_can_encrypt");
   Clone_notify notifier(Clone_notify::Type::SPACE_ALTER_ENCRYPT,
                         dict_sys_t::s_log_space_id, false);
   if (notifier.failed()) {
