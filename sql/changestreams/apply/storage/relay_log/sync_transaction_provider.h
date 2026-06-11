@@ -72,9 +72,11 @@ class Sync_transaction_provider : public Transaction_provider {
 
   /// Starts asynchronous thread that decodes jobs from the stream
   void start() override;
-  /// Stops asynchronous thread, notifies it and and waits for notification that
-  /// thread has been stopped and may be joined. Next, joins the thread.
+  /// Stops provider and wakes blocked reader calls.
   void stop() override;
+  /// Completes provider shutdown from the owner thread (transaction receiver).
+  /// Requires stop to have been called first; otherwise it is a no-op.
+  void finish() override;
 
   /// Consumes the next Job, blocks until fetched
   /// @retval Job smart pointer

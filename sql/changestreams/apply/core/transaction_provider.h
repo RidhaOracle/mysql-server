@@ -36,7 +36,8 @@ using Transaction_provider_sptr = std::shared_ptr<Transaction_provider>;
 /// Interface for all transaction providers.
 /// Transaction provider shall implement the following methods:
 /// - start - start provider in case this provider is asynchronous
-/// - stop  - stops provider in case this provider is asynchronous
+/// - stop - stops provider and wakes blocking reads
+/// - finish - completes provider shutdown from the provider owner thread
 /// - is_stopped - checks if stop has been requested internally or externally
 /// - next - blocks until next transaction is fetched or provider reaches
 ///          stop conditions (is_stopped will return true) or temporarily
@@ -53,8 +54,11 @@ class Transaction_provider {
   virtual bool is_stopped() const = 0;
   /// Start provider (if asynchronous)
   virtual void start() = 0;
-  /// Stop provider (if asynchronous), may block waiting for stop
+  /// Stop provider and wake blocked reader calls.
   virtual void stop() = 0;
+  /// Complete provider shutdown from the owner thread (transaction receiver).
+  /// Requires stop to have been called first; otherwise it is a no-op.
+  virtual void finish() = 0;
   /// @brief Check if provider has an error
   /// @return True in case an error occurred, false otherwise
   virtual bool is_error() const = 0;

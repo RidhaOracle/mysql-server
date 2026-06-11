@@ -22,6 +22,9 @@
 // Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA.
 
 #include "sql/changestreams/apply/storage/relay_log/sync_transaction_provider.h"
+
+#include <cassert>
+
 #include "mysql/psi/mysql_file.h"  // mysql_file_close
 #include "sql/changestreams/apply/resource/statistics_map.h"
 #include "sql/changestreams/apply/service/csa_service.h"
@@ -49,6 +52,16 @@ bool Sync_transaction_provider::is_error() const {
 void Sync_transaction_provider::stop() {
   m_is_stopped = true;
   m_reader->stop();
+}
+
+void Sync_transaction_provider::finish() {
+  assert(is_stopped());
+  if (!is_stopped()) {
+    return;
+  }
+  auto pending_job = m_reader->read();
+  assert(pending_job == nullptr);
+  delete pending_job;
 }
 
 bool Sync_transaction_provider::is_stopped() const {

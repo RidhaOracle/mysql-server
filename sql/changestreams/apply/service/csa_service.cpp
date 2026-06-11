@@ -325,6 +325,7 @@ bool Csa_service::run(Relay_log_info *rli) {
   }
   concurrency::set_thd_stage(current_thd, stage_csa_stopping);
   provider->stop();
+  provider->finish();
   if (!new_scheduler->synchronize(false)) {
     session_service->awake_sessions(true);
     new_scheduler->synchronize(true);
