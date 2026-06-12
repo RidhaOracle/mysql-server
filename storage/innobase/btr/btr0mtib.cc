@@ -42,6 +42,7 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #include "btr0mtib.h"
 #include "btr0pcur.h"
 #include "buf0buddy.h"
+#include "buf0stats.h"
 #include "fil0innodb_pages_persistence.h"
 #include "fil0pages_persistence_interface.h"
 #include "ibuf0ibuf.h"
@@ -1087,6 +1088,10 @@ dberr_t Page_load::alloc() noexcept {
 
   btr_page_set_level(new_page, nullptr, m_level, &mtr);
   btr_page_set_index_id(new_page, nullptr, m_index->id, &mtr);
+  /* Page_load::alloc() is currently only used for non-leaf node-pointer pages,
+  which makes this a no-op in practice. Call it anyway so the accounting rule
+  stays local to buf_stat_per_index. */
+  buf_stat_per_index->inc_if_tracked_page(new_page);
 
   mtr.commit();
   return DB_SUCCESS;
@@ -1158,7 +1163,9 @@ dberr_t Page_load::init() noexcept {
 
   ut_ad(page_dir_get_n_heap(new_page) == PAGE_HEAP_NO_USER_LOW);
 
+  buf_stat_per_index->dec_if_tracked_page(new_page);
   btr_page_set_level(new_page, nullptr, m_level, m_mtr);
+  buf_stat_per_index->inc_if_tracked_page(new_page);
 
   m_block = new_block;
   m_page = new_page;

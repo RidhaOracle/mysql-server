@@ -51,6 +51,7 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #include <debug_sync.h>
 #include "btr0btr.h"
 #include "btr0sea.h"
+#include "buf0stats.h"
 #include "dict0boot.h"
 #include "dict0dd.h"
 #include "fil0pages_persistence_interface.h"
@@ -667,6 +668,23 @@ static inline page_no_t xdes_get_offset(
 void fsp_init_file_page_low(buf_block_t *block) {
   page_t *page = buf_block_get_frame(block);
   page_zip_des_t *page_zip = buf_block_get_page_zip(block);
+
+#ifndef UNIV_HOTBACKUP
+  if (buf_page_get_state(&block->page) == BUF_BLOCK_FILE_PAGE) {
+    const space_id_t old_space_id = page_get_space_id(page);
+    const page_no_t old_page_no = page_get_page_no(page);
+
+    if (old_space_id == block->page.id.space() &&
+        old_page_no == block->page.id.page_no()) {
+      /* The frame still names this buffer page, so its old contents may have
+      been counted by buf_stat_per_index. We are about to overwrite fields that
+      define the accounting predicate; disown the old page before
+      reinitializing it. BUF_BLOCK_MEMORY frames are deliberately excluded
+      because they are scratch memory, not live file pages in the page hash. */
+      buf_stat_per_index->dec_if_tracked_page(page);
+    }
+  }
+#endif /* !UNIV_HOTBACKUP */
 
   if (!fsp_is_system_temporary(block->page.id.space())) {
     memset(page, 0, UNIV_PAGE_SIZE);

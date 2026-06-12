@@ -1224,11 +1224,16 @@ void buf_LRU_block_free_non_file_page(buf_block_t *block) {
 #ifdef UNIV_DEBUG
   /* Wipe contents of page to reveal possible stale pointers to it */
   memset(block->frame, '\0', UNIV_PAGE_SIZE);
-#else
-  /* Wipe page_no and space_id */
-  memset(block->frame + FIL_PAGE_OFFSET, 0xfe, 4);
-  memset(block->frame + FIL_PAGE_ARCH_LOG_NO_OR_SPACE_ID, 0xfe, 4);
 #endif /* UNIV_DEBUG */
+
+  /* A non-file block can be reused as a scratch buffer and later returned to
+  the free list. Leave an impossible page id in the frame in all builds so
+  later file-page initialization cannot accidentally interpret scratch memory
+  as the old contents of the same file page. */
+  mach_write_to_4(block->frame + FIL_PAGE_OFFSET, FIL_NULL);
+  mach_write_to_4(block->frame + FIL_PAGE_ARCH_LOG_NO_OR_SPACE_ID,
+                  SPACE_UNKNOWN);
+
   UNIV_MEM_ASSERT_AND_FREE(block->frame, UNIV_PAGE_SIZE);
   data = block->page.zip.data;
 
@@ -1315,6 +1320,7 @@ static bool buf_LRU_block_remove_hashed(buf_page_t *bpage, bool zip,
       UNIV_MEM_ASSERT_W(((buf_block_t *)bpage)->frame, UNIV_PAGE_SIZE);
 
       buf_block_modify_clock_inc((buf_block_t *)bpage);
+      bool page_will_remain_cached = false;
 
       if (bpage->zip.data != nullptr) {
         const page_t *page = ((buf_block_t *)bpage)->frame;
@@ -1367,31 +1373,27 @@ static bool buf_LRU_block_remove_hashed(buf_page_t *bpage, bool zip,
             ut_error;
         }
 
-        break;
+        page_will_remain_cached = !zip;
       }
 
-      if (!ignore_content) {
-        /* Account the eviction of index leaf pages from
-        the buffer pool(s). */
-
+      if (!ignore_content && !page_will_remain_cached) {
         const byte *frame = bpage->zip.data != nullptr
                                 ? bpage->zip.data
                                 : reinterpret_cast<buf_block_t *>(bpage)->frame;
 
-        const ulint type = fil_page_get_type(frame);
+        buf_stat_per_index->dec_if_tracked_page(frame);
+      }
 
-        if ((type == FIL_PAGE_INDEX || type == FIL_PAGE_RTREE) &&
-            page_is_leaf(frame)) {
-          uint32_t space_id = bpage->id.space();
-
-          space_index_t idx_id = btr_page_get_index_id(frame);
-
-          buf_stat_per_index->dec(index_id_t(space_id, idx_id));
-        }
+      if (bpage->zip.data != nullptr) {
+        break;
       }
     }
       [[fallthrough]];
     case BUF_BLOCK_ZIP_PAGE:
+      if (buf_page_get_state(bpage) == BUF_BLOCK_ZIP_PAGE && !ignore_content) {
+        buf_stat_per_index->dec_if_tracked_page(bpage->zip.data);
+      }
+
       ut_a(!bpage->is_dirty());
       if (bpage->size.is_compressed()) {
         UNIV_MEM_ASSERT_W(bpage->zip.data, bpage->size.physical());

@@ -5216,6 +5216,10 @@ buf_block_t *buf_page_create(const page_id_t &page_id,
 
   memset(frame + FIL_PAGE_PREV, 0xff, 4);
   memset(frame + FIL_PAGE_NEXT, 0xff, 4);
+  /* A block taken from the free list may still contain old B-tree page header
+  fields in its frame. Mark it allocated until fsp_init_file_page_low()
+  initializes the frame, so the old contents cannot be mistaken for a tracked
+  index leaf page. */
   mach_write_to_2(frame + FIL_PAGE_TYPE, FIL_PAGE_TYPE_ALLOCATED);
 
   /* These 8 bytes are also repurposed for PageIO compression and must
@@ -5272,7 +5276,7 @@ static void buf_page_monitor(
 
     /* Account reading of leaf pages into the buffer pool(s). */
     if (is_leaf && io_type == BUF_IO_READ) {
-      buf_stat_per_index->inc(index_id_t(space_id, idx_id));
+      buf_stat_per_index->inc_if_tracked_page(frame);
     }
   }
 

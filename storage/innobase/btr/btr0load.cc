@@ -35,6 +35,7 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #include "btr0btr.h"
 #include "btr0cur.h"
 #include "btr0pcur.h"
+#include "buf0stats.h"
 #include "ibuf0ibuf.h"
 #include "lob0lob.h"
 #include "log0chkp.h"
@@ -364,6 +365,7 @@ dberr_t Page_load::init() noexcept {
     btr_page_set_prev(new_page, nullptr, FIL_NULL, mtr);
 
     btr_page_set_index_id(new_page, nullptr, m_index->id, mtr);
+    buf_stat_per_index->inc_if_tracked_page(new_page);
   } else {
     page_id_t page_id(dict_index_get_space(m_index), m_page_no);
     page_size_t page_size(dict_table_page_size(m_index->table));
@@ -378,7 +380,9 @@ dberr_t Page_load::init() noexcept {
 
     ut_ad(page_dir_get_n_heap(new_page) == PAGE_HEAP_NO_USER_LOW);
 
+    buf_stat_per_index->dec_if_tracked_page(new_page);
     btr_page_set_level(new_page, nullptr, m_level, mtr);
+    buf_stat_per_index->inc_if_tracked_page(new_page);
   }
 
   if (dict_index_is_sec_or_ibuf(m_index) && !m_index->table->is_temporary() &&

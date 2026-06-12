@@ -4474,16 +4474,13 @@ static int i_s_innodb_buffer_page_fill(
     /* If this is an index page, fetch the index name
     and table name */
     switch (page_info->page_type) {
-      const dict_index_t *index;
-
       case I_S_PAGE_TYPE_INDEX:
       case I_S_PAGE_TYPE_RTREE:
       case I_S_PAGE_TYPE_SDI: {
-        index_id_t id(page_info->space_id, page_info->index_id);
+        const index_id_t id(page_info->space_id, page_info->index_id);
 
         dict_sys_mutex_enter();
-        index = dict_index_find(id);
-      }
+        const dict_index_t *index = dict_index_find(id);
 
         if (index) {
           table_name_end = innobase_convert_name(
@@ -4500,6 +4497,8 @@ static int i_s_innodb_buffer_page_fill(
         }
 
         dict_sys_mutex_exit();
+        break;
+      }
     }
 
     OK(fields[IDX_BUFFER_PAGE_NUM_RECS]->store(page_info->num_recs, true));
@@ -5085,28 +5084,32 @@ static int i_s_innodb_buf_page_lru_fill(
 
     /* If this is an index page, fetch the index name
     and table name */
-    if (page_info->page_type == I_S_PAGE_TYPE_INDEX) {
-      index_id_t id(page_info->space_id, page_info->index_id);
-      const dict_index_t *index;
+    switch (page_info->page_type) {
+      case I_S_PAGE_TYPE_INDEX:
+      case I_S_PAGE_TYPE_RTREE:
+      case I_S_PAGE_TYPE_SDI: {
+        const index_id_t id(page_info->space_id, page_info->index_id);
 
-      dict_sys_mutex_enter();
-      index = dict_index_find(id);
+        dict_sys_mutex_enter();
+        const dict_index_t *index = dict_index_find(id);
 
-      if (index) {
-        table_name_end = innobase_convert_name(table_name, sizeof(table_name),
-                                               index->table_name,
-                                               strlen(index->table_name), thd);
+        if (index) {
+          table_name_end = innobase_convert_name(
+              table_name, sizeof(table_name), index->table_name,
+              strlen(index->table_name), thd);
 
-        OK(fields[IDX_BUF_LRU_PAGE_TABLE_NAME]->store(
-            table_name, static_cast<size_t>(table_name_end - table_name),
-            system_charset_info));
-        fields[IDX_BUF_LRU_PAGE_TABLE_NAME]->set_notnull();
+          OK(fields[IDX_BUF_LRU_PAGE_TABLE_NAME]->store(
+              table_name, static_cast<size_t>(table_name_end - table_name),
+              system_charset_info));
+          fields[IDX_BUF_LRU_PAGE_TABLE_NAME]->set_notnull();
 
-        OK(field_store_index_name(fields[IDX_BUF_LRU_PAGE_INDEX_NAME],
-                                  index->name));
+          OK(field_store_index_name(fields[IDX_BUF_LRU_PAGE_INDEX_NAME],
+                                    index->name));
+        }
+
+        dict_sys_mutex_exit();
+        break;
       }
-
-      dict_sys_mutex_exit();
     }
 
     OK(fields[IDX_BUF_LRU_PAGE_NUM_RECS]->store(page_info->num_recs, true));
