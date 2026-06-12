@@ -199,13 +199,7 @@ std::string CertificateGenerator::pkey_to_string(EVP_PKEY *pkey) {
 
   return std::string{reinterpret_cast<char *>(data), data_size};
 #else
-#if OPENSSL_VERSION_NUMBER >= ROUTER_OPENSSL_VERSION(1, 1, 0)
   RSA *rsa = EVP_PKEY_get0_RSA(pkey);
-#else
-  OsslUniquePtr<RSA> rsa_storage{EVP_PKEY_get1_RSA(pkey)};
-
-  RSA *rsa = rsa_storage.get();
-#endif
   return write_custom_pem_to_string(PEM_write_bio_RSAPrivateKey, rsa, nullptr,
                                     nullptr, 10, nullptr, nullptr);
 #endif

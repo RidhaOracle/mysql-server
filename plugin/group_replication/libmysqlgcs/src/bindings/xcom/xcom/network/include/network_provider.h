@@ -369,13 +369,7 @@ class Network_provider {
   virtual void cleanup_secure_connections_context() = 0;
 
   virtual std::function<void()> get_secure_connections_context_cleaner() {
-    std::function<void()> retval = []() {
-#ifndef XCOM_WITHOUT_OPENSSL
-#if OPENSSL_VERSION_NUMBER < 0x10100000L
-      ERR_remove_thread_state(nullptr);
-#endif /* OPENSSL_VERSION_NUMBER < 0x10100000L */
-#endif
-    };
+    std::function<void()> retval = []() {};
 
     return retval;
   }

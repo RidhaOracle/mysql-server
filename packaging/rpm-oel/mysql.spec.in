@@ -669,7 +669,7 @@ Summary:       MySQL Router
 Group:         Applications/Databases
 Provides:      mysql-router = %{version}-%{release}
 Obsoletes:     mysql-router < %{version}-%{release}
-%{?el7:Requires:  openssl-libs >= 1.0.2j}
+%{?el7:Requires:  openssl11-libs >= 1.1.1}
 %if 0%{?commercial}
 Obsoletes:     mysql-router-community < %{version}-%{release}
 %endif

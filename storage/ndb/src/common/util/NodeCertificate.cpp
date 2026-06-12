@@ -1523,9 +1523,6 @@ static constexpr bool isWin32 = 1;
 static constexpr bool isWin32 = false;
 #endif
 
-static constexpr bool openssl_version_ok =
-    (OPENSSL_VERSION_NUMBER >= NDB_TLS_MINIMUM_OPENSSL);
-
 /*
   Test name parsing
 */
@@ -2034,19 +2031,17 @@ int main(int argc, char *argv[]) {
   r1 = parser_test();
   if (r1 != 0) return fail("parser", r1);
 
-  if (openssl_version_ok) {
-    r1 = cert_lifetime_test();
-    if (r1 != 0) return fail("lifetime", r1);
+  r1 = cert_lifetime_test();
+  if (r1 != 0) return fail("lifetime", r1);
 
-    r1 = file_test();
-    if (r1 != 0) return fail("file", r1);
+  r1 = file_test();
+  if (r1 != 0) return fail("file", r1);
 
-    r1 = verify_test();
-    if (r1 != 0) return fail("verify", r1);
+  r1 = verify_test();
+  if (r1 != 0) return fail("verify", r1);
 
-    r1 = trust_store_test();
-    if (r1 != 0) return fail("trust store", r1);
-  }
+  r1 = trust_store_test();
+  if (r1 != 0) return fail("trust store", r1);
 
   return 0;
 }

@@ -84,15 +84,6 @@
    from Richard Stevens "Unix Network Programming," 2nd ed., chapter 23.
 */
 
-/* EL6 and EL7 have OpenSSL 1.0.2 (FIPS); this test will not compile */
-#if OPENSSL_VERSION_NUMBER < 0x10003000L
-int main() {
-  printf("%s\n", OPENSSL_VERSION_TEXT);
-  ok(1, "OpenSSL too old. Not testing.");
-  return 0;
-}
-#else
-
 #define POLL_TIMEOUT -3
 
 static constexpr const int NetTimeoutMsec = 500;
@@ -1070,5 +1061,3 @@ int main(int argc, char **argv) {
 
   return 0;
 }
-
-#endif /* OPENSSL_VERSION_NUMBER < x */

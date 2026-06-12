@@ -22681,7 +22681,7 @@ static void test_wl13075() {
   }
   mysql_close(&lmysql);
 
-#if defined(HAVE_TLSv13) && OPENSSL_VERSION_NUMBER >= 0x30500000L
+#if OPENSSL_VERSION_NUMBER >= 0x30500000L
   /* MYSQL_OPT_FORCE_PQC must reject client-supplied non-PQC session data. */
   rc = mysql_query(mysql, "SET @mct_tls_kex_saved=@@GLOBAL.tls_kex");
   myquery(rc);

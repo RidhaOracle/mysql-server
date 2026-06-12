@@ -7477,7 +7477,7 @@ static char *opt_replication_tls_kex = nullptr;
 
 static bool replication_tls_force_pqc_supported_for_version(
     const char *tls_version [[maybe_unused]]) {
-#if !defined(HAVE_TLSv13) || OPENSSL_VERSION_NUMBER < 0x30500000L
+#if OPENSSL_VERSION_NUMBER < 0x30500000L
   return false;
 #else
   return !(process_tls_version(tls_version) & SSL_OP_NO_TLSv1_3);
@@ -7519,7 +7519,7 @@ static bool validate_replication_force_pqc_channel_tls_versions(sys_var *self) {
 }
 
 void adjust_startup_replication_force_pqc_for_tls_versions() {
-#if defined(HAVE_TLSv13) && OPENSSL_VERSION_NUMBER >= 0x30500000L
+#if OPENSSL_VERSION_NUMBER >= 0x30500000L
   if (!opt_replication_force_pqc) return;
 
   channel_map.assert_some_lock();

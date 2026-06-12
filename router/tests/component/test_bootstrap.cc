@@ -4719,13 +4719,8 @@ TEST_F(BootstrapCertTest, CheckGeneratedCertDetails) {
   Scope_guard cert_guard([&]() { X509_free(cert); });
 
   SCOPED_TRACE("// Check certificate validity");
-#if OPENSSL_VERSION_NUMBER >= ROUTER_OPENSSL_VERSION(1, 1, 0)
   const ASN1_TIME *notBefore = X509_get0_notBefore(cert);
   const ASN1_TIME *notAfter = X509_get0_notAfter(cert);
-#else
-  ASN1_TIME *notBefore = X509_get_notBefore(cert);
-  ASN1_TIME *notAfter = X509_get_notAfter(cert);
-#endif
   int days = 0, seconds = 0;
   ASSERT_TRUE(ASN1_TIME_diff(&days, &seconds, notBefore, notAfter));
   const auto k_year = 365;

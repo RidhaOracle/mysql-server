@@ -41,10 +41,6 @@
 
 #include "openssl_version.h"
 
-#if OPENSSL_VERSION_NUMBER < ROUTER_OPENSSL_VERSION(1, 1, 0)
-#define DH_bits(dh) BN_num_bits(dh->p)
-#endif
-
 #if OPENSSL_VERSION_NUMBER >= ROUTER_OPENSSL_VERSION(3, 0, 0)
 #include <openssl/core_names.h>  // OSSL_PKEY_...
 #include <openssl/decoder.h>     // OSSL_DECODER...
@@ -53,18 +49,10 @@
 #include <dh_ecdh_config.h>
 
 constexpr int kMinDhKeySize{1024};
-#if OPENSSL_VERSION_NUMBER >= ROUTER_OPENSSL_VERSION(1, 1, 0)
 constexpr int kMaxSecurityLevel{5};
-#endif
 
 namespace {
-const SSL_METHOD *server_method =
-#if OPENSSL_VERSION_NUMBER >= ROUTER_OPENSSL_VERSION(1, 1, 0)
-    TLS_server_method()
-#else
-    SSLv23_server_method()
-#endif
-    ;
+const SSL_METHOD *server_method = TLS_server_method();
 
 template <class T>
 struct OsslDeleter;
@@ -335,7 +323,6 @@ std::vector<std::string> TlsServerContext::default_ciphers() {
 }
 
 int TlsServerContext::security_level() const {
-#if OPENSSL_VERSION_NUMBER >= ROUTER_OPENSSL_VERSION(1, 1, 0)
   int sec_level = SSL_CTX_get_security_level(ssl_ctx_.get());
 
   assert(sec_level <= kMaxSecurityLevel);
@@ -347,9 +334,6 @@ int TlsServerContext::security_level() const {
     sec_level = 2;
 
   return sec_level;
-#else
-  return 2;
-#endif
 }
 
 stdx::expected<void, std::error_code> TlsServerContext::session_id_context(

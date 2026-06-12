@@ -41,7 +41,6 @@
 #include "InitConfigFileParser.hpp"
 #include "m_string.h"
 #include "portlib/ndb_localtime.h"
-#include "portlib/ndb_openssl_version.h"
 #include "portlib/ndb_sockaddr.h"
 
 #define KEY_INTERNAL 0

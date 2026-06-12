@@ -1426,12 +1426,7 @@ TARGET_LINK_LIBRARIES(mysqld
 # Add dependency on ldap library, to ensure it is not unloaded
 # when we shutdown the authentication plugin.
 # For Valgrind, we need it to enable our suppressions.
-# For OpenSSL in the 1.0.x series, we need it for clean shutdown.
 IF(WITH_VALGRIND)
-  SET(LINK_MYSQLD_LDAP_LIBRARY 1)
-ENDIF()
-IF(WITH_SSL STREQUAL "system" AND
-    "${OPENSSL_VERSION_MAJOR}.${OPENSSL_VERSION_MINOR}" VERSION_LESS "1.1")
   SET(LINK_MYSQLD_LDAP_LIBRARY 1)
 ENDIF()
 IF(WITH_AUTHENTICATION_LDAP AND LINK_MYSQLD_LDAP_LIBRARY)

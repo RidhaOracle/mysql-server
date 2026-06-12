@@ -1290,7 +1290,6 @@ plugin_ref Cached_authentication_plugins::get_cached_plugin_ref(
 */
 int security_level(void) {
   int current_sec_level = 2;
-#if OPENSSL_VERSION_NUMBER >= 0x10100000L
   /*
     create a temporary SSL_CTX, we're going to use it to fetch
     the current OpenSSL security level. So that we can generate
@@ -1311,7 +1310,6 @@ int security_level(void) {
 
   /* get rid of temp_ssl_ctx, we're done with it */
   SSL_CTX_free(temp_ssl_ctx);
-#endif
   DBUG_EXECUTE_IF("crypto_policy_3", current_sec_level = 3;);
   return current_sec_level;
 }

@@ -851,8 +851,6 @@ int main(int argc, char **argv) {
   int r = opts.handle_options();
   if (r) return r;
 
-#if OPENSSL_VERSION_NUMBER >= NDB_TLS_MINIMUM_OPENSSL
-
   Test::CertAuthority ca;
   ca.sign(ca);  // self-signed
 
@@ -877,12 +875,6 @@ int main(int argc, char **argv) {
   test_key_replace(ca);
 
   test_trust_store(ca);
-
-#else
-
-  printf("Test disabled: OpenSSL version too old.\n");
-
-#endif
 
   ndb_end(0);
   return exit_status();
