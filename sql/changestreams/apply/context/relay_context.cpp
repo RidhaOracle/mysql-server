@@ -294,11 +294,10 @@ bool Relay_context::wait_for_rollback() {
   if (!m_csa_worker_context) {
     return true;
   }
-  THD *thd = get_session().get_thd();
   // do not touch THD data before rollback is finished
   if (m_csa_worker_context->wait_for_rollback()) {
-    m_rli->report(ERROR_LEVEL, ER_LOCK_DEADLOCK, ER_THD(thd, ER_LOCK_DEADLOCK),
-                  "Cannot safely rollback transaction");
+    m_rli->report(ERROR_LEVEL, ER_LOCK_DEADLOCK, "%s",
+                  ER_THD(get_session().get_thd(), ER_LOCK_DEADLOCK));
     return true;
   }
   return false;
