@@ -1,0 +1,64 @@
+--source include/have_ndb.inc
+
+--echo # Bug#39184721
+--echo # Many operations on the same existing row with ordered indexes.
+--echo # Rollback exercises DBLQH GSN_ABORT -> DBTUP do_tup_abortreq -> TUX abort triggers.
+--echo # Commit exercises DBTUP execute_real_commit -> TUX commit triggers.
+
+CREATE TABLE T1 (
+  pk INT PRIMARY KEY,
+  i1 INT,
+  i2 INT,
+  i3 INT,
+  i4 INT,
+  KEY i1_idx(i1),
+  KEY i2_idx(i2),
+  KEY i3_idx(i3),
+  KEY i4_idx(i4)
+) ENGINE=NDBCLUSTER;
+
+INSERT INTO T1 VALUES (1, 1, 1, 1, 1);
+
+--echo # Phase 1: rollback many same-row updates.
+BEGIN;
+
+--disable_query_log
+let $n=7000;
+while ($n)
+{
+  dec $n;
+  UPDATE T1
+    SET i1 = i1 + 1,
+        i2 = i2 + 1,
+        i3 = i3 + 1,
+        i4 = i4 + 1
+    WHERE pk = 1;
+}
+--enable_query_log
+
+ROLLBACK;
+
+SELECT pk, i1, i2, i3, i4 FROM T1;
+
+--echo # Phase 2: commit many same-row updates.
+BEGIN;
+
+--disable_query_log
+let $n=7000;
+while ($n)
+{
+  dec $n;
+  UPDATE T1
+    SET i1 = i1 + 1,
+        i2 = i2 + 1,
+        i3 = i3 + 1,
+        i4 = i4 + 1
+    WHERE pk = 1;
+}
+--enable_query_log
+
+COMMIT;
+
+SELECT pk, i1, i2, i3, i4 FROM T1;
+
+DROP TABLE T1;

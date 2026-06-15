@@ -1,0 +1,29 @@
+# Bug#39184721
+# Many operations on the same existing row with ordered indexes.
+# Rollback exercises DBLQH GSN_ABORT -> DBTUP do_tup_abortreq -> TUX abort triggers.
+# Commit exercises DBTUP execute_real_commit -> TUX commit triggers.
+CREATE TABLE T1 (
+pk INT PRIMARY KEY,
+i1 INT,
+i2 INT,
+i3 INT,
+i4 INT,
+KEY i1_idx(i1),
+KEY i2_idx(i2),
+KEY i3_idx(i3),
+KEY i4_idx(i4)
+) ENGINE=NDBCLUSTER;
+INSERT INTO T1 VALUES (1, 1, 1, 1, 1);
+# Phase 1: rollback many same-row updates.
+BEGIN;
+ROLLBACK;
+SELECT pk, i1, i2, i3, i4 FROM T1;
+pk	i1	i2	i3	i4
+1	1	1	1	1
+# Phase 2: commit many same-row updates.
+BEGIN;
+COMMIT;
+SELECT pk, i1, i2, i3, i4 FROM T1;
+pk	i1	i2	i3	i4
+1	7001	7001	7001	7001
+DROP TABLE T1;
