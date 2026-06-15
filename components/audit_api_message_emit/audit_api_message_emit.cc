@@ -390,7 +390,10 @@ class String_error_handler : public IError_handler {
   */
   String_error_handler(char *buffer, size_t size,
                        unsigned long *out_size = nullptr)
-      : m_buffer(buffer), m_size(size), m_out_size(out_size) {}
+      : m_buffer(buffer), m_size(size), m_out_size(out_size) {
+    assert(m_buffer);
+    assert(m_size > 0);
+  }
 
   /**
     Copy message into the buffer.
@@ -401,9 +404,9 @@ class String_error_handler : public IError_handler {
       MY_ATTRIBUTE((format(printf, 2, 3))) {
     va_list va;
     va_start(va, message);
-    int copied = vsnprintf(m_buffer, m_size - 1, message, va);
+    const int copied = std::clamp(vsnprintf(m_buffer, m_size, message, va), 0,
+                                  static_cast<int>(m_size) - 1);
     va_end(va);
-    m_buffer[copied] = '\0';
 
     if (m_out_size != nullptr) *m_out_size = static_cast<unsigned long>(copied);
   }
