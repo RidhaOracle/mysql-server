@@ -35,8 +35,10 @@ void Scheduler::deinit() {
   }
 
   end_execution();
-  wait_for_scheduler_thread_to_stop();
-  m_scheduler.join();
+  if (m_scheduler_thread.joinable()) {
+    wait_for_scheduler_thread_to_stop();
+    m_scheduler_thread.join();
+  }
   synchronize();
   m_status.store(Scheduler_status::exit);
 }
@@ -62,8 +64,12 @@ Scheduler::Scheduler(Thread_pool_ptr shared_thread_pool,
       m_psi(psi_params) {
   m_thread_pool = shared_thread_pool;
   m_scheduler_clock = shared_clock;
-  m_scheduler = MDEF_CREATE_THREAD(psi_params.key_th_scheduler,
-                                   &Scheduler::run_main_thread, this);
+  m_scheduler_thread = MDEF_CREATE_THREAD(psi_params.key_th_scheduler,
+                                          &Scheduler::run_main_thread, this);
+  if (!m_scheduler_thread.joinable()) {
+    m_scheduler_thread_active = false;
+    m_is_error.test_and_set();
+  }
   m_dependencies = std::move(dependency_tracker);
 }
 

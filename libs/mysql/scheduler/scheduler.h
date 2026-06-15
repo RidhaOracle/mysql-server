@@ -338,7 +338,7 @@ class Scheduler {
   using Thread_type = concurrency::Thread;
 
   /// Scheduler main thread
-  Thread_type m_scheduler;
+  Thread_type m_scheduler_thread;
   /// Variable that checks whether scheduler should run (true) or
   /// end its execution (false)
   std::atomic<bool> m_scheduler_active{true};

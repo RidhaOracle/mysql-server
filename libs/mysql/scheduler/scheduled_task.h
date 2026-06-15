@@ -60,12 +60,10 @@ class Repeatable_task_state {
   /// @param scheduled_tasks_cnt Reference to the scheduler task counter.
   /// @param repeatable_task Repeatable task callable shared across phases.
   Repeatable_task_state(std::atomic<std::size_t> &scheduled_tasks_cnt,
-                        Repeatable_task_type &&repeatable_task)
-      : m_scheduled_tasks_cnt(scheduled_tasks_cnt),
-        m_repeatable_task(std::move(repeatable_task)) {}
+                        Repeatable_task_type &&repeatable_task);
 
   /// @brief Decrements the logical scheduled task count.
-  ~Repeatable_task_state() { --m_scheduled_tasks_cnt; }
+  ~Repeatable_task_state();
 
   Repeatable_task_state(const Repeatable_task_state &) = delete;
   Repeatable_task_state &operator=(const Repeatable_task_state &) = delete;

@@ -67,6 +67,14 @@ class Thread {
   /// @brief Joins thread
   void join() { my_thread_join(&m_thread_handle, nullptr); }
 
+  /// @brief Checks whether a thread was created successfully.
+  /// @return True if thread can be joined, false otherwise.
+  bool joinable() const { return m_creation_error_code == 0; }
+
+  /// @brief Returns the thread creation error code.
+  /// @return 0 on success, error code on failure.
+  int creation_error_code() const { return m_creation_error_code; }
+
  private:
   /// Mysql thread handle
   my_thread_handle m_thread_handle;
@@ -74,6 +82,8 @@ class Thread {
   my_thread_attr_t m_thread_attr;
   /// Thread key
   Thread_key m_thread_key{0};
+  /// Thread creation error code.
+  int m_creation_error_code{0};
 };
 
 /// @brief Fetches internal id, PSI id in case linked with mysqld, or

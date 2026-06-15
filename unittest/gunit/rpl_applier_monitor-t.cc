@@ -67,6 +67,9 @@ class RplApplierMonitorTest : public ::testing::Test {
     std::ignore = csa::Statistics_map::init_statistics(0, 1, false);
     auto th_pool = std::make_shared<
         scheduler::Thread_pool<scheduler::Task_result, 8192>>();
+    if (th_pool->init()) {
+      GTEST_SKIP() << "Not enough resources to create scheduler worker threads";
+    }
     scheduler::Scheduler_clock_ptr clock =
         std::make_shared<scheduler::Clock_lwm_registry>();
     scheduler::Scheduler_clock_ptr commit_clock =
@@ -103,7 +106,9 @@ class RplApplierMonitorTest : public ::testing::Test {
   void TearDown() override {
     block_task.test_and_set();
     block_task.notify_one();
-    csa_channel.scheduler->synchronize();
+    if (csa_channel.scheduler != nullptr) {
+      csa_channel.scheduler->synchronize();
+    }
     // Cleanup if necessary
   }
 

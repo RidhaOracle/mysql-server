@@ -41,10 +41,43 @@ Thread_pool<T, t_queue_size>::Thread_pool(unsigned int thread_num,
     m_end_execution.emplace(std::piecewise_construct, std::forward_as_tuple(i),
                             std::forward_as_tuple(false));
   }
-  for (unsigned int i = 0; i < m_workers_num; i++) {
-    m_workers.push_back(MDEF_CREATE_THREAD(psi_params.key_thread_worker,
-                                           &Thread_pool::run_worker, this, i));
+}
+
+template <class T, std::size_t t_queue_size>
+bool Thread_pool<T, t_queue_size>::init() {
+  if (m_initialized) return false;
+
+  for (auto &[_, end_execution] : m_end_execution) {
+    end_execution.store(false);
   }
+  for (unsigned int i = 0; i < m_workers_num; i++) {
+    try {
+      auto worker = MDEF_CREATE_THREAD(m_psi.key_thread_worker,
+                                       &Thread_pool::run_worker, this, i);
+      if (has_creation_error(worker)) {
+        deinit();
+        return true;
+      }
+      m_workers.push_back(std::move(worker));
+    } catch (const std::system_error &) {
+      deinit();
+      return true;
+    }
+  }
+  m_initialized = true;
+  return false;
+}
+
+template <class T, std::size_t t_queue_size>
+void Thread_pool<T, t_queue_size>::deinit() {
+  end_execution();
+  for (auto &worker : m_workers) {
+    if (worker.joinable()) {
+      worker.join();
+    }
+  }
+  m_workers.clear();
+  m_initialized = false;
 }
 
 template <class T, std::size_t t_queue_size>
@@ -96,11 +129,7 @@ void Thread_pool<T, t_queue_size>::run_worker(
 
 template <class T, std::size_t t_queue_size>
 Thread_pool<T, t_queue_size>::~Thread_pool() {
-  end_execution();
-  // if queue is empty, unblock all threads waiting for task
-  for (unsigned int i = 0; i < m_workers_num; i++) {
-    m_workers[i].join();
-  }
+  deinit();
 }
 
 template <class T, std::size_t t_queue_size>
@@ -114,6 +143,16 @@ void Thread_pool<T, t_queue_size>::end_execution() {
 template <class T, std::size_t t_queue_size>
 std::size_t Thread_pool<T, t_queue_size>::size() const {
   return m_workers.size();
+}
+
+template <class T, std::size_t t_queue_size>
+bool Thread_pool<T, t_queue_size>::has_creation_error(const Thread &thread) {
+#ifdef STANDALONE_LIBS_MYSQL
+  (void)thread;
+  return false;
+#else
+  return thread.creation_error_code() != 0;
+#endif
 }
 
 }  // namespace mysql::scheduler

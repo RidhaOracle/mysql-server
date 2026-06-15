@@ -118,6 +118,9 @@ void sync_test(
   Scheduler_clock_ptr local_clock = std::make_shared<Clock_lwm_registry>();
   std::shared_ptr<Thread_pool<Task_result>> th_pool =
       std::make_shared<Thread_pool<Task_result>>(worker_pool_size);
+  if (th_pool->init()) {
+    GTEST_SKIP() << "Not enough resources to create scheduler worker threads";
+  }
   Dependency_tracker_ptr dep(new Dependency_tracker_stub());
   Scheduler scheduler(th_pool, local_clock, std::move(dep));
   Task_type task1(std::ref(check_time), local_clock,

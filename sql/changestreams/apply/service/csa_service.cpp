@@ -45,6 +45,8 @@
 #include "sql/rpl_msr.h"
 #include "sql/rpl_replica.h"  // sql_slave_killed
 
+#include <sstream>
+
 namespace mysql::csa {
 
 Csa_service::Csa_service()
@@ -180,6 +182,19 @@ bool Csa_service::run(Relay_log_info *rli) {
   try {
     auto thread_pool = std::make_shared<Csa_service::Thread_pool>(
         n_workers, channel_instance_id, create_thread_pool_psi_params());
+    if (thread_pool->init()) {
+      std::ostringstream error_message;
+      error_message
+          << "Could not initialize Change Streams Applier worker thread pool. "
+          << "The user requested " << n_workers
+          << " worker thread(s), but thread creation "
+          << "failed due to insufficient resources.";
+      const auto error_message_str = error_message.str();
+      rli->report(ERROR_LEVEL, ER_REPLICA_FATAL_ERROR,
+                  ER_THD(rli->info_thd, ER_REPLICA_FATAL_ERROR),
+                  error_message_str.c_str());
+      return true;
+    }
     clock = std::make_shared<Clock_type>(tune::scheduler_clock_capacity,
                                          create_scheduler_clock_psi_params());
     Clock_ptr commit_order_clock = std::make_shared<Commit_order_clock_type>();

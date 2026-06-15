@@ -128,6 +128,9 @@ void check_dependencies(Dependency_tracker_ptr dep) {
   std::ignore = Statistics_map::init_statistics(0);
   std::shared_ptr<Thread_pool<Task_result>> th_pool =
       std::make_shared<Thread_pool<Task_result>>();
+  if (th_pool->init()) {
+    GTEST_SKIP() << "Not enough resources to create scheduler worker threads";
+  }
   Scheduler_clock_ptr clock = std::make_shared<Clock_lwm_registry>();
   Scheduler scheduler(th_pool, clock, std::move(dep));
   Schedule_factory schedule_factory(clock);
@@ -167,6 +170,9 @@ TEST(Scheduler, LwmRegistryWithDependencyTracker) {
   std::ignore = Statistics_map::init_statistics(0);
   std::shared_ptr<Thread_pool<Task_result>> th_pool =
       std::make_shared<Thread_pool<Task_result>>();
+  if (th_pool->init()) {
+    GTEST_SKIP() << "Not enough resources to create scheduler worker threads";
+  }
   Scheduler_clock_ptr clock = std::make_shared<Clock_lwm_registry>();
   Dependency_tracker_ptr dep(new Dependency_tracker_single_predecessor());
   Scheduler scheduler(th_pool, clock, std::move(dep));
@@ -211,6 +217,9 @@ TEST(Scheduler, DestructorsCheck) {
   std::ignore = Statistics_map::init_statistics(0);
   std::shared_ptr<Thread_pool<Task_result>> th_pool =
       std::make_shared<Thread_pool<Task_result>>();
+  if (th_pool->init()) {
+    GTEST_SKIP() << "Not enough resources to create scheduler worker threads";
+  }
   Scheduler_clock_ptr clock = std::make_shared<Clock_lwm_registry>();
   Dependency_tracker_ptr dep(new Dependency_tracker_single_predecessor());
   Scheduler scheduler(th_pool, clock, std::move(dep));
@@ -248,6 +257,9 @@ void test_task_parameters_main(int idx) {
   std::ignore = Statistics_map::init_statistics(0);
   std::shared_ptr<Thread_pool<Task_result>> th_pool =
       std::make_shared<Thread_pool<Task_result>>();
+  if (th_pool->init()) {
+    GTEST_SKIP() << "Not enough resources to create scheduler worker threads";
+  }
   Scheduler_clock_ptr clock = std::make_shared<Clock_lwm_registry>();
   Dependency_tracker_ptr dep(new Dependency_tracker_single_predecessor());
   Scheduler scheduler(th_pool, clock, std::move(dep));
@@ -318,6 +330,9 @@ void scheduler_test_error_handling(
   Scheduler_clock_ptr local_clock = std::make_shared<Clock_lwm_registry>();
   std::shared_ptr<Thread_pool<Task_result>> th_pool =
       std::make_shared<Thread_pool<Task_result>>(worker_pool_size);
+  if (th_pool->init()) {
+    GTEST_SKIP() << "Not enough resources to create scheduler worker threads";
+  }
   Dependency_tracker_ptr dep(new Dependency_tracker_stub());
   Scheduler scheduler(th_pool, local_clock, std::move(dep));
   Task_faulty task1;
@@ -599,6 +614,9 @@ void testLwmClockIntegrationExec() {
   std::ignore = Statistics_map::init_statistics(0);
   std::shared_ptr<Thread_pool<Task_result>> th_pool =
       std::make_shared<Thread_pool<Task_result>>();
+  if (th_pool->init()) {
+    GTEST_SKIP() << "Not enough resources to create scheduler worker threads";
+  }
   Scheduler_clock_ptr clock = std::make_shared<Lwm_clock_type>();
   Dependency_tracker_ptr dep(new Dependency_tracker_stub());
   Scheduler scheduler(th_pool, clock, std::move(dep));
@@ -639,6 +657,9 @@ void testLwmClockSequentialExec() {
   std::ignore = Statistics_map::init_statistics(0);
   std::shared_ptr<Thread_pool<Task_result>> th_pool =
       std::make_shared<Thread_pool<Task_result>>();
+  if (th_pool->init()) {
+    GTEST_SKIP() << "Not enough resources to create scheduler worker threads";
+  }
   Scheduler_clock_ptr clock = std::make_shared<Lwm_clock_type>();
   Dependency_tracker_ptr dep(new Dependency_tracker_stub());
   Scheduler scheduler(th_pool, clock, std::move(dep));
@@ -680,6 +701,9 @@ void testLwmClockDefinedOrderExec() {
   std::ignore = Statistics_map::init_statistics(0);
   std::shared_ptr<Thread_pool<Task_result>> th_pool =
       std::make_shared<Thread_pool<Task_result>>();
+  if (th_pool->init()) {
+    GTEST_SKIP() << "Not enough resources to create scheduler worker threads";
+  }
   Scheduler_clock_ptr clock = std::make_shared<Lwm_clock_type>();
   Dependency_tracker_ptr dep(new Dependency_tracker_stub());
   Scheduler scheduler(th_pool, clock, std::move(dep));
@@ -740,7 +764,10 @@ void testLwmClockLoadExec() {
   // Comprehensive load test for LWM clock under concurrent execution
   std::ignore = Statistics_map::init_statistics(0);
   std::shared_ptr<Thread_pool<Task_result>> th_pool =
-      std::make_shared<Thread_pool<Task_result>>(4);  // Limited threads
+      std::make_shared<Thread_pool<Task_result>>(4);
+  if (th_pool->init()) {
+    GTEST_SKIP() << "Not enough resources to create scheduler worker threads";
+  }
   Scheduler_clock_ptr clock = std::make_shared<Lwm_clock_type>();
   Dependency_tracker_ptr dep(new Dependency_tracker_stub());
   Scheduler scheduler(th_pool, clock, std::move(dep));
@@ -856,6 +883,9 @@ TEST(Scheduler, SchedulerErrorNonEmptyQueue) {
   std::ignore = Statistics_map::init_statistics(0);
   std::shared_ptr<Thread_pool<Task_result>> th_pool =
       std::make_shared<Thread_pool<Task_result>>(4);
+  if (th_pool->init()) {
+    GTEST_SKIP() << "Not enough resources to create scheduler worker threads";
+  }
   Scheduler_clock_ptr clock = std::make_shared<Clock_lwm_registry>();
   Dependency_tracker_ptr dep(new Dependency_tracker_stub());
   Scheduler scheduler(th_pool, clock, std::move(dep));
@@ -909,6 +939,9 @@ TEST(Scheduler, SchedulerStopNonEmptyQueue) {
   std::ignore = Statistics_map::init_statistics(0);
   std::shared_ptr<Thread_pool<Task_result>> th_pool =
       std::make_shared<Thread_pool<Task_result>>(4);
+  if (th_pool->init()) {
+    GTEST_SKIP() << "Not enough resources to create scheduler worker threads";
+  }
   Scheduler_clock_ptr clock = std::make_shared<Clock_lwm_registry>();
   Dependency_tracker_ptr dep(new Dependency_tracker_stub());
   Scheduler scheduler(th_pool, clock, std::move(dep));

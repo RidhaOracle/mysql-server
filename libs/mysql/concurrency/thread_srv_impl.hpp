@@ -50,8 +50,12 @@ Thread::Thread(Thread_key thread_key, Callable &&run_func, Args &&...args) {
   // delete it
   auto *func_p = new detail::Func_t(
       std::bind(std::move(run_func), std::forward<Args>(args)...));
-  mysql_thread_create(thread_key, &m_thread_handle, &m_thread_attr,
-                      detail::launch_handler_thread, func_p);
+  m_creation_error_code =
+      mysql_thread_create(thread_key, &m_thread_handle, &m_thread_attr,
+                          detail::launch_handler_thread, func_p);
+  if (m_creation_error_code != 0) {
+    delete func_p;
+  }
 }
 
 template <class Callable, class... Args>
@@ -62,8 +66,12 @@ Thread::Thread(Callable &&run_func, Args &&...args) {
   // delete it
   auto *func_p = new detail::Func_t(
       std::bind(std::move(run_func), std::forward<Args>(args)...));
-  mysql_thread_create(m_thread_key, &m_thread_handle, &m_thread_attr,
-                      detail::launch_handler_thread, func_p);
+  m_creation_error_code =
+      mysql_thread_create(m_thread_key, &m_thread_handle, &m_thread_attr,
+                          detail::launch_handler_thread, func_p);
+  if (m_creation_error_code != 0) {
+    delete func_p;
+  }
 }
 
 }  // namespace mysql::concurrency

@@ -29,6 +29,7 @@
 #include <future>
 #include <mutex>
 #include <queue>
+#include <system_error>
 #include <vector>
 #include "mysql/concurrency/condition_variable.h"
 #include "mysql/concurrency/locking_queue.h"
@@ -66,6 +67,14 @@ class Thread_pool {
   Thread_pool(unsigned int thread_num = std::thread::hardware_concurrency(),
               unsigned int instance_id = 0, Thread_pool_psi psi_params = {});
 
+  /// @brief Initializes the thread pool by starting worker threads.
+  /// @retval false Success
+  /// @retval true Failure
+  [[nodiscard]] bool init();
+
+  /// @brief Deinitializes the thread pool and joins all worker threads.
+  void deinit();
+
   /// @brief Enqueues task for execution
   /// @param task Functor to be executed by the thread pool
   void enqueue(Task_type &&task);
@@ -100,6 +109,11 @@ class Thread_pool {
   /// @brief Function executed by each thread
   void run_worker(unsigned int thread_id);
 
+  /// @brief Checks whether worker thread construction failed.
+  /// @param thread Worker thread object.
+  /// @return True on failure, false otherwise.
+  static bool has_creation_error(const Thread &thread);
+
   /// Thread container
   std::vector<Thread, Thread_allocator> m_workers;
   /// Variable indicating the end of execution, allows threads to stop in
@@ -113,6 +127,8 @@ class Thread_pool {
   unsigned int m_instance_id{0};
   /// PSI parameters
   Thread_pool_psi m_psi;
+  /// Whether init() completed successfully.
+  bool m_initialized{false};
 };
 
 }  // namespace mysql::scheduler

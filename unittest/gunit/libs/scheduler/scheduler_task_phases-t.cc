@@ -128,6 +128,9 @@ void test_commit_schedule(
   Scheduler_clock_ptr local_clock = std::make_shared<Clock_lwm_registry>();
   std::shared_ptr<Thread_pool<Task_result>> th_pool =
       std::make_shared<Thread_pool<Task_result>>(worker_pool_size);
+  if (th_pool->init()) {
+    GTEST_SKIP() << "Not enough resources to create scheduler worker threads";
+  }
   Dependency_tracker_ptr dep(new Dependency_tracker_stub());
   Scheduler scheduler(th_pool, local_clock, std::move(dep));
 
@@ -224,6 +227,9 @@ void stop_with_concurrent_enqueue() {
   m_stop_it = false;
   std::ignore = Statistics_map::init_statistics(0);
   auto th_pool = std::make_shared<Thread_pool<Task_result>>(4);
+  if (th_pool->init()) {
+    GTEST_SKIP() << "Not enough resources to create scheduler worker threads";
+  }
   Scheduler_clock_ptr clock = std::make_shared<Clock_lwm_registry>();
   Scheduler_clock_ptr commit_clock = std::make_shared<Commit_order_clock>();
   Dependency_tracker_ptr dep = std::make_unique<Dependency_tracker_stub>();
@@ -368,6 +374,9 @@ struct Task_stop_while_phase_zero_running_many {
 TEST(SchedulerPhases, StopNowWaitsForRunningPhaseZeroTask) {
   std::ignore = Statistics_map::init_statistics(0);
   auto th_pool = std::make_shared<Thread_pool<Task_result>>(1);
+  if (th_pool->init()) {
+    GTEST_SKIP() << "Not enough resources to create scheduler worker threads";
+  }
   Scheduler_clock_ptr clock = std::make_shared<Clock_lwm_registry>();
   Scheduler_clock_ptr commit_clock = std::make_shared<Commit_order_clock>();
   Dependency_tracker_ptr dep = std::make_unique<Dependency_tracker_stub>();
@@ -420,6 +429,9 @@ TEST(SchedulerPhases, StopNowWaitsForAllRunningPhaseZeroTasks) {
 
   std::ignore = Statistics_map::init_statistics(0);
   auto th_pool = std::make_shared<Thread_pool<Task_result>>(task_count);
+  if (th_pool->init()) {
+    GTEST_SKIP() << "Not enough resources to create scheduler worker threads";
+  }
   Scheduler_clock_ptr clock = std::make_shared<Clock_lwm_registry>();
   Scheduler_clock_ptr commit_clock = std::make_shared<Commit_order_clock>();
   Dependency_tracker_ptr dep = std::make_unique<Dependency_tracker_stub>();

@@ -171,6 +171,9 @@ const int instance_id = 0;
 
 auto thread_pool = std::make_shared<Thread_pool<Task_result>>(worker_count,
                                                               instance_id);
+if (thread_pool->init()) {
+  // Handle worker thread creation failure.
+}
 auto clock = std::make_shared<Clock_lwm_registry>();
 auto dependencies = std::make_unique<Dependency_tracker_stub>();
 Scheduler scheduler(thread_pool, clock, std::move(dependencies), instance_id);
@@ -187,6 +190,8 @@ auto schedule = schedules.create(task_id, 0);
 scheduler.enqueue(schedule, task);
 
 scheduler.synchronize();
+scheduler.deinit();
+thread_pool->deinit();
 ```
 
 ### Task with Dependencies
