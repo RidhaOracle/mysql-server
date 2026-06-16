@@ -71,6 +71,7 @@
 #include "sql/dd/cache/dictionary_client.h"  // dd::cache::Dictionary_client
 #include "sql/dd/dd_table.h"                 // dd::table_storage_engine
 #include "sql/dd/types/abstract_table.h"
+#include "sql/debug_sync.h"
 #include "sql/derror.h"
 #include "sql/error_handler.h"  // Ignore_error_handler
 #include "sql/field.h"
@@ -412,6 +413,123 @@ bool Sql_cmd_load_table::duplicate_table_for_bulk_load(
                                      &info, MYSQL_OPEN_HAS_MDL_LOCK, true);
   thd->lex->sql_command = SQLCOM_LOAD;
   return res;
+}
+
+bool Sql_cmd_load_table::validate_check_constraints_for_bulk_load(
+    THD *thd, TABLE *table) {
+  DBUG_TRACE;
+  assert(table != nullptr);
+
+  if (table->table_check_constraint_list == nullptr) return false;
+
+  bool has_enforced_check_constraint = false;
+  for (auto &table_cc : *table->table_check_constraint_list) {
+    if (table_cc.is_enforced()) {
+      has_enforced_check_constraint = true;
+      break;
+    }
+  }
+
+  if (!has_enforced_check_constraint) return false;
+
+  MY_BITMAP saved_read_set{};
+  MY_BITMAP saved_write_set{};
+  MY_BITMAP saved_read_set_internal{};
+  if (bitmap_init(&saved_read_set, nullptr, table->s->fields) ||
+      bitmap_init(&saved_write_set, nullptr, table->s->fields) ||
+      bitmap_init(&saved_read_set_internal, nullptr, table->s->fields)) {
+    if (saved_read_set.bitmap != nullptr) bitmap_free(&saved_read_set);
+    if (saved_write_set.bitmap != nullptr) bitmap_free(&saved_write_set);
+    if (saved_read_set_internal.bitmap != nullptr)
+      bitmap_free(&saved_read_set_internal);
+    my_error(ER_OUT_OF_RESOURCES, MYF(0));
+    return true;
+  }
+
+  bitmap_copy(&saved_read_set, table->read_set);
+  bitmap_copy(&saved_write_set, table->write_set);
+  bitmap_copy(&saved_read_set_internal, &table->read_set_internal);
+  const Key_map saved_covering_keys = table->covering_keys;
+  const Key_map saved_merge_keys = table->merge_keys;
+
+  auto restore_column_maps = create_scope_guard([&]() {
+    bitmap_copy(table->read_set, &saved_read_set);
+    bitmap_copy(table->write_set, &saved_write_set);
+    bitmap_copy(&table->read_set_internal, &saved_read_set_internal);
+    table->covering_keys = saved_covering_keys;
+    table->merge_keys = saved_merge_keys;
+    table->file->column_bitmaps_signal();
+    bitmap_free(&saved_read_set);
+    bitmap_free(&saved_write_set);
+    bitmap_free(&saved_read_set_internal);
+  });
+
+  table->covering_keys = table->s->keys_for_keyread;
+  table->merge_keys.clear_all();
+  table->clear_column_bitmaps();
+  table->mark_check_constraint_columns(false);
+  table->file->column_bitmaps_signal();
+
+  const bool need_handler_lock = table->s->tmp_table == NO_TMP_TABLE &&
+                                 table->file->get_lock_type() == F_UNLCK;
+  if (need_handler_lock && table->file->ha_external_lock(thd, F_RDLCK)) {
+    return true;
+  }
+  auto release_handler_lock = create_scope_guard([&]() {
+    if (need_handler_lock) {
+      (void)table->file->ha_external_lock(thd, F_UNLCK);
+    }
+  });
+
+  table->file->start_psi_batch_mode();
+  bool psi_batch_started = true;
+  auto end_psi_batch_mode = create_scope_guard([&]() {
+    if (psi_batch_started) table->file->end_psi_batch_mode();
+  });
+
+  int error = table->file->ha_rnd_init(true);
+  if (error) {
+    table->file->print_error(error, MYF(0));
+    return true;
+  }
+
+  bool scan_started = true;
+  auto end_scan = create_scope_guard([&]() {
+    if (scan_started && table->file->inited == handler::RND)
+      (void)table->file->ha_rnd_end();
+  });
+
+  DEBUG_SYNC(thd, "bulk_load_before_check_validation");
+  DBUG_EXECUTE_IF("crash_load_bulk_before_check_validation", DBUG_SUICIDE(););
+
+  for (;;) {
+    if (thd->killed) {
+      thd->send_kill_message();
+      return true;
+    }
+
+    error = table->file->ha_rnd_next(table->record[0]);
+    if (error != 0) {
+      if (error == HA_ERR_RECORD_DELETED) continue;
+      if (error == HA_ERR_END_OF_FILE) break;
+
+      table->file->print_error(error, MYF(0));
+      return true;
+    }
+
+    if (invoke_table_check_constraints(thd, table)) return true;
+  }
+
+  error = table->file->ha_rnd_end();
+  scan_started = false;
+  if (error) {
+    table->file->print_error(error, MYF(0));
+    return true;
+  }
+
+  table->file->end_psi_batch_mode();
+  psi_batch_started = false;
+  return false;
 }
 
 bool Sql_cmd_load_table::run_bulk_driver_for_target(
@@ -769,15 +887,33 @@ bool Sql_cmd_load_table::execute_bulk(THD *thd) {
     }
   }
 
+  Table_ref *const bulk_loaded_table_ref =
+      has_duplicate_table ? &new_table_ref : table_ref;
+  bulk_loaded_table_ref->partition_names = nullptr;
+  Open_table_context bulk_loaded_ot_ctx(thd, MYSQL_OPEN_REOPEN);
+  if (open_table(thd, bulk_loaded_table_ref, &bulk_loaded_ot_ctx)) {
+    my_error(ER_INTERNAL_ERROR, MYF(0), "BULK LOAD: open_table failed");
+    success = false;
+    return true;
+  }
+
+  TABLE *const bulk_loaded_table = bulk_loaded_table_ref->table;
+
+  if (validate_check_constraints_for_bulk_load(thd, bulk_loaded_table)) {
+    return true;
+  }
+
   const bool no_fk_check =
       thd->variables.option_bits & OPTION_NO_FOREIGN_KEY_CHECKS;
 
   table_ref->partition_names = nullptr;
-  Open_table_context ot_ctx(thd, MYSQL_OPEN_REOPEN);
-  if (open_table(thd, table_ref, &ot_ctx)) {
-    my_error(ER_INTERNAL_ERROR, MYF(0), "BULK LOAD: open_table failed");
-    success = false;
-    return true;
+  if (table_ref->table == nullptr) {
+    Open_table_context ot_ctx(thd, MYSQL_OPEN_REOPEN);
+    if (open_table(thd, table_ref, &ot_ctx)) {
+      my_error(ER_INTERNAL_ERROR, MYF(0), "BULK LOAD: open_table failed");
+      success = false;
+      return true;
+    }
   }
 
   if (table_ref->table->s->foreign_keys > 0 && !no_fk_check) {
@@ -795,8 +931,8 @@ bool Sql_cmd_load_table::execute_bulk(THD *thd) {
       }
     }
 
-    if (table_ref->table->file->ha_check_foreign_constraints(thd,
-                                                             m_concurrency)) {
+    if (bulk_loaded_table->file->ha_check_foreign_constraints(thd,
+                                                              m_concurrency)) {
       /* Foreign key constraint check failed. */
       my_error(ER_BULK_LOADER_COMPONENT_ERROR, MYF(0),
                "Foreign key check failed");

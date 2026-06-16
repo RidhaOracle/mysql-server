@@ -47,6 +47,7 @@
 class Item;
 class Load_data_partition_list;
 class READ_INFO;
+struct TABLE;
 class THD;
 class Table_ref;
 
@@ -190,6 +191,8 @@ class Sql_cmd_load_table final : public Sql_cmd {
   bool execute_inner(THD *thd, enum enum_duplicates handle_duplicates);
 
   bool execute_bulk(THD *thd);
+
+  bool validate_check_constraints_for_bulk_load(THD *thd, TABLE *table);
 
   bool truncate_table_for_bulk_load(THD *thd, Table_ref *const table_ref,
                                     dd::Table *table_def);

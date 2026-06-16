@@ -11286,6 +11286,63 @@ bool ha_innobase::bulk_load_get_row_id_range(size_t &min, size_t &max) const {
   return true;
 }
 
+/** Update the AUTO_INCREMENT state after a successful bulk load.
+The bulk loader bypasses the normal write_row() path, so explicit values loaded
+into the AUTO_INCREMENT column must be reflected in both the in-memory counter
+and the persisted dynamic metadata before the transaction commits.
+@param[in,out] innodb_table InnoDB table being bulk loaded
+@param[in] mysql_table      MySQL table handle for the same table
+@param[in] thd              session executing the bulk load
+@return InnoDB error code */
+static dberr_t bulk_load_update_autoinc_state(dict_table_t *innodb_table,
+                                              const TABLE *mysql_table,
+                                              THD *thd) {
+  Field *autoinc_field = mysql_table->found_next_number_field;
+
+  if (autoinc_field == nullptr) {
+    return DB_SUCCESS;
+  }
+
+  ut_ad(dict_table_has_autoinc_col(innodb_table));
+
+  dict_index_t *index = dict_table_get_index_on_first_col(
+      innodb_table, autoinc_field->field_index());
+  if (index == nullptr) {
+    return DB_ERROR;
+  }
+
+  uint64_t max_autoinc = 0;
+  dberr_t err =
+      row_search_max_autoinc(index, autoinc_field->field_name, &max_autoinc);
+  if (err == DB_RECORD_NOT_FOUND) {
+    return DB_SUCCESS;
+  }
+  if (err != DB_SUCCESS) {
+    return err;
+  }
+
+  ulong offset = 0;
+  ulong increment = 0;
+  thd_get_autoinc(thd, &offset, &increment);
+  if (increment == 0) {
+    increment = 1;
+  }
+
+  const ulonglong next_autoinc = innobase_next_autoinc(
+      max_autoinc, 1, increment, offset, autoinc_field->get_max_int_value());
+
+  dict_table_autoinc_lock(innodb_table);
+  dict_table_autoinc_update_if_greater(innodb_table, next_autoinc);
+  dict_table_autoinc_set_col_pos(innodb_table, autoinc_field->field_index());
+  dict_table_autoinc_unlock(innodb_table);
+
+  if (!innodb_table->is_temporary()) {
+    dict_table_autoinc_persist(innodb_table, max_autoinc);
+  }
+
+  return DB_SUCCESS;
+}
+
 void *ha_innobase::bulk_load_begin(THD *thd, size_t keynr, size_t data_size,
                                    size_t memory, size_t num_threads) {
   DEBUG_SYNC_C("innodb_bulk_load_begin");
@@ -11488,6 +11545,15 @@ int ha_innobase::bulk_load_end(THD *thd, void *load_ctx, bool is_error) {
     /* Sync all pages written without redo log. */
     auto table = m_prebuilt->table;
     fil_flush(table->space);
+  }
+
+  if (is_last_index() && !is_error && db_err == DB_SUCCESS) {
+    db_err = bulk_load_update_autoinc_state(m_prebuilt->table, table, thd);
+    if (db_err != DB_SUCCESS) {
+      is_error = true;
+      my_error(ER_INTERNAL_ERROR, MYF(0),
+               "LOAD BULK DATA failed to update AUTO_INCREMENT state");
+    }
   }
 
   /* Update the statistics. */

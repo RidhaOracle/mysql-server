@@ -2828,16 +2828,8 @@ DEFINE_METHOD(bool, is_table_supported, (THD * thd, const TABLE *table)) {
     return false;
   }
 
-  if (table->table_check_constraint_list != nullptr) {
-    std::ostringstream err_strm;
-    err_strm << "LOAD DATA ALGORITHM = BULK not supported for tables with"
-                "CHECK constraints.";
-    LogErr(INFORMATION_LEVEL, ER_BULK_LOADER_INFO, err_strm.str().c_str());
-    my_error(ER_FEATURE_UNSUPPORTED, MYF(0), "CHECK constraint",
-             "LOAD DATA ALGORITHM = BULK");
-    return false;
-  }
-
+  // Check constraints are validated by the SQL layer after the bulk load
+  // finishes and before foreign key validation runs.
   for (size_t keynr = 0; keynr < share->keys; ++keynr) {
     const auto &key = table->key_info[keynr];
 
