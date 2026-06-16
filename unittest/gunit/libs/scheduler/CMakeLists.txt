@@ -33,6 +33,12 @@ ADD_STATIC_LIBRARY(mysql_scheduler_server_test_support
   LINK_LIBRARIES mysql_concurrency_server extra::unordered_dense
 )
 
+ADD_STATIC_LIBRARY(mysql_scheduler_test_support
+  ../../../../libs/mysql/scheduler/dependency_tracker_single_predecessor_example.cpp
+  COMPILE_DEFINITIONS PRIVATE STANDALONE_LIBS_MYSQL
+  LINK_LIBRARIES mysql_concurrency extra::unordered_dense
+)
+
 # Add tests
 SET(TESTS
   sharded_counter
@@ -49,28 +55,14 @@ SET(TESTS
 FOREACH(test ${TESTS})
   MYSQL_ADD_EXECUTABLE(${test}-t ${test}-t.cc
     ADD_TEST ${test}
-    LINK_LIBRARIES mysql_scheduler gunit_small
+    LINK_LIBRARIES mysql_scheduler mysql_scheduler_test_support gunit_small
     COMPILE_DEFINITIONS "${DISABLE_PSI_DEFINITIONS}" "STANDALONE_LIBS_MYSQL")
 ENDFOREACH()
-
-IF(WITH_SHARED_UNITTEST_LIBRARY)
-  # Link to the library file directly to avoid pulling the same scheduler
-  # objects into the test executable through the target's transitive link
-  # interface, which trips ASan ODR checks.
-  SET(SCHEDULER_SERVER_UNITTEST_LINK $<TARGET_FILE:server_unittest_library>)
-  # Newer Abseil packages may split this dependency into a separate target.
-  IF(TARGET absl::hashtablez_sampler)
-    LIST(APPEND SCHEDULER_SERVER_UNITTEST_LINK absl::hashtablez_sampler)
-  ENDIF()
-ELSE()
-  SET(SCHEDULER_SERVER_UNITTEST_LINK server_unittest_library)
-ENDIF()
 
 FOREACH(test ${TESTS})
   MYSQL_ADD_EXECUTABLE(${test}-srv-t ${test}-t.cc
     ADD_TEST ${test}
     LINK_LIBRARIES mysql_concurrency_server
       mysql_scheduler_server_test_support gunit_large
-      ${SCHEDULER_SERVER_UNITTEST_LINK})
-  ADD_DEPENDENCIES(${test}-srv-t server_unittest_library)
+      server_unittest_library)
 ENDFOREACH()

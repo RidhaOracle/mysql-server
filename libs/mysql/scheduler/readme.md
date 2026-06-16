@@ -82,9 +82,12 @@ using completed task identifiers and is suitable for low-water-mark ordering.
 ### Dependency Tracker
 
 Monitors task dependencies and reports when a task can run. The library
-includes `Dependency_tracker_stub` for tests/no-op dependency checks and
-`Dependency_tracker_single_predecessor` as a simple single-predecessor
-implementation.
+includes the dependency tracker interface and `Dependency_tracker_stub` for
+tests/no-op dependency checks. Components that need dependency-aware
+scheduling should provide a tracker implementation for their dependency model.
+`Dependency_tracker_single_predecessor` is an example implementation used by
+scheduler gunit support code; it is not linked into the production scheduler
+library.
 
 ### Thread Pool
 
@@ -133,8 +136,8 @@ Define when and how tasks execute:
 
 - **Dependency Tracker Stub**: Minimal no-op implementation for tests or
   dependency-free scheduling.
-- **Dependency Tracker Single Predecessor**: Tracks at most one predecessor
-  per task.
+- **Base Dependency Tracker**: Interface for components that need to enforce
+  dependency-aware scheduling.
 
 ### Task Registries
 
@@ -194,15 +197,16 @@ scheduler.deinit();
 thread_pool->deinit();
 ```
 
-### Task with Dependencies
+### Task with Dependency Registration
 
 ```cpp
-#include "mysql/scheduler/dependency_tracker_single_predecessor_example.h"
+class My_dependency_tracker : public mysql::scheduler::Base_dependency_tracker {
+  // Implement the dependency policy required by the component.
+};
 
-auto dependencies =
-    std::make_unique<mysql::scheduler::Dependency_tracker_single_predecessor>();
-mysql::scheduler::Scheduler scheduler(thread_pool, clock,
-                                      std::move(dependencies), instance_id);
+auto dependencies = std::make_unique<My_dependency_tracker>();
+mysql::scheduler::Scheduler scheduler(
+    thread_pool, clock, std::move(dependencies), instance_id);
 
 auto task_a_id = sequencer.next_id();
 auto task_b_id = sequencer.next_id();

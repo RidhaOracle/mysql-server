@@ -48,7 +48,6 @@ SET(TARGET_SRCS
   clock_lwm_registry.cpp
   commit_order_clock.cpp
   delayed_schedule.cpp
-  dependency_tracker_single_predecessor_example.cpp
   schedule_factory.cpp
   scheduled_task.cpp
   scheduler.cpp
