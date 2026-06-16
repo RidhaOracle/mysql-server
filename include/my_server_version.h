@@ -35,8 +35,17 @@ struct My_server_version {
 
   uint major() const { return version / 10000; }
   uint minor() const { return (version / 100) % 100; }
+  uint patch() const { return version % 100; }
   uint base() const { return version / 100; }
   uint previous_lts_base() const { return previous_lts / 100; }
+
+  bool operator<(const My_server_version &other) const {
+    return version < other.version;
+  }
+
+  bool operator>=(const My_server_version &other) const {
+    return version >= other.version;
+  }
 
   bool has_same_lts_lineage_as(const My_server_version &other) const {
     return previous_lts_base() != 0 &&
@@ -48,6 +57,21 @@ struct My_server_version {
   }
 
   bool is_calendar() const { return major() >= 26; }
+
+  static constexpr uint encode_version(uint major, uint minor, uint patch) {
+    return major * 10000 + minor * 100 + patch;
+  }
+
+  /**
+    Parse a version string to extract the major, minor and patch from the
+    version and encode into version ID. The version 0 is returned in case the
+    version string could not be parsed. For example, a version string like
+    "9.7.4" will be encoded as the integer 90704.
+
+    @param[in]     version_string   input version string
+    @return encoded version ID calculated as 10000 * Major + 100 * Minor + Patch
+  */
+  static uint version_string_to_id(const std::string &version_string);
 };
 
 #endif  // MY_SERVER_VERSION_INCLUDED

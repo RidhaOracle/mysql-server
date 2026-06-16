@@ -23,9 +23,10 @@
 
 #include <gtest/gtest.h>
 
+#include <optional>
 #include <string>
 
-#include "my_sys.h"
+#include "my_clone.h"
 
 namespace {
 struct NonUpgradeCase {
@@ -40,6 +41,7 @@ struct UpgradeCase {
   const bool is_recipient_lts;
   const bool is_donor_lts;
   bool expected;
+  std::optional<std::string> recipient_prev_lts = std::nullopt;
 };
 }  // namespace
 
@@ -101,35 +103,77 @@ TEST(MysysMyVersion, NonUpgradeCase_Sanity) {
 }
 
 TEST(MysysMyVersion, UpgradeCase_CloneToNextLTS) {
-  const UpgradeCase cases[] = {/* Recipient in next LTS of Donor */
-                               {"10.7.0", "9.7.0", true, true, true},
-                               {"10.7.3", "9.7.5", true, true, true},
+  const UpgradeCase cases[] = {
+      /* Recipient in next LTS of Donor */
+      {"28.4.0", "9.7.0", true, true, true, "9.7.0"},
+      {"28.4.3", "9.7.5", true, true, true, "9.7.0"},
 
-                               /* Either one is not LTS */
-                               {"10.3.0", "9.7.0", false, true, false},
-                               {"10.7.0", "9.6.0", true, false, false},
+      /* Either one is not LTS */
+      {"28.1.0", "9.7.0", false, true, false, "9.7.0"},
+      {"28.4.0", "9.6.0", true, false, false, "9.7.0"},
 
-                               /* Either one in LTS before backport */
-                               {"9.7.0", "8.4.0", true, true, false},
-                               {"8.4.0", "8.0.0", true, true, false},
-                               {"9.7.0", "8.0.0", true, true, false},
+      /* Either one in LTS before backport */
+      {"9.7.0", "8.4.0", true, true, false},
+      {"8.4.0", "8.0.0", true, true, false},
+      {"9.7.0", "8.0.0", true, true, false},
 
-                               /* Recipient in later LTS */
-                               {"10.7.0", "8.4.0", true, true, false},
-                               {"11.7.0", "9.7.0", true, true, false},
+      /* Recipient in later LTS */
+      {"28.4.0", "8.4.0", true, true, false, "9.7.0"},
+      {"30.4.0", "9.7.0", true, true, false, "28.4.0"},
 
-                               /* Downgrade to previous LTS */
-                               {"9.7.0", "10.7.0", true, true, false},
-                               {"10.7.0", "11.7.0", true, true, false}};
+      /* Downgrade to previous LTS */
+      {"9.7.0", "28.4.0", true, true, false, "9.7.0"},
+      {"28.4.0", "30.4.0", true, true, false, "9.7.0"},
+
+      /* All sanity cases */
+      {"28.7.0", "28.7.0", false, false, true, "28.4.0"},
+      {"28.1.25", "28.1.25-debug", false, false, true, "9.7.0"},
+      {"26.7.5", "26.7.0", false, false, true, "9.7.0"},
+      {"26.7.2", "26.7.4", false, false, true, "9.7.0"},
+      {"26.10.0", "26.7.0", false, false, false, "9.7.0"},
+      {"28.4.0", "9.7.5", true, true, true, "9.7.0"},
+      {"30.4.1", "28.4.4", true, true, true, "28.4.0"},
+      {"30.4.4", "28.4.1", true, true, true, "28.4.0"},
+      {"9.7.1", "28.4.4", true, true, false},
+      {"28.4.1", "8.4.4", true, true, false, "9.7.0"},
+      {"28.4.1", "30.4.4", true, true, false, "9.7.0"},
+      {"9.7.0", "30.4.4", true, true, false},
+      {"30.4.1", "9.7.4", true, true, false, "28.4.0"},
+      {"32.4.1", "28.4.4", true, true, false, "30.4.0"},
+      {"32.4.1", "9.7.4", true, true, false, "30.4.0"},
+      {"28.10.2", "28.7.1", false, false, false, "28.4.0"},
+      {"28.7.1", "28.10.2", false, false, false, "28.4.0"},
+      {"28.4.2", "28.1.1", true, false, false, "9.7.0"},
+      {"28.1.1", "28.4.2", false, true, false, "9.7.0"},
+      {"28.4.0", "28.4.0", true, true, true, "9.7.0"},
+      {"28.4.0", "9.7.0", true, true, false},
+      {"9.7.0", "28.4.0", true, true, false, "9.7.0"},
+      {"invalid", "invalid", false, false, true},
+      {"28.4.0", "28.4.x", true, true, false, "9.7.0"},
+      {"invalid", "28.4.0", false, true, false},
+      {"28.4.0", "9.7.0", true, true, false},
+      {"8.0.37", "8.0.36", false, false, false},
+      {"8.0.36", "8.0.35", false, false, false},
+      {"8.0.38", "8.0.37", false, false, true},
+      {"8.0.25", "8.0.25-debug", false, false, true},
+
+      {"4294967297.4294967296.4294967291", "4294967292.4294967293.4294967294",
+       true, true, false, "4294967292.4294967293.4294967294"},
+      {"4294967324.4294967324.4294967323", "4294967324.4294967324.4294967324",
+       true, true, false, "4294967324.4294967324.4294967324"},
+      {"99.99.99", "99.98.99", true, true, false, "99.99.99"},
+      {"99.99.99", "99.98.99", true, true, true, "99.98.99"}};
 
   for (const auto &tc : cases) {
-    EXPECT_EQ(tc.expected, are_versions_clone_compatible(
-                               std::string{tc.recipient_version},
-                               std::string{tc.donor_version},
-                               tc.is_recipient_lts, tc.is_donor_lts))
+    EXPECT_EQ(
+        tc.expected,
+        are_versions_clone_compatible(
+            std::string{tc.recipient_version}, std::string{tc.donor_version},
+            tc.is_recipient_lts, tc.is_donor_lts, tc.recipient_prev_lts))
         << "recipient=" << tc.recipient_version << " donor=" << tc.donor_version
         << " recipient_lts=" << tc.is_recipient_lts
-        << " donor_lts=" << tc.is_donor_lts;
+        << " donor_lts=" << tc.is_donor_lts << " recipient_prev_lts="
+        << (tc.recipient_prev_lts ? *tc.recipient_prev_lts : "<missing>");
   }
 }
 
@@ -143,12 +187,14 @@ TEST(MysysMyVersion, UpgradeCase_Sanity) {
   };
 
   for (const auto &tc : cases) {
-    EXPECT_EQ(tc.expected, are_versions_clone_compatible(
-                               std::string{tc.recipient_version},
-                               std::string{tc.donor_version},
-                               tc.is_recipient_lts, tc.is_donor_lts))
+    EXPECT_EQ(
+        tc.expected,
+        are_versions_clone_compatible(
+            std::string{tc.recipient_version}, std::string{tc.donor_version},
+            tc.is_recipient_lts, tc.is_donor_lts, tc.recipient_prev_lts))
         << "recipient=" << tc.recipient_version << " donor=" << tc.donor_version
         << " recipient_lts=" << tc.is_recipient_lts
-        << " donor_lts=" << tc.is_donor_lts;
+        << " donor_lts=" << tc.is_donor_lts << " recipient_prev_lts="
+        << (tc.recipient_prev_lts ? *tc.recipient_prev_lts : "<missing>");
   }
 }

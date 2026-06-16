@@ -1109,7 +1109,7 @@ static void test_configure_versions([[maybe_unused]] std::string &config_val,
     donor_val = "8.0.37";
   });
   DBUG_EXECUTE_IF("clone_one_lts_to_next_lts", {
-    config_val = "10.7.0";
+    config_val = "28.4.0";
     donor_val = "9.7.0";
   });
 }
@@ -1140,8 +1140,12 @@ static int validate_json_configs(rapidjson::Document &recipient,
     DBUG_EXECUTE_IF("clone_one_lts_to_next_lts", { is_donor_lts = true; });
   }
 
+  const std::string recp_prev_lts =
+      recipient.HasMember("prev_lts") ? recipient["prev_lts"].GetString() : "";
+
   return mysql_service_clone_protocol->mysql_clone_validate_version(
-      recipient_version, donor_version, is_recipient_lts, is_donor_lts);
+      recipient_version, donor_version, is_recipient_lts, is_donor_lts,
+      recp_prev_lts);
 }
 
 int Client::validate_remote_params() {
@@ -1210,6 +1214,7 @@ int Client::validate_remote_params() {
 
   if (m_share->m_protocol_version == CLONE_PROTOCOL_VERSION_V4) {
     configs.push_back({"maturity", MYSQL_VERSION_MATURITY});
+    configs.push_back({"prev_lts", MYSQL_PREVIOUS_LTS_VERSION});
   }
 
   rapidjson::Document recipient_configs;

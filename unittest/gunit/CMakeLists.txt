@@ -155,7 +155,7 @@ SET(TESTS
   mysys_my_symlink
   mysys_my_system
   mysys_my_time
-  mysys_my_version
+  mysys_my_clone
   mysys_my_write
   mysys_pathfuncs
   opt_recperkey
