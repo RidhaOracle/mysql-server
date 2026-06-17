@@ -40,6 +40,7 @@
 
 --source include/not_valgrind.inc
 --source include/have_binlog_format_row.inc
+--source include/not_rpl_gtid_only.inc
 # This test validates MTA commit-order worker behavior. CSA enforces row
 # format for apply and rejects the statement-format checksum workload below.
 --source include/have_mta.inc
