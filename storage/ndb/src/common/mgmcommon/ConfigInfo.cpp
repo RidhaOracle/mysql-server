@@ -521,6 +521,16 @@ const ConfigInfo::ParamInfo ConfigInfo::m_ParamInfo[] = {
      "Max DML-operations in one transaction", ConfigInfo::CI_USED, false,
      ConfigInfo::CI_INT, STR_VALUE(MAX_INT32), "32", STR_VALUE(MAX_INT32)},
 
+    /*
+     * Keep the minimum high enough for internal metadata operations.
+     * Keep the limit at most 2^14 - 1. DBTUX uses the high bit of the
+     * 15-bit tuple version to detect version wrap when ordering entries
+     * in Dbtux::TreeEnt::cmp().
+     */
+    {CFG_DB_MAX_ROW_VERSIONS_PER_TRANSACTION, "MaxRowVersionsPerTransaction",
+     DB_TOKEN, "Max row versions in one transaction", ConfigInfo::CI_USED,
+     false, ConfigInfo::CI_INT, "1000", "3", "16383"},
+
     {CFG_DB_NO_LOCAL_OPS, "MaxNoOfLocalOperations", DB_TOKEN,
      "TransactionMemory", ConfigInfo::CI_DEPRECATED, false, ConfigInfo::CI_INT,
      nullptr, "32", STR_VALUE(MAX_INT_RNIL)},
