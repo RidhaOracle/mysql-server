@@ -60,8 +60,7 @@ bool File_class::remove(const char *aFileName) {
 
 bool File_class::realpath(const char *name, char *resolved, size_t len) {
 #ifdef _WIN32
-  char *file;
-  return (GetFullPathName(name, len, resolved, file) > 0);
+  return (GetFullPathName(name, len, resolved, nullptr) > 0);
 #else
   assert(len >= PATH_MAX);
   if (len < PATH_MAX) return false;
