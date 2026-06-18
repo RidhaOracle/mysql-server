@@ -1,0 +1,3 @@
+# OCA-signed contributor emails (PoC fixture).
+# Production replaces this file with a live call to the OCA verification service.
+ridha@example.com

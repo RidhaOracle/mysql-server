@@ -1,0 +1,26 @@
+name: Format Check
+on:
+  pull_request:
+    paths: ["**/*.c", "**/*.cc", "**/*.cpp", "**/*.h", "**/*.hpp"]
+jobs:
+  clang-format:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - name: Install clang-format
+        run: sudo apt-get update && sudo apt-get install -y clang-format-18
+      # Uses the repository's existing .clang-format — no style is redefined here.
+      - name: Check formatting of changed files
+        run: |
+          base="${{ github.event.pull_request.base.sha }}"
+          changed=$(git diff --name-only "$base"...HEAD | grep -E '\.(c|cc|cpp|h|hpp)$' || true)
+          [ -z "$changed" ] && { echo "No C/C++ changes."; exit 0; }
+          fail=0
+          for f in $changed; do
+            [ -f "$f" ] || continue
+            if ! clang-format-18 --style=file --dry-run --Werror "$f"; then fail=1; fi
+          done
+          if [ "$fail" -ne 0 ]; then
+            echo "::error::Run scripts/dev/format.sh to fix formatting."; exit 1
+          fi

@@ -1,0 +1,53 @@
+name: OCA Check
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened]
+permissions:
+  pull-requests: write
+  statuses: write
+
+# Verifies the contributor has signed the Oracle Contributor Agreement and posts
+# a status check + label, so review can begin without a human first confirming
+# signing out-of-band. Replaces the manual "can be verified as having signed"
+# step in the legacy flow.
+#
+# DEMONSTRATIVE: the verification call below points at the OCA verification
+# service. In the fork PoC it reads a checked-in allowlist so the workflow is
+# runnable end-to-end without service credentials; in production it would call
+# the signed-contributors API.
+jobs:
+  oca:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Resolve commit author emails
+        id: authors
+        run: |
+          emails=$(git log --format='%ae' \
+            "${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }}" \
+            | sort -u)
+          echo "emails<<END" >> "$GITHUB_OUTPUT"; echo "$emails" >> "$GITHUB_OUTPUT"; echo "END" >> "$GITHUB_OUTPUT"
+      - name: Verify OCA signing
+        id: verify
+        run: |
+          # Production: curl --fail "$OCA_API/signed?email=$e"
+          # PoC fallback: .github/oca-allowlist.txt
+          missing=""
+          while read -r e; do
+            [ -z "$e" ] && continue
+            if ! grep -qxF "$e" .github/oca-allowlist.txt 2>/dev/null; then missing="$missing $e"; fi
+          done <<< "${{ steps.authors.outputs.emails }}"
+          if [ -n "$missing" ]; then
+            echo "unsigned=$missing" >> "$GITHUB_OUTPUT"; exit 1
+          fi
+      - name: Label + comment when unsigned
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const pr = context.payload.pull_request.number;
+            await github.rest.issues.addLabels({ ...context.repo, issue_number: pr, labels: ['oca:unsigned'] });
+            await github.rest.issues.createComment({ ...context.repo, issue_number: pr,
+              body: "Thanks for the PR! One or more commit emails aren't matched to a signed OCA. " +
+                    "Please sign at https://oca.opensource.oracle.com using the email on your commits, " +
+                    "then push or re-run this check." });

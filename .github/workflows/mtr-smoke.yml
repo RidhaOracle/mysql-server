@@ -1,0 +1,37 @@
+name: MTR Smoke
+on:
+  pull_request:
+    branches: [trunk]
+    paths-ignore: ["docs/**", "**/*.md"]
+concurrency:
+  group: mtr-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+# Fast, curated test signal on every PR. The full suite (innodb, replication,
+# rpl, group_replication, …) runs nightly on trunk, not per-PR, to keep the
+# contributor feedback loop under ~20 minutes.
+jobs:
+  smoke:
+    runs-on: ubuntu-24.04
+    needs: []
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - run: scripts/dev/bootstrap.sh
+      - uses: actions/cache@v4
+        with: { path: ~/.cache/mysql-boost, key: boost-${{ hashFiles('cmake/boost.cmake') }} }
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/ccache
+          key: ccache-gcc-${{ github.sha }}
+          restore-keys: ccache-gcc-
+      - run: scripts/dev/build.sh debug
+      - name: Run smoke suite
+        run: scripts/dev/mtr.sh smoke
+      - name: Publish test report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mtr-smoke-logs
+          path: build/mysql-test/var/log/
+          retention-days: 5

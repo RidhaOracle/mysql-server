@@ -1,0 +1,19 @@
+# Review routing + basis for the external committer write model described in
+# docs/development/open-development-model.md.
+#
+# Currently all paths are owned by @RidhaOracle. As the model rolls out, replace
+# the catch-all with per-area teams (the structure below shows the intended split).
+
+# Default owner for everything not matched more specifically:
+*                          @RidhaOracle
+
+# Intended per-area split (all @RidhaOracle for now):
+/storage/innobase/         @RidhaOracle
+/sql/join_optimizer/       @RidhaOracle
+/sql/rpl_*                 @RidhaOracle
+/plugin/group_replication/ @RidhaOracle
+/client/                   @RidhaOracle
+/cmake/                    @RidhaOracle
+/.github/                  @RidhaOracle
+/scripts/dev/              @RidhaOracle
+/docs/                     @RidhaOracle

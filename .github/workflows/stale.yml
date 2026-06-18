@@ -1,0 +1,20 @@
+name: Triage Hygiene
+on:
+  schedule: [{ cron: "0 6 * * 1-5" }]   # weekday mornings
+permissions: { issues: write, pull-requests: write }
+
+# Gentle: only nudges items explicitly waiting on the author for info. Nothing
+# labeled good-first-issue, help-wanted, or under active review is ever touched.
+jobs:
+  stale:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/stale@v9
+        with:
+          only-labels: "needs-info"
+          days-before-stale: 21
+          days-before-close: 14
+          stale-issue-message: "Marking as stale: still waiting on the requested info. Comment to keep it open."
+          stale-pr-message: "Marking as stale: waiting on requested changes. Push or comment to keep it open."
+          exempt-pr-labels: "good first issue,help wanted,under-review"
+          exempt-issue-labels: "good first issue,help wanted,roadmap"

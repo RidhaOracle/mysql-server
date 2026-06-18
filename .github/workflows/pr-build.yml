@@ -1,0 +1,49 @@
+name: PR Build
+on:
+  pull_request:
+    branches: [trunk]
+    paths-ignore: ["docs/**", "**/*.md"]
+
+# Cancel superseded runs so a fast push doesn't queue behind a stale build.
+concurrency:
+  group: build-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Debug build (${{ matrix.compiler }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        compiler: [gcc, clang]
+    env:
+      CC: ${{ matrix.compiler == 'gcc' && 'gcc' || 'clang' }}
+      CXX: ${{ matrix.compiler == 'gcc' && 'g++' || 'clang++' }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install toolchain
+        run: scripts/dev/bootstrap.sh
+      # Boost is large and version-pinned: cache it so most runs skip the download.
+      - name: Cache Boost
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/mysql-boost
+          key: boost-${{ hashFiles('cmake/boost.cmake') }}
+      # ccache turns the second build of a PR from ~50 min into a few minutes.
+      - name: Cache ccache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ccache
+          key: ccache-${{ matrix.compiler }}-${{ github.sha }}
+          restore-keys: ccache-${{ matrix.compiler }}-
+      - name: Build
+        run: scripts/dev/build.sh debug
+      - name: Upload build for test job
+        uses: actions/upload-artifact@v4
+        if: matrix.compiler == 'gcc'
+        with:
+          name: build-gcc
+          path: build/
+          retention-days: 1

@@ -1,0 +1,25 @@
+{
+  "name": "mysql-server-dev",
+  "build": { "dockerfile": "Dockerfile" },
+  "runArgs": ["--cap-add=SYS_PTRACE", "--security-opt", "seccomp=unconfined"],
+  "features": {},
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-vscode.cpptools",
+        "ms-vscode.cmake-tools",
+        "xaver.clang-format"
+      ],
+      "settings": {
+        "cmake.configureOnOpen": false,
+        "C_Cpp.clang_format_style": "file"
+      }
+    }
+  },
+  "mounts": [
+    "source=mysql-ccache,target=/home/dev/.cache/ccache,type=volume",
+    "source=mysql-boost,target=/home/dev/.cache/mysql-boost,type=volume"
+  ],
+  "remoteUser": "dev",
+  "postCreateCommand": "echo 'Run scripts/dev/build.sh debug to build.'"
+}

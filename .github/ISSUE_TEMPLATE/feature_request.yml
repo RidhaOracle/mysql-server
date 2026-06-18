@@ -1,0 +1,20 @@
+name: Feature request
+description: Propose an enhancement
+labels: ["feature-request", "needs-triage"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem / use case
+    validations: { required: true }
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior
+    validations: { required: true }
+  - type: checkboxes
+    id: scope
+    attributes:
+      label: Scope
+      options:
+        - label: This changes SQL syntax, on-disk format, or public behavior (an RFC will be needed)

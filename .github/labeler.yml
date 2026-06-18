@@ -1,0 +1,10 @@
+# Area auto-labels, driven by the paths a PR touches. Keeps triage cheap and
+# routes reviews to the right owners (see CODEOWNERS).
+"area:innodb":        ["storage/innobase/**"]
+"area:optimizer":     ["sql/join_optimizer/**", "sql/sql_optimizer*", "sql/range_optimizer/**"]
+"area:replication":   ["sql/rpl_*", "libbinlogevents/**", "plugin/group_replication/**"]
+"area:client":        ["client/**", "libmysql/**"]
+"area:pluggable":     ["plugin/**", "components/**"]
+"area:build":         ["cmake/**", "CMakeLists.txt", "scripts/dev/**", ".github/**"]
+"area:tests":         ["mysql-test/**"]
+"area:docs":          ["docs/**", "**/*.md"]
