@@ -3204,4 +3204,24 @@ UPDATE t6 SET y = 1 WHERE y > (SELECT RAND() AS r FROM t5 ORDER BY r LIMIT 1);
 
 DROP TABLE t5, t6;
 
+--echo #
+--echo # Bug#39506035: hypergraph: PossiblyAddSargableCondition: Assertion
+--echo #               `CompatibleTypesForIndexLookup(eq_item, field,
+--echo #               other_side)' failed.
+--echo #
+
+CREATE TABLE t (
+  c3 MEDIUMTEXT CHARACTER SET gb18030 COLLATE gb18030_chinese_ci NOT NULL,
+  FULLTEXT KEY i1 (c3)
+);
+INSERT INTO t VALUES (''),('da');
+
+--error ER_CANNOT_CONVERT_STRING
+SELECT 1 FROM t WHERE date_format(
+  current_timestamp,
+  0xf4dd0189991dfabb7d3bb5ca3f568f4fc148
+) = c3;
+
+DROP TABLE t;
+
 --source include/disable_hypergraph.inc

@@ -3752,3 +3752,19 @@ EXPLAIN
                     -> Table scan on t5  (rows=5)
 
 DROP TABLE t5, t6;
+#
+# Bug#39506035: hypergraph: PossiblyAddSargableCondition: Assertion
+#               `CompatibleTypesForIndexLookup(eq_item, field,
+#               other_side)' failed.
+#
+CREATE TABLE t (
+c3 MEDIUMTEXT CHARACTER SET gb18030 COLLATE gb18030_chinese_ci NOT NULL,
+FULLTEXT KEY i1 (c3)
+);
+INSERT INTO t VALUES (''),('da');
+SELECT 1 FROM t WHERE date_format(
+current_timestamp,
+0xf4dd0189991dfabb7d3bb5ca3f568f4fc148
+) = c3;
+ERROR HY000: Cannot convert string '\xF4\xDD\x01\x89\x99\x1D...' from utf8mb4 to gb18030
+DROP TABLE t;
