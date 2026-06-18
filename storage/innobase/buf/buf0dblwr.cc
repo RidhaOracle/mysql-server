@@ -45,6 +45,7 @@ Atomic writes handling. */
 #include "ut0mutex.h"
 #include "ut0test.h"
 
+#include <algorithm>
 #include <iomanip>
 #include <iostream>
 #include <regex>
@@ -241,6 +242,15 @@ struct Page {
   /** Double write buffer page contents */
   dblwr::Buffer m_buffer;
 
+  lsn_t get_lsn() const {
+    return mach_read_from_8(m_buffer.begin() + FIL_PAGE_LSN);
+  }
+
+  page_id_t get_page_id() const {
+    const auto ptr = m_buffer.begin();
+    return {page_get_space_id(ptr), page_get_page_no(ptr)};
+  }
+
   // Disable copying
   Page(const Page &) = delete;
   Page(Page &&) = delete;
@@ -290,7 +300,14 @@ class Pages {
 
   /** Add a page entry from reduced doublewrite buffer to vector
   @param[in]   pg_entry        Reduced doublewrite buffer entry */
-  void add_entry(Page_entry &pg_entry) { m_page_entries.push_back(pg_entry); }
+  void add_entry(Page_entry &pg_entry) {
+    m_page_entries.push_back(pg_entry);
+    m_is_sorted = false;
+  }
+
+  /** Indicates that all add() calls were done, and it is time to prepare this
+  data structure for subsequent recover() calls. */
+  void done_loading_prepare_for_recovery() noexcept;
 
   /** Find a doublewrite copy of a page.
   @param[in]    page_id                 Page number to lookup
@@ -348,17 +365,15 @@ class Pages {
   is found. */
   [[nodiscard]] std::optional<lsn_t> get_max_lsn_of_reduced_page_entries(
       const page_id_t &page_id) const noexcept {
-    std::optional<lsn_t> max_lsn;
+    ut_a(m_is_sorted);
     for (auto &pe : m_page_entries) {
       if (page_id.space() == pe.m_space_id &&
           page_id.page_no() == pe.m_page_no) {
-        if (!max_lsn.has_value() || pe.m_lsn > max_lsn) {
-          max_lsn = pe.m_lsn;
-        }
+        return pe.m_lsn;
       }
     }
 
-    return max_lsn;
+    return {};
   }
 
   /** Restore corrupted pages of the tablespace from the double write buffer.
@@ -405,6 +420,12 @@ class Pages {
   already recovered, to enable optimization to not scan the m_pages for any
   single tablespace ID more than once. */
   std::unordered_set<space_id_t> m_recovered_spaces;
+
+  /** Initially true. Transitions to false whenever add() or add_entry() is
+  called, and to true in done_loading_prepare_for_recovery(). Calling find(),
+  get_max_lsn_of_reduced_page_entries(), get_first_page_content_for_recovery(),
+  and recover() is only allowed when true. */
+  bool m_is_sorted{true};
 
   /* Disable copying */
   Pages(const Pages &) = delete;
@@ -3165,6 +3186,7 @@ void dblwr::force_flush_all() noexcept {
 }
 
 void recv::Pages::recover(fil_space_t &space) noexcept {
+  ut_a(m_is_sorted);
   /* For cloned database double write pages should be ignored. However,
   given the control flow, we read the pages in anyway but don't recover
   from the pages we read in. */
@@ -3178,15 +3200,15 @@ void recv::Pages::recover(fil_space_t &space) noexcept {
   }
 
   for (const auto &page : m_pages) {
-    const auto ptr = page->m_buffer.begin();
-    const auto space_id = page_get_space_id(ptr);
+    const auto page_id = page->get_page_id();
 
-    if (space.id != space_id) {
+    if (space.id != page_id.space()) {
       continue;
     }
-
-    const auto page_no = page_get_page_no(ptr);
-    dblwr_recover_page(space, page_no, ptr);
+    /* The same page_id may appear multiple times in the double-write buffer,
+    but the images are sorted by lsn, and once the page is recovered and thus
+    no longer corrupted, all the older images will be ignored. */
+    dblwr_recover_page(space, page_id.page_no(), page->m_buffer.begin());
 
     /* We can't have the FSP-related cache filled with data from possibly
     corrupted space, before it is fully recovered by the double-write recovery.
@@ -3207,6 +3229,7 @@ void recv::Pages::recover(fil_space_t &space) noexcept {
 const byte *recv::Pages::get_first_page_content_for_recovery(
     space_id_t space_id, page_size_t page_size, const std::string &file_path,
     const byte *page_content) const {
+  ut_a(m_is_sorted);
   ut_a(!fsp_is_checksum_disabled(space_id));
 
   /* For cloned database double write pages should be ignored. */
@@ -3293,40 +3316,18 @@ void recv::Pages::detect_corruption_from_reduced_entries(
 #endif /* !UNIV_HOTBACKUP */
 
 const byte *recv::Pages::find(const page_id_t &page_id) const noexcept {
+  ut_a(m_is_sorted);
   if (!dblwr::is_enabled()) {
     return nullptr;
   }
-  using Matches = std::vector<const byte *, ut::allocator<const byte *>>;
-
-  Matches matches;
 
   for (const auto &page : m_pages) {
-    auto &buffer = page->m_buffer;
-
-    if (page_get_space_id(buffer.begin()) == page_id.space() &&
-        page_get_page_no(buffer.begin()) == page_id.page_no()) {
-      matches.push_back(buffer.begin());
+    if (page->get_page_id() == page_id) {
+      return page->m_buffer.begin();
     }
   }
 
-  const byte *page = nullptr;
-  if (matches.size() == 1) {
-    page = matches[0];
-
-  } else if (matches.size() > 1) {
-    lsn_t max_lsn = 0;
-
-    for (const auto &match : matches) {
-      lsn_t page_lsn = mach_read_from_8(match + FIL_PAGE_LSN);
-
-      if (page_lsn > max_lsn) {
-        max_lsn = page_lsn;
-        page = match;
-      }
-    }
-  }
-
-  return page;
+  return nullptr;
 }
 
 void recv::Pages::add(page_no_t page_no, const byte *page,
@@ -3339,6 +3340,17 @@ void recv::Pages::add(page_no_t page_no, const byte *page,
       ut::new_withkey<Page>(UT_NEW_THIS_FILE_PSI_KEY, page_no, page, n_bytes);
 
   m_pages.push_back(dblwr_page);
+  m_is_sorted = false;
+}
+
+void recv::Pages::done_loading_prepare_for_recovery() noexcept {
+  /* prioritise to images with highest lsn when recoverying a page */
+  std::sort(m_pages.begin(), m_pages.end(), [](const auto &i1, const auto &i2) {
+    return i1->get_lsn() > i2->get_lsn();
+  });
+  std::sort(m_page_entries.begin(), m_page_entries.end(),
+            [](const auto &e1, const auto &e2) { return e1.m_lsn > e2.m_lsn; });
+  m_is_sorted = true;
 }
 
 #ifndef UNIV_HOTBACKUP
@@ -3353,8 +3365,7 @@ void recv::Pages::check_missing_tablespaces() const noexcept {
   const auto end = recv_sys->deleted.end();
 
   for (const auto &page : m_pages) {
-    const auto &buffer = page->m_buffer;
-    auto space_id = page_get_space_id(buffer.begin());
+    const auto space_id = page->get_page_id().space();
 
     /* Skip messages for undo tablespaces that are being truncated since they
     can be deleted during undo truncation without an MLOG_FILE_DELETE. */
@@ -3368,7 +3379,7 @@ void recv::Pages::check_missing_tablespaces() const noexcept {
 
       if (recv_sys->deleted.find(space_id) == end &&
           recv_sys->missing_ids.find(space_id) != recv_sys->missing_ids.end()) {
-        auto page_no = page_get_page_no(buffer.begin());
+        auto page_no = page->get_page_id().page_no();
 
         ib::warn(ER_IB_MSG_DBLWR_1296)
             << "Doublewrite page " << page->m_no << " for {space: " << space_id
@@ -3492,7 +3503,9 @@ dberr_t dblwr::recv::load(recv::Pages *pages) noexcept {
     }
   }
 #endif /* UNIV_HOTBACKUP */
-  return reduced_load(pages);
+  const auto res = reduced_load(pages);
+  pages->done_loading_prepare_for_recovery();
+  return res;
 }
 
 dberr_t dblwr::recv::reduced_load(recv::Pages *pages) noexcept {
@@ -3637,10 +3650,10 @@ bool has_encrypted_pages() noexcept {
       auto &buffer = page->m_buffer;
       byte *frame = buffer.begin();
       page_type_t page_type = fil_page_get_type(frame);
+      const auto page_id = page->get_page_id();
 
       if (page_type != FIL_PAGE_TYPE_ALLOCATED) {
-        TLOG("space_id=" << page_get_space_id(frame)
-                         << ", page_no=" << page_get_page_no(frame)
+        TLOG("space_id=" << page_id.space() << ", page_no=" << page_id.page_no()
                          << ", page_type=" << fil_get_page_type_str(page_type));
       }
 
