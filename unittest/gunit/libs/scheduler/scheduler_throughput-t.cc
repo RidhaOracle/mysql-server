@@ -41,6 +41,7 @@ using namespace std;
 using namespace mysql::concurrency;
 
 namespace mysql::scheduler {
+namespace {
 
 static constexpr bool quiet = true;
 static constexpr std::size_t max_threads = 512;
@@ -113,6 +114,8 @@ void perf_test(
             << "kps" << std::endl;
   ASSERT_EQ(task1.m_check.get(), iterations);
 }
+
+}  // namespace
 
 // parellel execution, LC
 TEST(SchedulerPerf, sched1) {

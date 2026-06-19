@@ -42,6 +42,7 @@
 using namespace std;
 
 namespace mysql::scheduler {
+namespace {
 
 static constexpr bool quiet = true;
 
@@ -185,7 +186,11 @@ void test_commit_schedule(
   }
 }
 
+}  // namespace
+
 TEST(SchedulerPhases, Test64) { test_commit_schedule(1000, 64); }
+
+namespace {
 
 // Stop flag used in the "stop test". It will stop enqueueing thread
 // and task execution
@@ -269,6 +274,8 @@ void stop_with_concurrent_enqueue() {
   th_pool.reset();
 }
 
+}  // namespace
+
 TEST(SchedulerPhases, StopWithConcurrentEnqueue) {
   std::size_t test_num = 100;
   std::size_t current_test_cnt = test_num;
@@ -283,6 +290,8 @@ TEST(SchedulerPhases, StopWithConcurrentEnqueue) {
     }
   }
 }
+
+namespace {
 
 struct Task_stop_while_phase_zero_running {
   Task_stop_while_phase_zero_running(std::atomic<bool> &phase_zero_entered,
@@ -370,6 +379,8 @@ struct Task_stop_while_phase_zero_running_many {
   int m_phase{0};
   bool m_error{false};
 };
+
+}  // namespace
 
 TEST(SchedulerPhases, StopNowWaitsForRunningPhaseZeroTask) {
   std::ignore = Statistics_map::init_statistics(0);

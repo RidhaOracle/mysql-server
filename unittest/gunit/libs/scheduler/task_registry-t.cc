@@ -36,10 +36,13 @@
 using namespace std;
 
 namespace mysql::scheduler {
+namespace {
 
 struct Object_type_1 {
   int a{0};
 };
+
+}  // namespace
 
 TEST(TaskRegistryTester, Sanity) {
   using Task_registry_type = Task_registry<Task_id, Object_type_1>;
@@ -74,11 +77,15 @@ TEST(TaskRegistryTester, Sanity) {
   ASSERT_EQ(captured_value_task_1, 6);
 }
 
+namespace {
+
 struct Test_object {
   int value{0};
   Test_object() = default;
   Test_object(int v) : value(v) {}
 };
+
+}  // namespace
 
 // Test basic functionality of Task_registry_multi: activation, deactivation,
 // apply operations, and error handling for duplicate activations.

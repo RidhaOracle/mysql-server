@@ -41,6 +41,7 @@
 using namespace std;
 
 namespace mysql::scheduler {
+namespace {
 
 using Clock_type = std::chrono::system_clock;
 using Test_point_type = Clock_type::time_point;
@@ -56,6 +57,8 @@ struct Task_delayed {
     } while (static_cast<std::size_t>(elapsed.count()) < sleep_duration_ms);
   }
 };
+
+}  // namespace
 
 TEST(Scheduler, LwmRegistryWithDependencyTracker) {
   // Test Scheduler with Clock_lwm_registry and
@@ -126,6 +129,8 @@ TEST(Scheduler, DestructorsCheck) {
       scheduler.enqueue(schedule_factory.create(task_id, 0), std::move(task1));
 }
 
+namespace {
+
 int task_parameters_global_variable{0};
 std::atomic_flag task_parameters_global_variable_updated = ATOMIC_FLAG_INIT;
 std::atomic_flag task_parameters_read_ready = ATOMIC_FLAG_INIT;
@@ -172,6 +177,8 @@ void test_task_parameters_main(int idx) {
   scheduler.synchronize();
 }
 
+}  // namespace
+
 TEST(Scheduler, TaskParameters) {
   int test_num = 500;
   for (int idx = 0; idx < test_num; ++idx) {
@@ -198,6 +205,8 @@ TEST(Scheduler, AtomicFlag) {
     t1.join();
   }
 }
+
+namespace {
 
 struct Task_faulty {
   Task_faulty() {}
@@ -240,6 +249,8 @@ void scheduler_test_error_handling(
   }
   scheduler.synchronize();
 }
+
+}  // namespace
 
 TEST(Scheduler, ErrorHandling) {
   int test_num = 100;
@@ -483,6 +494,8 @@ TEST(DependencyTracker, HashCollisions) {
   }
 }
 
+namespace {
+
 struct Test_task {
   Test_task(std::vector<int> &order, std::mutex &mtx, int id,
             bool delay_this = false)
@@ -541,9 +554,13 @@ void testLwmClockIntegrationExec() {
   EXPECT_EQ(clock->now(), 5);
 }
 
+}  // namespace
+
 TEST(Scheduler, LwmClockIntegrationReg) {
   testLwmClockIntegrationExec<Clock_lwm_registry>();
 }
+
+namespace {
 
 template <typename Lwm_clock_type>
 void testLwmClockSequentialExec() {
@@ -584,9 +601,13 @@ void testLwmClockSequentialExec() {
   EXPECT_EQ(clock->now(), 5);
 }
 
+}  // namespace
+
 TEST(Scheduler, LwmClockSequentialReg) {
   testLwmClockSequentialExec<Clock_lwm_registry>();
 }
+
+namespace {
 
 template <typename Lwm_clock_type>
 void testLwmClockDefinedOrderExec() {
@@ -650,9 +671,13 @@ void testLwmClockDefinedOrderExec() {
   EXPECT_EQ(clock->now(), 5);
 }
 
+}  // namespace
+
 TEST(Scheduler, LwmClockDefinedOrderReg) {
   testLwmClockDefinedOrderExec<Clock_lwm_registry>();
 }
+
+namespace {
 
 template <typename Lwm_clock_type>
 void testLwmClockLoadExec() {
@@ -703,6 +728,8 @@ void testLwmClockLoadExec() {
   }
 }
 
+}  // namespace
+
 TEST(Scheduler, LwmClockLoadTestReg) {
   testLwmClockLoadExec<Clock_lwm_registry>();
 }
@@ -750,6 +777,8 @@ TEST(DependencyAdapterLwm, LwmDefinedOrder) {
   ASSERT_EQ(deps.first.value(), 5);
 }
 
+namespace {
+
 std::atomic_flag block_task;
 std::atomic_flag block_error_task;
 std::atomic<std::size_t> blocked_tasks_cnt{0};
@@ -769,6 +798,8 @@ struct DummyTask {
   std::atomic_flag &block_me;
   bool m_return_error{false};
 };
+
+}  // namespace
 
 // Synchronize on error, thread pool queue non-empty
 //

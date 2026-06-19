@@ -38,6 +38,7 @@
 using namespace std;
 
 namespace mysql::scheduler {
+namespace {
 
 static constexpr bool quiet = true;
 
@@ -157,6 +158,8 @@ void sync_test(
     ASSERT_EQ(*(check_time_it++), *(check_time_sorted_it++));
   }
 }
+
+}  // namespace
 
 // sequential execution, forced by logical clock, 0ms task
 TEST(SchedulerSync, SeqShort) { sync_test<Task_sleepy<0>, true>(1000, 64); }

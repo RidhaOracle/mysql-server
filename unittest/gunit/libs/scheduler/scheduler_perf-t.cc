@@ -42,6 +42,7 @@ using namespace std;
 using namespace mysql::concurrency;
 
 namespace mysql::scheduler {
+namespace {
 
 static constexpr bool quiet = true;
 static constexpr std::size_t max_threads = 1024;
@@ -178,6 +179,8 @@ void perf_test_dependency_tracking(
 // // parellel execution, load test, 64 threads, used to check CPU activity
 // TEST(SchedulerPerf, ParallelLoad) { perf_test<10, false>(100000, 64); }
 
+}  // namespace
+
 // sequential execution, forced by logical clock, 0ms task
 TEST(SchedulerPerf, SeqShort) { perf_test<0, true>(1000, 64); }
 
@@ -282,6 +285,8 @@ TEST(SchedulerPerf, ParallelShortDep64) {
 
 // LWM clock performance tests
 
+namespace {
+
 /// @brief Tests performance of the scheduler with LWM clock
 template <typename Lwm_clock_type, std::size_t sleep_duration_ms>
 void perf_test_lwm(
@@ -316,6 +321,8 @@ void perf_test_lwm(
             << "kps" << std::endl;
   ASSERT_EQ(task1.m_check.get(), iterations);
 }
+
+}  // namespace
 
 // LWM registry clock, 1 thread, 0ms task
 TEST(SchedulerPerf, LwmRegShort1) {

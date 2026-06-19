@@ -59,9 +59,21 @@ FOREACH(test ${TESTS})
     COMPILE_DEFINITIONS "${DISABLE_PSI_DEFINITIONS}" "STANDALONE_LIBS_MYSQL")
 ENDFOREACH()
 
+LIST(TRANSFORM TESTS APPEND "-t.cc" OUTPUT_VARIABLE ALL_SCHEDULER_SERVER_TESTS)
+
+MYSQL_ADD_EXECUTABLE(merge_scheduler_srv_tests-t
+  ${ALL_SCHEDULER_SERVER_TESTS}
+  ADD_TEST merge_scheduler_srv_tests-t
+  EXCLUDE_FROM_GCOV
+  LINK_LIBRARIES mysql_concurrency_server
+    mysql_scheduler_server_test_support gunit_large
+    server_unittest_library)
+
 FOREACH(test ${TESTS})
   MYSQL_ADD_EXECUTABLE(${test}-srv-t ${test}-t.cc
-    ADD_TEST ${test}
+    EXCLUDE_FROM_ALL
+    SKIP_INSTALL
+    ADD_GCOV_TEST ${test}-srv
     LINK_LIBRARIES mysql_concurrency_server
       mysql_scheduler_server_test_support gunit_large
       server_unittest_library)

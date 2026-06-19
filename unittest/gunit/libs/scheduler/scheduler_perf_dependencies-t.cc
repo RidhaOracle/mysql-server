@@ -39,6 +39,7 @@
 using namespace std;
 
 namespace mysql::scheduler {
+namespace {
 
 static constexpr bool quiet = true;
 
@@ -95,33 +96,35 @@ void perf_test_dependency_tracking(
   ASSERT_EQ(task1.m_check.load(), iterations);
 }
 
+}  // namespace
+
 // parellel execution, 1 thread, 0ms task
-TEST(SchedulerPerf, ParallelShortDep1) {
+TEST(SchedulerPerfDependencies, ParallelShortDep1) {
   perf_test_dependency_tracking<0>(1000, 1);
 }
 
 // parellel execution, 4 threads, 0ms task
-TEST(SchedulerPerf, ParallelShortDep4) {
+TEST(SchedulerPerfDependencies, ParallelShortDep4) {
   perf_test_dependency_tracking<0>(1000, 4);
 }
 
 // parellel execution, 8 threads, 0ms task
-TEST(SchedulerPerf, ParallelShortDep8) {
+TEST(SchedulerPerfDependencies, ParallelShortDep8) {
   perf_test_dependency_tracking<0>(1000, 8);
 }
 
 // parellel execution, 16 threads, 0ms task
-TEST(SchedulerPerf, ParallelShortDep16) {
+TEST(SchedulerPerfDependencies, ParallelShortDep16) {
   perf_test_dependency_tracking<0>(1000, 16);
 }
 
 // parellel execution, 32 threads, 0ms task
-TEST(SchedulerPerf, ParallelShortDep32) {
+TEST(SchedulerPerfDependencies, ParallelShortDep32) {
   perf_test_dependency_tracking<0>(1000, 32);
 }
 
 // parellel execution, 64 threads, 0ms task
-TEST(SchedulerPerf, ParallelShortDep64) {
+TEST(SchedulerPerfDependencies, ParallelShortDep64) {
   perf_test_dependency_tracking<0>(1000, 64);
 }
 

@@ -36,6 +36,7 @@
 using namespace std;
 
 namespace mysql::scheduler {
+namespace {
 
 void update1() {
   auto &stat_monitor = Statistics_monitor::get(0);
@@ -48,6 +49,8 @@ void update2() {
   stat_monitor.get_stat("a").add(2, 1);
   stat_monitor.get_stat("a").add(3, 4);
 }
+
+}  // namespace
 
 TEST(Scheduler, StatisticsMonitor) {
   auto &stat_monitor = Statistics_monitor::get(0);
