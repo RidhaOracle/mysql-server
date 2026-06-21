@@ -4955,4 +4955,24 @@ DROP TABLE t1, t2;
 SET max_heap_table_size = DEFAULT;
 SET tmp_table_size = DEFAULT;
 SET internal_tmp_mem_storage_engine = DEFAULT;
+#
+# Bug 38911659 - Assertion Failure in
+# Table_ref::create_materialized_table
+#
+CREATE TABLE v0 (v1 CHAR);
+INSERT INTO v0 (v1) VALUES ('x'), (NULL), (v1), (NULL);
+UPDATE v0
+SET v1 = 'x' IN (
+SELECT v1
+FROM (
+SELECT v1
+FROM v0 AS v3 NATURAL JOIN v0 AS v4 NATURAL JOIN v0
+UNION SELECT v1
+) AS v2
+);
+SELECT v1, COUNT(*) AS count FROM v0 GROUP BY v1;
+v1	count
+0	3
+1	1
+DROP TABLE v0;
 include/rpl/set_gtid_mode_on.inc

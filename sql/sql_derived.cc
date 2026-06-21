@@ -1696,31 +1696,31 @@ bool Table_ref::create_materialized_table(THD *thd) {
   assert((is_table_function() || derived_query_expression()) &&
          uses_materialization() && table);
 
-  if (!table->is_created()) {
-    Derived_refs_iterator it(this);
-    while (TABLE *t = it.get_next())
-      if (t->is_created()) {
-        assert(table->in_use == nullptr || table->in_use == thd);
-        table->in_use = thd;
-        if (open_tmp_table(table)) return true; /* purecov: inspected */
-        break;
-      }
+  // Don't create result table if table is already created.
+  if (table->is_created()) {
+    return false;
   }
 
   /*
-    Don't create result table if:
-    1) Table is already created, or
-    2) Table is a constant one with all NULL values.
+    For a CTE, table may have been created through some other reference.
+    Loop over all references and open the table, if possible.
   */
-  if (table->is_created() ||                           // 1
-      (query_block->join != nullptr &&                 // 2
-       (query_block->join->const_table_map & map())))  // 2
-  {
-    /*
-      At this point, a const table should have null rows.
-      Exception being a shared CTE.
-    */
+  Derived_refs_iterator it(this);
+  while (TABLE *t = it.get_next()) {
+    if (t->is_created()) {
+      assert(table->in_use == nullptr || table->in_use == thd);
+      table->in_use = thd;
+      if (open_tmp_table(table)) return true; /* purecov: inspected */
+      assert(table->is_created());
+      return false;
+    }
+  }
+
+  // Don't create result table if table is a constant one with all NULL rows.
+  if (query_block->join != nullptr &&
+      (query_block->join->const_table_map & map())) {
 #ifndef NDEBUG
+    // Assert that const table has one NULL row, unless it is a CTE.
     QEP_TAB *tab = table->reginfo.qep_tab;
     assert((common_table_expr() != nullptr &&
             common_table_expr()->references.size() > 1) ||
