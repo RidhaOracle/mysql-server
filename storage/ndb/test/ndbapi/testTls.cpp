@@ -1122,7 +1122,7 @@ int runMiscTrustTests(NDBT_Context *ctx, NDBT_Step *step) {
       for (cert_table_entry &cert : trusted) {
         CHECK(cert.flags == 7);  // IN_CHAIN + IN_TRUST_STORE + IS_ROOT
       }
-      X509_free(ca);
+      Certificate::free(ca);
     }
 
     fprintf(stderr, " === End of first test group === \n");
@@ -1226,8 +1226,8 @@ int runMiscTrustTests(NDBT_Context *ctx, NDBT_Step *step) {
       CHECK(trusted.end() == 1);
       CHECK(km.ctx() == nullptr);
     }
-    X509_free(CA_cert);
-    EVP_PKEY_free(CA_key);
+    Certificate::free(CA_cert);
+    PrivateKey::free(CA_key);
     fprintf(stderr, " === End of second test group === \n");
   }
 
@@ -1295,15 +1295,15 @@ int runMiscTrustTests(NDBT_Context *ctx, NDBT_Step *step) {
       km.init_mgm_client(pathString.c_str());
       CHECK(km.ctx());
       CHECK(trusted.end() == 3);
-      X509_free(ca3);
-      EVP_PKEY_free(ca3_key);
+      Certificate::free(ca3);
+      PrivateKey::free(ca3_key);
     }
 
     fprintf(stderr, " === End of third test group === \n");
   }
 
-  X509_free(ca2);
-  EVP_PKEY_free(ca2_key);
+  Certificate::free(ca2);
+  PrivateKey::free(ca2_key);
 
   return NDBT_OK;
 }
