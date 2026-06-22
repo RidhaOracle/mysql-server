@@ -1930,10 +1930,8 @@ buffer does not start with a full mtr */
       case ib::redo::Parse_error::Incomplete:
         /* This snippet is checked by the innodb.log_mtr_boundary test. */
         DBUG_EXECUTE_IF("mtr_filling_redo_block_recovery", {
-          if (!buffer.empty() && (buffer[0] & MLOG_SINGLE_REC_FLAG)) {
-            ib::info() << "Last MTR couldn't be parsed successfully."
-                       << " Recovered till : " << start_lsn;
-          }
+          ib::info() << "Last MTR couldn't be parsed successfully."
+                     << " Recovered till : " << start_lsn;
         });
         break;
     }
