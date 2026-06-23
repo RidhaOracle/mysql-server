@@ -7,14 +7,15 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
-        with: { fetch-depth: 0 }
+        with:
+          ref: refs/pull/${{ github.event.pull_request.number }}/merge
+          fetch-depth: 2
       - name: Install clang-format
         run: sudo apt-get update && sudo apt-get install -y clang-format-18
       # Uses the repository's existing .clang-format — no style is redefined here.
       - name: Check formatting of changed files
         run: |
-          base="${{ github.event.pull_request.base.sha }}"
-          changed=$(git diff --name-only "$base"...HEAD | grep -E '\.(c|cc|cpp|h|hpp)$' || true)
+          changed=$(git diff --name-only HEAD^1 HEAD | grep -E '\.(c|cc|cpp|h|hpp)$' || true)
           [ -z "$changed" ] && { echo "No C/C++ changes."; exit 0; }
           fail=0
           for f in $changed; do
