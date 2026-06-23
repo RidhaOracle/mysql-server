@@ -15,6 +15,7 @@ on:
 
 permissions:
   pull-requests: write
+  issues: write
   statuses: write
   contents: read
 
@@ -125,6 +126,21 @@ jobs:
           script: |
             const pr  = context.payload.pull_request;
             const via = ${{ toJSON(steps.verify.outputs.matched) }} || 'verified';
+            const labels = [
+              { name: 'oca:verified', color: '0E8A16', description: 'Contributor agreement verified' },
+              { name: 'oca:unsigned', color: 'D93F0B', description: 'Contributor agreement still needs verification' },
+            ];
+
+            for (const label of labels) {
+              try {
+                await github.rest.issues.getLabel({ ...context.repo, name: label.name });
+                await github.rest.issues.updateLabel({ ...context.repo, ...label });
+              } catch (error) {
+                if (error.status !== 404) throw error;
+                await github.rest.issues.createLabel({ ...context.repo, ...label });
+              }
+            }
+
             // refresh labels: drop unsigned, add verified
             try { await github.rest.issues.removeLabel({ ...context.repo, issue_number: pr.number, name: 'oca:unsigned' }); } catch (e) {}
             await github.rest.issues.addLabels({ ...context.repo, issue_number: pr.number, labels: ['oca:verified'] });
@@ -132,6 +148,8 @@ jobs:
               ...context.repo, sha: pr.head.sha, context: 'OCA / contributor-agreement',
               state: 'success', description: `Signed OCA confirmed (${via})`.slice(0, 140),
             });
+            await github.rest.issues.createComment({ ...context.repo, issue_number: pr.number,
+              body: `OCA verification succeeded. Signed Oracle Contributor Agreement confirmed (${via}).` });
 
       - name: Label + comment when unsigned
         if: failure()
@@ -139,6 +157,21 @@ jobs:
         with:
           script: |
             const pr = context.payload.pull_request;
+            const labels = [
+              { name: 'oca:verified', color: '0E8A16', description: 'Contributor agreement verified' },
+              { name: 'oca:unsigned', color: 'D93F0B', description: 'Contributor agreement still needs verification' },
+            ];
+
+            for (const label of labels) {
+              try {
+                await github.rest.issues.getLabel({ ...context.repo, name: label.name });
+                await github.rest.issues.updateLabel({ ...context.repo, ...label });
+              } catch (error) {
+                if (error.status !== 404) throw error;
+                await github.rest.issues.createLabel({ ...context.repo, ...label });
+              }
+            }
+
             await github.rest.issues.addLabels({ ...context.repo, issue_number: pr.number, labels: ['oca:unsigned'] });
             await github.rest.repos.createCommitStatus({
               ...context.repo, sha: pr.head.sha, context: 'OCA / contributor-agreement',

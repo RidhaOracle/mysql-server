@@ -1,0 +1,50 @@
+name: PR Template Check
+
+on:
+  pull_request:
+    paths:
+      - ".github/PULL_REQUEST_TEMPLATE.md"
+      - ".github/workflows/pr-template-check.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  template:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify suggested pull request template
+        run: |
+          cat > expected-pr-template.md <<'EOF'
+          <!-- Thanks for contributing to MySQL Server! The prompts below are the few
+               things reviewers always need. Delete any that don't apply. -->
+
+          ### What does this change do?
+
+          <!-- One or two sentences. Link the issue/bug it fixes: "Fixes #1234" or
+               "BUG#XXXXXXXX". -->
+
+          ### Why is it needed?
+
+          ### How was it tested?
+
+          - [ ] Added/updated MTR tests under `mysql-test/`
+          - [ ] `scripts/dev/mtr.sh smoke` passes locally
+          - [ ] Ran the relevant full suite (name it): ______
+
+          ### Contributor checklist
+
+          - [ ] I have signed the [OCA](https://oca.opensource.oracle.com) with the email on these commits
+          - [ ] I confirm the code being submitted is offered under the terms of the OCA, and that I am authorized to contribute it.
+          - [ ] Code is formatted (`scripts/dev/format.sh`)
+          - [ ] Commits are focused with descriptive messages
+          - [ ] For a behavior/format/syntax change, an RFC was opened or linked: ______
+
+          ### Areas touched
+
+          <!-- e.g. innodb, optimizer, replication, client, build. Helps auto-routing. -->
+          EOF
+          perl -pi -e 's/^          //' expected-pr-template.md
+          diff -u expected-pr-template.md .github/PULL_REQUEST_TEMPLATE.md

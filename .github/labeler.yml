@@ -5,37 +5,37 @@
 # `any-glob-to-any-file` structure below. The older flat "label: [globs]"
 # layout (v4) is NOT compatible with v5 and fails to parse.
 
-"area:innodb":
+"innodb":
   - changed-files:
       - any-glob-to-any-file: ["storage/innobase/**"]
 
-"area:optimizer":
+"optimizer":
   - changed-files:
       - any-glob-to-any-file:
           - "sql/join_optimizer/**"
           - "sql/sql_optimizer*"
           - "sql/range_optimizer/**"
 
-"area:replication":
+"replication":
   - changed-files:
       - any-glob-to-any-file:
           - "sql/rpl_*"
           - "libbinlogevents/**"
           - "plugin/group_replication/**"
 
-"area:client":
+"client":
   - changed-files:
       - any-glob-to-any-file:
           - "client/**"
           - "libmysql/**"
 
-"area:pluggable":
+"pluggable":
   - changed-files:
       - any-glob-to-any-file:
           - "plugin/**"
           - "components/**"
 
-"area:build":
+"build":
   - changed-files:
       - any-glob-to-any-file:
           - "cmake/**"
@@ -43,11 +43,11 @@
           - "scripts/dev/**"
           - ".github/**"
 
-"area:tests":
+"tests":
   - changed-files:
       - any-glob-to-any-file: ["mysql-test/**"]
 
-"area:docs":
+"docs":
   - changed-files:
       - any-glob-to-any-file:
           - "docs/**"
