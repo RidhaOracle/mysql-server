@@ -19,7 +19,9 @@ jobs:
       - uses: actions/checkout@v4
       - run: scripts/dev/bootstrap.sh
       - uses: actions/cache@v4
-        with: { path: ~/.cache/mysql-boost, key: boost-${{ hashFiles('cmake/boost.cmake') }} }
+        with:
+          path: ~/.cache/mysql-boost
+          key: boost-${{ hashFiles('cmake/boost.cmake') }}
       - uses: actions/cache@v4
         with:
           path: ~/.cache/ccache
