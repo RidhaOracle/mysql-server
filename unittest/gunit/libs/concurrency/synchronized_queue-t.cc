@@ -24,6 +24,7 @@
 #include <gtest/gtest.h>
 #include <algorithm>
 #include <chrono>
+#include <climits>
 #include <cstring>
 #include <functional>
 #include <random>

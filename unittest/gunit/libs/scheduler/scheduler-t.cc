@@ -25,7 +25,6 @@
 #include <algorithm>
 #include <cstring>
 #include <random>
-#include <sstream>
 #include <thread>
 
 #include "mysql/scheduler/clock_lwm_registry.h"
@@ -46,8 +45,6 @@ namespace mysql::scheduler {
 using Clock_type = std::chrono::system_clock;
 using Test_point_type = Clock_type::time_point;
 
-inline constexpr std::chrono::milliseconds Acceptable_time_deviation{999};
-
 template <std::size_t sleep_duration_ms>
 struct Task_delayed {
   void operator()([[maybe_unused]] unsigned int thread_id) {
@@ -59,108 +56,6 @@ struct Task_delayed {
     } while (static_cast<std::size_t>(elapsed.count()) < sleep_duration_ms);
   }
 };
-
-std::string printInterval(const Test_point_type &start) {
-  stringstream ss;
-  ss << std::chrono::duration_cast<std::chrono::milliseconds>(
-            Clock_type::now() - start)
-            .count()
-     << "ms = ";
-  ss << std::chrono::duration_cast<std::chrono::microseconds>(
-            Clock_type::now() - start)
-            .count()
-     << "us";
-  return ss.str();
-}
-
-bool silent = true;
-
-struct Task_with_exec_id {
-  Task_with_exec_id(const Test_point_type &pt) : m_start(pt) {}
-  int operator()([[maybe_unused]] unsigned int thread_id,
-                 [[maybe_unused]] int j) {
-    if (!silent) {
-      cout << "Task with ID: " << j
-           << " is being executed at: " << printInterval(m_start) << endl;
-    }
-    return 0;
-  }
-  Test_point_type m_start;
-};
-
-struct Task_with_exec_id_iter {
-  Task_with_exec_id_iter(const Test_point_type &pt,
-                         std::vector<std::size_t> &task_ids,
-                         std::mutex &mutex_task_ids)
-      : m_start(pt), m_task_ids(task_ids), m_mutex_task_ids(mutex_task_ids) {}
-  int operator()([[maybe_unused]] unsigned int thread_id, int j,
-                 [[maybe_unused]] int iteration) {
-    if (!silent) {
-      cout << "Task with ID: " << j
-           << " is being executed at: " << printInterval(m_start)
-           << " it: " << iteration << std::endl;
-    }
-    m_mutex_task_ids.lock();
-    m_task_ids.push_back(j);
-    m_mutex_task_ids.unlock();
-    return 0;
-  }
-  Test_point_type m_start;
-  std::vector<std::size_t> &m_task_ids;
-  std::mutex &m_mutex_task_ids;
-};
-
-string printTimeSinceBeg(const Test_point_type &beg, const Test_point_type &t) {
-  return to_string(
-      std::chrono::duration_cast<std::chrono::microseconds>(t - beg).count());
-}
-
-void check_dependencies(Dependency_tracker_ptr dep) {
-  auto now = Clock_type::now();
-
-  std::vector<std::size_t> task_ids;
-  std::mutex mutex_task_ids;
-
-  Task_with_exec_id_iter task1(now, task_ids, mutex_task_ids);
-  Task_with_exec_id_iter task2(now, task_ids, mutex_task_ids);
-  Task_with_exec_id_iter task3(now, task_ids, mutex_task_ids);
-
-  std::ignore = Statistics_map::init_statistics(0);
-  std::shared_ptr<Thread_pool<Task_result>> th_pool =
-      std::make_shared<Thread_pool<Task_result>>();
-  if (th_pool->init()) {
-    GTEST_SKIP() << "Not enough resources to create scheduler worker threads";
-  }
-  Scheduler_clock_ptr clock = std::make_shared<Clock_lwm_registry>();
-  Scheduler scheduler(th_pool, clock, std::move(dep));
-  Schedule_factory schedule_factory(clock);
-  Task_sequencer gen;
-
-  std::size_t iterations = 250;
-
-  for (std::size_t it = 0; it < iterations; ++it) {
-    auto delay = it;
-    auto t2id = gen.next_id();
-    auto t1id = gen.next_id();
-    auto t3id = gen.next_id();
-    scheduler.enqueue(schedule_factory.create(t2id, delay), task2, 1,
-                      std::size_t(it));
-    scheduler.enqueue_after(t2id, schedule_factory.create(t1id, delay), task1,
-                            0, std::size_t(it));
-    scheduler.enqueue_after(t1id, schedule_factory.create(t3id, delay), task3,
-                            2, std::size_t(it));
-  }
-
-  // waits until tasks have finished to check the output vector
-  scheduler.synchronize();
-  ASSERT_EQ(task_ids.size(), iterations * 3);
-
-  // checks executed sequence that tasks filled up during execution
-  std::vector<std::size_t> seq = {1, 0, 2};
-  for (std::size_t it = 0; it < task_ids.size(); ++it) {
-    ASSERT_EQ(task_ids[it], seq[it % 3]);
-  }
-}
 
 TEST(Scheduler, LwmRegistryWithDependencyTracker) {
   // Test Scheduler with Clock_lwm_registry and
