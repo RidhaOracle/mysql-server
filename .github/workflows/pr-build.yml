@@ -38,12 +38,13 @@ jobs:
           path: ~/.cache/ccache
           key: ccache-${{ matrix.compiler }}-${{ github.sha }}
           restore-keys: ccache-${{ matrix.compiler }}-
+      - name: Show runner resources
+        run: |
+          echo "CPU cores: $(nproc)"
+          free -h
+          df -h .
       - name: Build
         run: scripts/dev/build.sh debug
-      - name: Upload build for test job
-        uses: actions/upload-artifact@v4
-        if: matrix.compiler == 'gcc'
-        with:
-          name: build-gcc
-          path: build/
-          retention-days: 1
+      - name: Show ccache stats
+        if: always()
+        run: ccache --show-stats
