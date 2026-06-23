@@ -12,7 +12,7 @@ concurrency:
 # contributor feedback loop under ~20 minutes.
 jobs:
   smoke:
-    runs-on: ubuntu-24.04
+    runs-on: ${{ vars.CI_BUILD_RUNNER || 'ubuntu-24.04' }}
     needs: []
     timeout-minutes: 45
     steps:

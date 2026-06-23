@@ -12,7 +12,7 @@ concurrency:
 jobs:
   build:
     name: Debug build (${{ matrix.compiler }})
-    runs-on: ubuntu-24.04
+    runs-on: ${{ vars.CI_BUILD_RUNNER || 'ubuntu-24.04' }}
     timeout-minutes: 90
     strategy:
       fail-fast: false
