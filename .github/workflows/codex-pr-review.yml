@@ -11,22 +11,15 @@ jobs:
   codex:
     if: github.event.pull_request.draft == false
     runs-on: ubuntu-24.04
+    timeout-minutes: 20
     outputs:
       final_message: ${{ steps.run_codex.outputs.final-message }}
     steps:
       - uses: actions/checkout@v4
         with:
           ref: refs/pull/${{ github.event.pull_request.number }}/merge
+          fetch-depth: 2
           persist-credentials: false
-
-      - name: Pre-fetch base and head refs for the PR
-        env:
-          PR_BASE_REF: ${{ github.event.pull_request.base.ref }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-        run: |
-          git fetch --no-tags origin \
-            "$PR_BASE_REF" \
-            "+refs/pull/$PR_NUMBER/head"
 
       - name: Summarize and review with Codex
         id: run_codex
@@ -38,8 +31,8 @@ jobs:
             This is PR #${{ github.event.pull_request.number }} for ${{ github.repository }}.
 
             Summarize the changes and review only the diff introduced by this PR:
-              git diff --stat ${{ github.event.pull_request.base.sha }}...${{ github.event.pull_request.head.sha }}
-              git diff ${{ github.event.pull_request.base.sha }}...${{ github.event.pull_request.head.sha }}
+              git diff --stat HEAD^1 HEAD
+              git diff HEAD^1 HEAD
 
             Return:
             1. A concise change summary.
