@@ -22,6 +22,16 @@
 - [ ] Commits are focused with descriptive messages
 - [ ] For a behavior/format/syntax change, an RFC was opened or linked: ______
 
+### AI assistance
+
+- [ ] I did not use AI assistance for this contribution
+- [ ] I used AI assistance for this contribution
+
+If AI assistance was used, describe the tool(s) and extent of use:
+
+<!-- e.g. brainstorming, code generation, test generation, refactoring, review.
+     Also mention which parts were human-reviewed or manually verified. -->
+
 ### Areas touched
 
 <!-- e.g. innodb, optimizer, replication, client, build. Helps auto-routing. -->
