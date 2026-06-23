@@ -1,53 +1,153 @@
 name: OCA Check
-on:
-  pull_request_target:
-    types: [opened, synchronize, reopened]
-permissions:
-  pull-requests: write
-  statuses: write
 
 # Verifies the contributor has signed the Oracle Contributor Agreement and posts
 # a status check + label, so review can begin without a human first confirming
 # signing out-of-band. Replaces the manual "can be verified as having signed"
 # step in the legacy flow.
 #
-# DEMONSTRATIVE: the verification call below points at the OCA verification
-# service. In the fork PoC it reads a checked-in allowlist so the workflow is
-# runnable end-to-end without service credentials; in production it would call
-# the signed-contributors API.
+# TODO: CHANGE BEFORE MERGE -> revert the trigger to `pull_request_target`
+# (same reasoning as .github/workflows/labeler.yml). `pull_request` is used for
+# this fork PoC so the check runs on the first PR and, being same-repo, has a
+# write token to post the status, label, and comment.
+on:
+  pull_request:                       # TODO: CHANGE BEFORE MERGE -> pull_request_target
+    types: [opened, synchronize, reopened]
+
+permissions:
+  pull-requests: write
+  statuses: write
+  contents: read
+
+env:
+  # The contributor list the SPA at https://oca.opensource.oracle.com renders.
+  # It is served to the page as JSON over XHR; we request it directly below.
+  OCA_CONTRIB_LIST_URL: "https://oca.opensource.oracle.com/?ojr=contrib-list"
+
 jobs:
   oca:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
-      - name: Resolve commit author emails
-        id: authors
+        with:
+          fetch-depth: 0
+
+      - name: Resolve contributor identities
+        id: who
+        env:
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
-          emails=$(git log --format='%ae' \
-            "${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }}" \
-            | sort -u)
-          echo "emails<<END" >> "$GITHUB_OUTPUT"; echo "$emails" >> "$GITHUB_OUTPUT"; echo "END" >> "$GITHUB_OUTPUT"
-      - name: Verify OCA signing
+          # Primary key: the PR author's GitHub login. Oracle's OCA stores the
+          # contributor's GitHub username, so the login is the strongest match.
+          names=$(git log --format='%an' "$BASE_SHA..$HEAD_SHA" | sort -u)
+          emails=$(git log --format='%ae' "$BASE_SHA..$HEAD_SHA" | sort -u)
+          {
+            echo "login=$PR_AUTHOR"
+            echo "names<<END"; echo "$names"; echo "END"
+            echo "emails<<END"; echo "$emails"; echo "END"
+          } >> "$GITHUB_OUTPUT"
+          echo "PR author login : $PR_AUTHOR"
+          echo "Commit names    : $(echo "$names" | paste -sd',' -)"
+
+      - name: Verify against the Oracle OCA contributor list
         id: verify
+        env:
+          PR_AUTHOR: ${{ steps.who.outputs.login }}
+          NAMES: ${{ steps.who.outputs.names }}
         run: |
-          # Production: curl --fail "$OCA_API/signed?email=$e"
-          # PoC fallback: .github/oca-allowlist.txt
-          missing=""
-          while read -r e; do
-            [ -z "$e" ] && continue
-            if ! grep -qxF "$e" .github/oca-allowlist.txt 2>/dev/null; then missing="$missing $e"; fi
-          done <<< "${{ steps.authors.outputs.emails }}"
-          if [ -n "$missing" ]; then
-            echo "unsigned=$missing" >> "$GITHUB_OUTPUT"; exit 1
+          set -uo pipefail
+          url="$OCA_CONTRIB_LIST_URL"
+          echo "Querying OCA contributor list: $url"
+
+          http=$(curl -sS -m 30 -w '%{http_code}' -o oca.json \
+                   -H 'Accept: application/json' \
+                   -H 'X-Requested-With: XMLHttpRequest' \
+                   "$url" || echo "000")
+          bytes=$(wc -c < oca.json 2>/dev/null || echo 0)
+          echo "Response: HTTP $http, ${bytes} bytes"
+
+          signed=""
+          if [ "$http" = "200" ] && jq -e . oca.json >/dev/null 2>&1; then
+            # Flatten every string in the document (entries carry a name, a
+            # project affiliation, and sometimes a GitHub username), lowercase,
+            # dedupe. Match the PR login first, then commit author full names.
+            jq -r '.. | strings' oca.json | tr '[:upper:]' '[:lower:]' | sort -u > idx.txt
+            echo "Indexed $(wc -l < idx.txt) contributor-list tokens."
+            echo "::group::sample of indexed tokens"; head -n 5 idx.txt; echo "::endgroup::"
+
+            login_lc=$(printf '%s' "$PR_AUTHOR" | tr '[:upper:]' '[:lower:]')
+            if grep -qxF "$login_lc" idx.txt; then
+              signed="github-login:$PR_AUTHOR"
+            else
+              while IFS= read -r n; do
+                [ -z "$n" ] && continue
+                nlc=$(printf '%s' "$n" | tr '[:upper:]' '[:lower:]')
+                grep -qxF "$nlc" idx.txt && { signed="name:$n"; break; }
+              done <<< "$NAMES"
+            fi
+            [ -n "$signed" ] && echo "Matched live OCA list via $signed"
+          else
+            echo "::warning::OCA service unreachable or returned non-JSON (HTTP $http). Using offline allowlist fallback."
           fi
+
+          # Offline fallback fixture. Keeps the PoC deterministic when the live
+          # service is unreachable, and covers the Oracle-employee case: per
+          # Oracle policy, employees do NOT sign the OCA and are instead verified
+          # by public membership of the `oracle` GitHub org, so they will not
+          # appear in the public contributor list. Production swaps this for the
+          # org-membership API check.
+          if [ -z "$signed" ] && [ -f .github/oca-allowlist.txt ]; then
+            if grep -qixF "$PR_AUTHOR" .github/oca-allowlist.txt; then
+              signed="allowlist:$PR_AUTHOR"
+            else
+              while IFS= read -r e; do
+                [ -z "$e" ] && continue
+                grep -qixF "$e" .github/oca-allowlist.txt && { signed="allowlist:$e"; break; }
+              done <<< "${{ steps.who.outputs.emails }}"
+            fi
+          fi
+
+          if [ -n "$signed" ]; then
+            echo "result=signed" >> "$GITHUB_OUTPUT"
+            echo "matched=$signed" >> "$GITHUB_OUTPUT"
+            echo "OCA verified ($signed)"
+          else
+            echo "result=unsigned" >> "$GITHUB_OUTPUT"
+            echo "No OCA match for '$PR_AUTHOR' or its commit author names."
+            exit 1
+          fi
+
+      - name: Mark verified
+        if: success()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const pr  = context.payload.pull_request;
+            const via = ${{ toJSON(steps.verify.outputs.matched) }} || 'verified';
+            // refresh labels: drop unsigned, add verified
+            try { await github.rest.issues.removeLabel({ ...context.repo, issue_number: pr.number, name: 'oca:unsigned' }); } catch (e) {}
+            await github.rest.issues.addLabels({ ...context.repo, issue_number: pr.number, labels: ['oca:verified'] });
+            await github.rest.repos.createCommitStatus({
+              ...context.repo, sha: pr.head.sha, context: 'OCA / contributor-agreement',
+              state: 'success', description: `Signed OCA confirmed (${via})`.slice(0, 140),
+            });
+
       - name: Label + comment when unsigned
         if: failure()
         uses: actions/github-script@v7
         with:
           script: |
-            const pr = context.payload.pull_request.number;
-            await github.rest.issues.addLabels({ ...context.repo, issue_number: pr, labels: ['oca:unsigned'] });
-            await github.rest.issues.createComment({ ...context.repo, issue_number: pr,
-              body: "Thanks for the PR! One or more commit emails aren't matched to a signed OCA. " +
-                    "Please sign at https://oca.opensource.oracle.com using the email on your commits, " +
-                    "then push or re-run this check." });
+            const pr = context.payload.pull_request;
+            await github.rest.issues.addLabels({ ...context.repo, issue_number: pr.number, labels: ['oca:unsigned'] });
+            await github.rest.repos.createCommitStatus({
+              ...context.repo, sha: pr.head.sha, context: 'OCA / contributor-agreement',
+              state: 'failure', description: 'No signed OCA found for this contributor',
+            });
+            await github.rest.issues.createComment({ ...context.repo, issue_number: pr.number,
+              body: "Thanks for the PR! We couldn't match a signed Oracle Contributor Agreement (OCA) " +
+                    "for this contributor against https://oca.opensource.oracle.com/?ojr=contrib-list.\n\n" +
+                    "- External contributors: sign at https://oca.opensource.oracle.com using your GitHub " +
+                    "username, then push or re-run this check.\n" +
+                    "- Oracle employees: you don't sign the OCA \u2014 make your membership of the `oracle` " +
+                    "GitHub org public instead.\n" });

@@ -1,10 +1,54 @@
 # Area auto-labels, driven by the paths a PR touches. Keeps triage cheap and
 # routes reviews to the right owners (see CODEOWNERS).
-"area:innodb":        ["storage/innobase/**"]
-"area:optimizer":     ["sql/join_optimizer/**", "sql/sql_optimizer*", "sql/range_optimizer/**"]
-"area:replication":   ["sql/rpl_*", "libbinlogevents/**", "plugin/group_replication/**"]
-"area:client":        ["client/**", "libmysql/**"]
-"area:pluggable":     ["plugin/**", "components/**"]
-"area:build":         ["cmake/**", "CMakeLists.txt", "scripts/dev/**", ".github/**"]
-"area:tests":         ["mysql-test/**"]
-"area:docs":          ["docs/**", "**/*.md"]
+#
+# Format note: actions/labeler@v5 requires the `changed-files` /
+# `any-glob-to-any-file` structure below. The older flat "label: [globs]"
+# layout (v4) is NOT compatible with v5 and fails to parse.
+
+"area:innodb":
+  - changed-files:
+      - any-glob-to-any-file: ["storage/innobase/**"]
+
+"area:optimizer":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "sql/join_optimizer/**"
+          - "sql/sql_optimizer*"
+          - "sql/range_optimizer/**"
+
+"area:replication":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "sql/rpl_*"
+          - "libbinlogevents/**"
+          - "plugin/group_replication/**"
+
+"area:client":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "client/**"
+          - "libmysql/**"
+
+"area:pluggable":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "plugin/**"
+          - "components/**"
+
+"area:build":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "cmake/**"
+          - "CMakeLists.txt"
+          - "scripts/dev/**"
+          - ".github/**"
+
+"area:tests":
+  - changed-files:
+      - any-glob-to-any-file: ["mysql-test/**"]
+
+"area:docs":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "docs/**"
+          - "**/*.md"
