@@ -4,20 +4,7 @@ The canonical reference is <https://dev.mysql.com/doc/dev/mysql-server/latest/>.
 This page is the *fast path* for contributors and is kept in sync with what CI
 runs, so following it reproduces the automated checks locally.
 
-## Option A — dev container (no local setup)
-
-Open the repo in VS Code and choose **Reopen in Container**, or:
-
-```bash
-devcontainer up --workspace-folder .
-devcontainer exec --workspace-folder . scripts/dev/build.sh debug
-```
-
-The image pins the compiler, CMake/Ninja, and the Boost version from
-`cmake/boost.cmake`. ccache and Boost are cached in named volumes, so rebuilds
-and re-clones stay fast.
-
-## Option B — native (Ubuntu 24.04)
+## Native Ubuntu 24.04
 
 ```bash
 scripts/dev/bootstrap.sh        # toolchain + libs

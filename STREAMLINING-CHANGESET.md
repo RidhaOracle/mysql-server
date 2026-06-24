@@ -32,7 +32,6 @@ change** — this is engineering workflow only.
 | `.github/workflows/oca-check.yml` | Automated OCA verification + label, replaces manual confirm | (closes a MySQL-specific gap) |
 | `.github/workflows/labeler.yml` + `.github/labeler.yml` | Auto-route PRs to area owners | Kubernetes/Valkey |
 | `.github/workflows/stale.yml` | Gentle hygiene, only for `needs-info` | OpenJDK triage norms |
-| `.devcontainer/*` | One-command dev env pinned to CI toolchain | Hugging Face, ClickHouse |
 | `scripts/dev/*` | `bootstrap`/`build`/`mtr`/`format` so **local == CI** | PostgreSQL |
 | `.github/CODEOWNERS` | Review routing + basis for committer model | OpenJDK |
 

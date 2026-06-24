@@ -3,8 +3,8 @@
 We welcome your code contributions. This guide gets you from a fresh clone to a
 merged pull request with as little friction as possible.
 
-> **TL;DR** — Sign the [OCA](https://oca.opensource.oracle.com), spin up the dev
-> container (`.devcontainer/`), make your change, run `scripts/dev/mtr.sh smoke`,
+> **TL;DR** — Sign the [OCA](https://oca.opensource.oracle.com), run
+> `scripts/dev/bootstrap.sh`, make your change, run `scripts/dev/mtr.sh smoke`,
 > and open a PR. CI builds your branch and runs a smoke suite automatically. A
 > maintainer is assigned within the triage SLA below.
 
@@ -31,14 +31,12 @@ The fast path:
 
 ```bash
 # Reproducible toolchain + Boost, identical to CI:
-scripts/dev/bootstrap.sh        # installs/pins deps (or open the repo in the devcontainer)
+scripts/dev/bootstrap.sh        # installs/pins deps
 scripts/dev/build.sh debug      # configures + builds into build/
 ```
 
-Prefer zero local setup? Open the repository in the bundled **dev container**
-(VS Code "Reopen in Container", or `devcontainer up`). The image pins the exact
-compiler, CMake, and Boost version CI uses, so "works on my machine" matches
-"passes in CI."
+These scripts pin the same compiler, CMake, Ninja, Boost, and test tooling used
+by CI, so "works locally" tracks "passes in CI."
 
 ## 3. Find something to work on
 
