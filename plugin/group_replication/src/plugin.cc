@@ -3906,6 +3906,15 @@ static bool get_bool_value_using_type_lib(struct st_mysql_value *value,
     value_to_check = find_type(text_value, &ov.plugin_bool_typelib_t, flags);
 
     if (0 == value_to_check) {
+      // Persisted dynamic plugin booleans are replayed as "0"/"1" strings.
+      if (text_buffer_size == 1 && text_value[0] == '0') {
+        resulting_value = false;
+        return true;
+      }
+      if (text_buffer_size == 1 && text_value[0] == '1') {
+        resulting_value = true;
+        return true;
+      }
       return false;
     }
 
@@ -4030,7 +4039,10 @@ static int check_group_replication_tls_kex(MYSQL_THD thd, SYS_VAR *, void *save,
   char buffer[STRING_BUFFER_USUAL_SIZE];
   int length = sizeof(buffer);
   const char *tls_kex = value->val_str(value, buffer, &length);
-  if (tls_kex == nullptr) return 1;
+  if (tls_kex == nullptr) {
+    tls_kex = "";
+    length = 0;
+  }
 
   tls_kex = thd->strmake(tls_kex, length);
   if (tls_kex == nullptr) return 1;
