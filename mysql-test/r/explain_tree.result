@@ -1487,6 +1487,14 @@ id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered
 1	SIMPLE	t2	NULL	index	NULL	b	5	NULL	2	100.00	Using index; End temporary; Using join buffer (hash join)
 Warnings:
 Note	1003	/* select#1 */ select `test`.`t`.`b` AS `b` from `test`.`t` semi join (`test`.`t` `t1` join `test`.`t` `t2`) where ((`test`.`t`.`a` = `test`.`t1`.`b`) and (0 <> `test`.`t1`.`b`))
+EXPLAIN FORMAT=TRADITIONAL SELECT b FROM t WHERE a IN (SELECT t1.b
+FROM t AS t1 JOIN t AS t2 ON t1.b);
+id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
+1	SIMPLE	t1	NULL	index	b	b	5	NULL	2	50.00	Using where; Using index; Start temporary
+1	SIMPLE	t	NULL	ref	a	a	5	test.t1.b	1	100.00	Using index
+1	SIMPLE	t2	NULL	index	NULL	b	5	NULL	2	100.00	Using index; End temporary; Using join buffer (hash join)
+Warnings:
+Note	1003	/* select#1 */ select `test`.`t`.`b` AS `b` from `test`.`t` semi join (`test`.`t` `t1` join `test`.`t` `t2`) where ((`test`.`t`.`a` = `test`.`t1`.`b`) and (0 <> `test`.`t1`.`b`))
 EXPLAIN FORMAT=tree SELECT b FROM t WHERE a IN (SELECT t1.b
 FROM t AS t1 JOIN t AS t2 ON t1.b);
 EXPLAIN
@@ -1504,9 +1512,23 @@ FROM t AS t1 JOIN t AS t2 ON t1.b);
 SELECT
 JSON_EXTRACT(@var, '$**.semijoin_strategy') AS weedout,
 JSON_SEARCH(@var, 'one', '%weedout%', NULL, '$**.operation') IS NOT NULL
-AS operation_contains_weedout;
-weedout	operation_contains_weedout
-["weedout"]	1
+AS operation_contains_weedout,
+JSON_SEARCH(@var, 'one', 'weedout', NULL, '$**.access_type') IS NOT NULL
+AS access_type_is_weedout;
+weedout	operation_contains_weedout	access_type_is_weedout
+["weedout"]	1	1
+SET @saved_explain_json_format_version = @@explain_json_format_version;
+SET explain_json_format_version = 1;
+EXPLAIN FORMAT=JSON INTO @var SELECT b FROM t WHERE a IN (SELECT t1.b
+FROM t AS t1 JOIN t AS t2 ON t1.b);
+SELECT
+JSON_CONTAINS_PATH(@var, 'one', '$**.duplicates_removal')
+AS json_v1_duplicates_removal,
+JSON_SEARCH(@var, 'one', 'weedout', NULL, '$**.access_type') IS NULL
+AS json_v1_has_no_weedout_access_type;
+json_v1_duplicates_removal	json_v1_has_no_weedout_access_type
+1	1
+SET explain_json_format_version = @saved_explain_json_format_version;
 set optimizer_switch="materialization=on,duplicateweedout=off";
 EXPLAIN SELECT * FROM t WHERE t.a IN (SELECT a FROM t AS t1
 WHERE t1.b <> 30);

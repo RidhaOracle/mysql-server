@@ -916,13 +916,25 @@ set optimizer_switch="loosescan=off,duplicateweedout=on";
 let $query = SELECT b FROM t WHERE a IN (SELECT t1.b
                                          FROM t AS t1 JOIN t AS t2 ON t1.b);
 eval EXPLAIN $query;
+eval EXPLAIN FORMAT=TRADITIONAL $query;
 --replace_regex $elide_costs
 eval EXPLAIN FORMAT=tree $query;
 eval EXPLAIN FORMAT=JSON INTO @var $query;
 SELECT
 JSON_EXTRACT(@var, '$**.semijoin_strategy') AS weedout,
 JSON_SEARCH(@var, 'one', '%weedout%', NULL, '$**.operation') IS NOT NULL
-AS operation_contains_weedout;
+AS operation_contains_weedout,
+JSON_SEARCH(@var, 'one', 'weedout', NULL, '$**.access_type') IS NOT NULL
+AS access_type_is_weedout;
+SET @saved_explain_json_format_version = @@explain_json_format_version;
+SET explain_json_format_version = 1;
+eval EXPLAIN FORMAT=JSON INTO @var $query;
+SELECT
+JSON_CONTAINS_PATH(@var, 'one', '$**.duplicates_removal')
+AS json_v1_duplicates_removal,
+JSON_SEARCH(@var, 'one', 'weedout', NULL, '$**.access_type') IS NULL
+AS json_v1_has_no_weedout_access_type;
+SET explain_json_format_version = @saved_explain_json_format_version;
 # Materialization strategy
 set optimizer_switch="materialization=on,duplicateweedout=off";
 let $query = SELECT * FROM t WHERE t.a IN (SELECT a FROM t AS t1
