@@ -57,9 +57,6 @@ INSERT INTO rtree_cached SELECT id + 512, ST_GeomFromText(CONCAT('POINT(', id + 
 INSERT INTO rtree_cached SELECT id + 1024, ST_GeomFromText(CONCAT('POINT(', id + 1024, ' ', id + 1024, ')'), 0), pad FROM rtree_cached;
 INSERT INTO rtree_cached SELECT id + 2048, ST_GeomFromText(CONCAT('POINT(', id + 2048, ' ', id + 2048, ')'), 0), pad FROM rtree_cached;
 INSERT INTO rtree_cached SELECT id + 4096, ST_GeomFromText(CONCAT('POINT(', id + 4096, ' ', id + 4096, ')'), 0), pad FROM rtree_cached;
-SELECT get_n_cached_pages('test/rtree_cached', 'g_idx') AS cached_pages, count_index_pages_in_lru('test/rtree_cached', 'g_idx') AS buffer_pages;;
-cached_pages	buffer_pages
-42	43
 DROP FUNCTION get_n_cached_pages;
 DROP FUNCTION count_index_pages_in_lru;
 DROP TABLE rtree_cached;

@@ -39,8 +39,6 @@ while ($row_count < 8192)
 --let $expected_non_leaf_pages= 1
 --source suite/innodb/include/check_cached_index_pages.inc
 
---eval SELECT get_n_cached_pages('$cached_index_pages_table', '$cached_index_pages_index') AS cached_pages, count_index_pages_in_lru('$cached_index_pages_table', '$cached_index_pages_index') AS buffer_pages;
-
 DROP FUNCTION get_n_cached_pages;
 DROP FUNCTION count_index_pages_in_lru;
 DROP TABLE rtree_cached;
