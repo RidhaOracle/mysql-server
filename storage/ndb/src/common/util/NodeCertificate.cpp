@@ -104,7 +104,8 @@ bool PkiFile::remove(const char *name) {
 
   if (::remove(name) == 0) return true;  // success
 
-  /* Unusual error: access() has succeeded but remove() has failed .*/
+  /* Unusual error: access() has succeeded but remove() has failed.
+     This could be due to open file handles on the file being removed. */
   g_eventLogger->error("NDB TLS Error %d removing file %s", errno, name);
 
   if (mustSetWriteAccess) _chmod(name, _S_IREAD);
@@ -1968,6 +1969,26 @@ static int search_path_test() {
     NdbDir::remove_recursive(dir1.c_str());
     NdbDir::remove_recursive(dir2.c_str());
     delete sp2;
+  }
+
+  /* TrustStore::load(), TrustStore::open()
+     (Negative test: no trust store on disk)
+  */
+  {
+    FILE *fp = nullptr;
+    STACK_OF(X509) *trusted = sk_X509_new_null();
+    int r1 = TrustStore::load(trusted, &searchPath);
+    if (r1 != 0) return 25;  // should find 0 trusted CAs
+    if (sk_X509_num(trusted) != 0) return 26;
+    if (searchPath.size() != 4) return 27;
+    for (size_t i = 0; i < 4; i++) {
+      fp = TrustStore::open(searchPath.dir(i), "r");
+      if (fp) return 26;  // fp should be null
+    }
+    TrustStore::close(fp);  // okay to free null fp
+    sk_X509_free(trusted);
+    bool r = TrustStore::remove(searchPath.dir(0));
+    if (r) return 28;  // should be false because file did not exist
   }
 
   return 0;
