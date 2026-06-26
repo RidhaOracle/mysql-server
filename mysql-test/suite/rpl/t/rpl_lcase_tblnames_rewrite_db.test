@@ -20,6 +20,7 @@
 -- source include/not_lowercase1.inc
 # CSA works only with GTIDs (this test sets GTID mode to OFF)
 --source include/have_mta.inc
+--source include/not_rpl_gtid_only.inc
 -- source include/rpl/init_source_replica.inc
 
 SET SQL_LOG_BIN=0;
