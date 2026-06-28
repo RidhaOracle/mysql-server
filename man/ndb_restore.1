@@ -2,12 +2,12 @@
 .\"     Title: ndb_restore
 .\"    Author: [FIXME: author] [see http://docbook.sf.net/el/author]
 .\" Generator: DocBook XSL Stylesheets v1.79.1 <http://docbook.sf.net/>
-.\"      Date: 03/23/2026
+.\"      Date: 06/18/2026
 .\"    Manual: MySQL Database System
 .\"    Source: MySQL 8.0
 .\"  Language: English
 .\"
-.TH "NDB_RESTORE" "1" "03/23/2026" "MySQL 8\&.0" "MySQL Database System"
+.TH "NDB_RESTORE" "1" "06/18/2026" "MySQL 8\&.0" "MySQL Database System"
 .\" -----------------------------------------------------------------
 .\" * Define some portability stuff
 .\" -----------------------------------------------------------------
@@ -920,17 +920,11 @@ lB l
 lB l
 lB l
 lB l
-lB l
 lB l.
 T{
 Command-Line Format
 T}:T{
 --allow-pk-changes[=0|1]
-T}
-T{
-Introduced
-T}:T{
-8.0.21-ndb-8.0.21
 T}
 T{
 Type
@@ -1238,17 +1232,11 @@ process\&. However, the data files must always be applied before the logs\&.
 allbox tab(:);
 lB l
 lB l
-lB l
 lB l.
 T{
 Command-Line Format
 T}:T{
 --backup-password=password
-T}
-T{
-Introduced
-T}:T{
-8.0.22-ndb-8.0.22
 T}
 T{
 Type
@@ -1293,17 +1281,11 @@ stdin, as when using
 \fB\-\-backup\-password\-from\-stdin[=TRUE|FALSE]\fR
 .TS
 allbox tab(:);
-lB l
 lB l.
 T{
 Command-Line Format
 T}:T{
 --backup-password-from-stdin
-T}
-T{
-Introduced
-T}:T{
-8.0.24-ndb-8.0.24
 T}
 .TE
 .sp 1
@@ -1378,22 +1360,6 @@ In NDB 8\&.0, this option is required\&.
 .IP \(bu 2.3
 .\}
 \fB\-\-character\-sets\-dir\fR
-.TS
-allbox tab(:);
-lB l
-lB l.
-T{
-Command-Line Format
-T}:T{
---character-sets-dir=path
-T}
-T{
-Removed
-T}:T{
-8.0.31
-T}
-.TE
-.sp 1
 Directory containing character sets\&.
 .RE
 .sp
@@ -1593,17 +1559,11 @@ Write core file on error; used in debugging\&.
 \fB\-\-decrypt\fR
 .TS
 allbox tab(:);
-lB l
 lB l.
 T{
 Command-Line Format
 T}:T{
 --decrypt
-T}
-T{
-Introduced
-T}:T{
-8.0.22-ndb-8.0.22
 T}
 .TE
 .sp 1
@@ -2310,17 +2270,11 @@ lB l
 lB l
 lB l
 lB l
-lB l
 lB l.
 T{
 Command-Line Format
 T}:T{
 --ignore-extended-pk-updates[=0|1]
-T}
-T{
-Introduced
-T}:T{
-8.0.21-ndb-8.0.21
 T}
 T{
 Type
@@ -2417,17 +2371,11 @@ Comma\-delimited list of one or more databases to restore\&. Often used together
 \fB\-\-include\-stored\-grants\fR
 .TS
 allbox tab(:);
-lB l
 lB l.
 T{
 Command-Line Format
 T}:T{
 --include-stored-grants
-T}
-T{
-Introduced
-T}:T{
-8.0.19-ndb-8.0.19
 T}
 .TE
 .sp 1
@@ -2923,22 +2871,6 @@ Set node ID for this node, overriding any ID set by
 .IP \(bu 2.3
 .\}
 \fB\-\-ndb\-optimized\-node\-selection\fR
-.TS
-allbox tab(:);
-lB l
-lB l.
-T{
-Command-Line Format
-T}:T{
---ndb-optimized-node-selection
-T}
-T{
-Removed
-T}:T{
-8.0.31
-T}
-.TE
-.sp 1
 Enable optimizations for selection of nodes for transactions\&. Enabled by default; use
 \fB\-\-skip\-ndb\-optimized\-node\-selection\fR
 to disable\&.
@@ -3021,17 +2953,11 @@ lB l
 lB l
 lB l
 lB l
-lB l
 lB l.
 T{
 Command-Line Format
 T}:T{
 --num-slices=#
-T}
-T{
-Introduced
-T}:T{
-8.0.20-ndb-8.0.20
 T}
 T{
 Type
@@ -3780,17 +3706,11 @@ and related parameters), in order to free space more quickly\&.
 allbox tab(:);
 lB l
 lB l
-lB l
 lB l.
 T{
 Command-Line Format
 T}:T{
 --remap-column=string
-T}
-T{
-Introduced
-T}:T{
-8.0.21-ndb-8.0.21
 T}
 T{
 Type
@@ -4070,7 +3990,7 @@ T}
 T{
 Deprecated
 T}:T{
-8.0.16-ndb-8.0.16
+Yes
 T}
 .TE
 .sp 1
@@ -4221,17 +4141,11 @@ option works only in the case of missing blob parts tables\&.
 \fB\-\-skip\-fk\-checks\fR
 .TS
 allbox tab(:);
-lB l
 lB l.
 T{
 Command-Line Format
 T}:T{
 --skip-fk-checks
-T}
-T{
-Introduced
-T}:T{
-8.0.45-ndb-8.0.45
 T}
 .TE
 .sp 1
@@ -4368,17 +4282,11 @@ lB l
 lB l
 lB l
 lB l
-lB l
 lB l.
 T{
 Command-Line Format
 T}:T{
 --slice-id=#
-T}
-T{
-Introduced
-T}:T{
-8.0.20-ndb-8.0.20
 T}
 T{
 Type
@@ -4459,17 +4367,11 @@ for the current directory\&.
 allbox tab(:);
 lB l
 lB l
-lB l
 lB l.
 T{
 Command-Line Format
 T}:T{
 --timestamp-printouts{=true|false}
-T}
-T{
-Introduced
-T}:T{
-8.0.33-ndb-8.0.33
 T}
 T{
 Type
@@ -4591,17 +4493,11 @@ Display version information and exit\&.
 \fB\-\-with\-apply\-status\fR
 .TS
 allbox tab(:);
-lB l
 lB l.
 T{
 Command-Line Format
 T}:T{
 --with-apply-status
-T}
-T{
-Introduced
-T}:T{
-8.0.29-ndb-8.0.29
 T}
 .TE
 .sp 1

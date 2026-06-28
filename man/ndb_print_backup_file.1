@@ -2,12 +2,12 @@
 .\"     Title: ndb_print_backup_file
 .\"    Author: [FIXME: author] [see http://docbook.sf.net/el/author]
 .\" Generator: DocBook XSL Stylesheets v1.79.1 <http://docbook.sf.net/>
-.\"      Date: 03/23/2026
+.\"      Date: 06/18/2026
 .\"    Manual: MySQL Database System
 .\"    Source: MySQL 8.0
 .\"  Language: English
 .\"
-.TH "NDB_PRINT_BACKUP_FILE" "1" "03/23/2026" "MySQL 8\&.0" "MySQL Database System"
+.TH "NDB_PRINT_BACKUP_FILE" "1" "06/18/2026" "MySQL 8\&.0" "MySQL Database System"
 .\" -----------------------------------------------------------------
 .\" * Define some portability stuff
 .\" -----------------------------------------------------------------
@@ -380,17 +380,11 @@ option\&. Beginning with NDB 8\&.0\&.24, the program supports a number of option
 \fB\-K\fR
 .TS
 allbox tab(:);
-lB l
 lB l.
 T{
 Command-Line Format
 T}:T{
 --backup-key=key
-T}
-T{
-Introduced
-T}:T{
-8.0.31-ndb-8.0.31
 T}
 .TE
 .sp 1
@@ -408,17 +402,11 @@ Specify the key needed to decrypt an encrypted backup\&.
 \fB\-\-backup\-key\-from\-stdin\fR
 .TS
 allbox tab(:);
-lB l
 lB l.
 T{
 Command-Line Format
 T}:T{
 --backup-key-from-stdin
-T}
-T{
-Introduced
-T}:T{
-8.0.31-ndb-8.0.31
 T}
 .TE
 .sp 1
@@ -441,17 +429,11 @@ with no password supplied\&.
 allbox tab(:);
 lB l
 lB l
-lB l
 lB l.
 T{
 Command-Line Format
 T}:T{
 --backup-password=password
-T}
-T{
-Introduced
-T}:T{
-8.0.22-ndb-8.0.22
 T}
 T{
 Type
@@ -481,17 +463,11 @@ The long form of this option is available beginning with NDB 8\&.0\&.24\&.
 \fB\-\-backup\-password\-from\-stdin\fR
 .TS
 allbox tab(:);
-lB l
 lB l.
 T{
 Command-Line Format
 T}:T{
 --backup-password-from-stdin
-T}
-T{
-Introduced
-T}:T{
-8.0.24-ndb-8.0.24
 T}
 .TE
 .sp 1
@@ -514,17 +490,11 @@ with no password supplied\&.
 allbox tab(:);
 lB l
 lB l
-lB l
 lB l.
 T{
 Command-Line Format
 T}:T{
 --control-directory-number=#
-T}
-T{
-Introduced
-T}:T{
-8.0.24-ndb-8.0.24
 T}
 T{
 Type
@@ -657,17 +627,11 @@ Also read groups with concat(group, suffix)\&.
 allbox tab(:);
 lB l
 lB l
-lB l
 lB l.
 T{
 Command-Line Format
 T}:T{
 --fragment-id=#
-T}
-T{
-Introduced
-T}:T{
-8.0.24-ndb-8.0.24
 T}
 T{
 Type
@@ -696,7 +660,6 @@ Fragment ID\&. Used together with
 \fB\-\-help\fR
 .TS
 allbox tab(:);
-lB l
 lB l.
 T{
 Command-Line Format
@@ -705,11 +668,6 @@ T}:T{
 --help
 .PP
 --usage
-T}
-T{
-Introduced
-T}:T{
-8.0.24-ndb-8.0.24
 T}
 .TE
 .sp 1
@@ -783,17 +741,11 @@ Do not read default options from any option file other than login file\&.
 \fB\-\-no\-print\-rows\fR
 .TS
 allbox tab(:);
-lB l
 lB l.
 T{
 Command-Line Format
 T}:T{
 --no-print-rows
-T}
-T{
-Introduced
-T}:T{
-8.0.24-ndb-8.0.24
 T}
 .TE
 .sp 1
@@ -833,17 +785,11 @@ Print program argument list and exit\&.
 \fB\-\-print\-header\-words\fR
 .TS
 allbox tab(:);
-lB l
 lB l.
 T{
 Command-Line Format
 T}:T{
 --print-header-words
-T}
-T{
-Introduced
-T}:T{
-8.0.24-ndb-8.0.24
 T}
 .TE
 .sp 1
@@ -861,17 +807,11 @@ Include header words in output\&.
 \fB\-\-print\-restored\-rows\fR
 .TS
 allbox tab(:);
-lB l
 lB l.
 T{
 Command-Line Format
 T}:T{
 --print-restored-rows
-T}
-T{
-Introduced
-T}:T{
-8.0.24-ndb-8.0.24
 T}
 .TE
 .sp 1
@@ -929,17 +869,11 @@ is the fragment ID set using
 \fB\-\-print\-rows\fR
 .TS
 allbox tab(:);
-lB l
 lB l.
 T{
 Command-Line Format
 T}:T{
 --print-rows
-T}
-T{
-Introduced
-T}:T{
-8.0.24-ndb-8.0.24
 T}
 .TE
 .sp 1
@@ -958,17 +892,11 @@ Print rows\&. This option is enabled by default; to disable it, use
 \fB\-\-print\-rows\-per\-page\fR
 .TS
 allbox tab(:);
-lB l
 lB l.
 T{
 Command-Line Format
 T}:T{
 --print-rows-per-page
-T}
-T{
-Introduced
-T}:T{
-8.0.24-ndb-8.0.24
 T}
 .TE
 .sp 1
@@ -988,17 +916,11 @@ Print rows per page\&.
 allbox tab(:);
 lB l
 lB l
-lB l
 lB l.
 T{
 Command-Line Format
 T}:T{
 --rowid-file=path
-T}
-T{
-Introduced
-T}:T{
-8.0.24-ndb-8.0.24
 T}
 T{
 Type
@@ -1026,17 +948,11 @@ File to check for row ID\&.
 \fB\-\-show\-ignored\-rows\fR
 .TS
 allbox tab(:);
-lB l
 lB l.
 T{
 Command-Line Format
 T}:T{
 --show-ignored-rows
-T}
-T{
-Introduced
-T}:T{
-8.0.24-ndb-8.0.24
 T}
 .TE
 .sp 1
@@ -1056,17 +972,11 @@ Show ignored rows\&.
 allbox tab(:);
 lB l
 lB l
-lB l
 lB l.
 T{
 Command-Line Format
 T}:T{
 --table-id=#
-T}
-T{
-Introduced
-T}:T{
-8.0.24-ndb-8.0.24
 T}
 T{
 Type
@@ -1120,17 +1030,11 @@ Display help text and exit; same as
 allbox tab(:);
 lB l
 lB l
-lB l
 lB l.
 T{
 Command-Line Format
 T}:T{
 --verbose[=#]
-T}
-T{
-Introduced
-T}:T{
-8.0.24-ndb-8.0.24
 T}
 T{
 Type

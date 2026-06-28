@@ -2,12 +2,12 @@
 .\"     Title: mysql
 .\"    Author: [FIXME: author] [see http://docbook.sf.net/el/author]
 .\" Generator: DocBook XSL Stylesheets v1.79.1 <http://docbook.sf.net/>
-.\"      Date: 03/23/2026
+.\"      Date: 06/18/2026
 .\"    Manual: MySQL Database System
 .\"    Source: MySQL 8.0
 .\"  Language: English
 .\"
-.TH "MYSQL" "1" "03/23/2026" "MySQL 8\&.0" "MySQL Database System"
+.TH "MYSQL" "1" "06/18/2026" "MySQL 8\&.0" "MySQL Database System"
 .\" -----------------------------------------------------------------
 .\" * Define some portability stuff
 .\" -----------------------------------------------------------------
@@ -174,17 +174,11 @@ Display a help message and exit\&.
 .TS
 allbox tab(:);
 lB l
-lB l
 lB l.
 T{
 Command-Line Format
 T}:T{
 --authentication-oci-client-config-profile=profileName
-T}
-T{
-Introduced
-T}:T{
-8.0.33
 T}
 T{
 Type
@@ -322,7 +316,6 @@ option\&.
 allbox tab(:);
 lB l
 lB l
-lB l
 lB l.
 T{
 Command-Line Format
@@ -335,14 +328,9 @@ T}:T{
 Boolean
 T}
 T{
-Default Value (≥ 8.0.19)
+Default Value
 T}:T{
 FALSE in noninteractive mode
-T}
-T{
-Default Value (≤ 8.0.18)
-T}:T{
-FALSE
 T}
 .TE
 .sp 1
@@ -657,17 +645,11 @@ data structures\&. See
 allbox tab(:);
 lB l
 lB l
-lB l
 lB l.
 T{
 Command-Line Format
 T}:T{
 --commands
-T}
-T{
-Introduced
-T}:T{
-8.0.43
 T}
 T{
 Type
@@ -1102,7 +1084,7 @@ T}
 T{
 Deprecated
 T}:T{
-8.0.18
+Yes
 T}
 T{
 Type
@@ -1137,17 +1119,11 @@ allbox tab(:);
 lB l
 lB l
 lB l
-lB l
 lB l.
 T{
 Command-Line Format
 T}:T{
 --compression-algorithms=value
-T}
-T{
-Introduced
-T}:T{
-8.0.18
 T}
 T{
 Type
@@ -1641,17 +1617,11 @@ the section called \(lqMYSQL CLIENT COMMANDS\(rq\&.
 .TS
 allbox tab(:);
 lB l
-lB l
 lB l.
 T{
 Command-Line Format
 T}:T{
 --dns-srv-name=name
-T}
-T{
-Introduced
-T}:T{
-8.0.22
 T}
 T{
 Type
@@ -1806,7 +1776,6 @@ does not use the history file\&.
 allbox tab(:);
 lB l
 lB l
-lB l
 lB l.
 T{
 Command-Line Format
@@ -1814,14 +1783,9 @@ T}:T{
 --fido-register-factor=value
 T}
 T{
-Introduced
-T}:T{
-8.0.27
-T}
-T{
 Deprecated
 T}:T{
-8.0.35
+Yes
 T}
 T{
 Type
@@ -2195,17 +2159,11 @@ Write line numbers for errors\&. Disable this with
 allbox tab(:);
 lB l
 lB l
-lB l
 lB l.
 T{
 Command-Line Format
 T}:T{
 --load-data-local-dir=dir_name
-T}
-T{
-Introduced
-T}:T{
-8.0.21
 T}
 T{
 Type
@@ -2554,17 +2512,11 @@ The buffer size for TCP/IP and socket communication\&. (Default value is 16KB\&.
 .TS
 allbox tab(:);
 lB l
-lB l
 lB l.
 T{
 Command-Line Format
 T}:T{
 --network-namespace=name
-T}
-T{
-Introduced
-T}:T{
-8.0.22
 T}
 T{
 Type
@@ -2976,17 +2928,11 @@ allbox tab(:);
 lB l
 lB l
 lB l
-lB l
 lB l.
 T{
 Command-Line Format
 T}:T{
 --plugin-authentication-kerberos-client-mode
-T}
-T{
-Introduced
-T}:T{
-8.0.32
 T}
 T{
 Type
@@ -3688,17 +3634,11 @@ Do not write line numbers for errors\&. Useful when you want to compare result f
 \fB\-\-skip\-system\-command\fR
 .TS
 allbox tab(:);
-lB l
 lB l.
 T{
 Command-Line Format
 T}:T{
 --skip-system-command
-T}
-T{
-Introduced
-T}:T{
-8.0.40
 T}
 .TE
 .sp 1
@@ -3783,7 +3723,7 @@ T}
 T{
 Deprecated
 T}:T{
-8.0.34
+Yes
 T}
 T{
 Type
@@ -3943,17 +3883,11 @@ allbox tab(:);
 lB l
 lB l
 lB l
-lB l
 lB l.
 T{
 Command-Line Format
 T}:T{
 --system-command[={ON|OFF}]
-T}
-T{
-Introduced
-T}:T{
-8.0.40
 T}
 T{
 Disabled by
@@ -4050,17 +3984,11 @@ the section called \(lqMYSQL CLIENT COMMANDS\(rq, discusses tee files further\&.
 .TS
 allbox tab(:);
 lB l
-lB l
 lB l.
 T{
 Command-Line Format
 T}:T{
 --tls-ciphersuites=ciphersuite_list
-T}
-T{
-Introduced
-T}:T{
-8.0.16
 T}
 T{
 Type
@@ -4088,7 +4016,6 @@ This option was added in MySQL 8\&.0\&.16\&.
 allbox tab(:);
 lB l
 lB l
-lB l
 lB l.
 T{
 Command-Line Format
@@ -4101,7 +4028,7 @@ T}:T{
 String
 T}
 T{
-Default Value (≥ 8.0.16)
+Default Value
 T}:T{
 .PP
 TLSv1,TLSv1.1,TLSv1.2,TLSv1.3
@@ -4109,11 +4036,6 @@ TLSv1,TLSv1.1,TLSv1.2,TLSv1.3
 .PP
 TLSv1,TLSv1.1,TLSv1.2
 (otherwise)
-T}
-T{
-Default Value (≤ 8.0.15)
-T}:T{
-TLSv1,TLSv1.1,TLSv1.2
 T}
 .TE
 .sp 1
@@ -4353,17 +4275,11 @@ $> \fBmysql \-\-xml \-uroot \-e "SHOW VARIABLES LIKE \*(Aqversion%\*(Aq"\fR
 .TS
 allbox tab(:);
 lB l
-lB l
 lB l.
 T{
 Command-Line Format
 T}:T{
 --zstd-compression-level=#
-T}
-T{
-Introduced
-T}:T{
-8.0.18
 T}
 T{
 Type

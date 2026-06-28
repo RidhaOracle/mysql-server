@@ -2,12 +2,12 @@
 .\"     Title: mysqlbinlog
 .\"    Author: [FIXME: author] [see http://docbook.sf.net/el/author]
 .\" Generator: DocBook XSL Stylesheets v1.79.1 <http://docbook.sf.net/>
-.\"      Date: 03/23/2026
+.\"      Date: 06/18/2026
 .\"    Manual: MySQL Database System
 .\"    Source: MySQL 8.0
 .\"  Language: English
 .\"
-.TH "MYSQLBINLOG" "1" "03/23/2026" "MySQL 8\&.0" "MySQL Database System"
+.TH "MYSQLBINLOG" "1" "06/18/2026" "MySQL 8\&.0" "MySQL Database System"
 .\" -----------------------------------------------------------------
 .\" * Define some portability stuff
 .\" -----------------------------------------------------------------
@@ -495,7 +495,6 @@ allbox tab(:);
 lB l
 lB l
 lB l
-lB l
 lB l.
 T{
 Command-Line Format
@@ -503,14 +502,9 @@ T}:T{
 --compress[={OFF|ON}]
 T}
 T{
-Introduced
-T}:T{
-8.0.17
-T}
-T{
 Deprecated
 T}:T{
-8.0.18
+Yes
 T}
 T{
 Type
@@ -545,17 +539,11 @@ allbox tab(:);
 lB l
 lB l
 lB l
-lB l
 lB l.
 T{
 Command-Line Format
 T}:T{
 --compression-algorithms=value
-T}
-T{
-Introduced
-T}:T{
-8.0.18
 T}
 T{
 Type
@@ -1893,17 +1881,11 @@ the section called \(lqUSING MYSQLBINLOG TO BACK UP BINARY LOG FILES\(rq\&.
 \fB\-\-read\-from\-remote\-source=\fR\fB\fItype\fR\fR
 .TS
 allbox tab(:);
-lB l
 lB l.
 T{
 Command-Line Format
 T}:T{
 --read-from-remote-source=type
-T}
-T{
-Introduced
-T}:T{
-8.0.26
 T}
 .TE
 .sp 1
@@ -1959,7 +1941,7 @@ T}
 T{
 Deprecated
 T}:T{
-8.0.26
+Yes
 T}
 .TE
 .sp 1
@@ -2052,17 +2034,11 @@ option value is treated as a prefix that modifies output file names\&.
 allbox tab(:);
 lB l
 lB l
-lB l
 lB l.
 T{
 Command-Line Format
 T}:T{
 --require-row-format
-T}
-T{
-Introduced
-T}:T{
-8.0.19
 T}
 T{
 Type
@@ -2549,7 +2525,7 @@ T}
 T{
 Deprecated
 T}:T{
-8.0.34
+Yes
 T}
 T{
 Type
@@ -2919,17 +2895,11 @@ Section\ \&9.5, \(lqPoint-in-Time (Incremental) Recovery\(rq\&.
 .TS
 allbox tab(:);
 lB l
-lB l
 lB l.
 T{
 Command-Line Format
 T}:T{
 --tls-ciphersuites=ciphersuite_list
-T}
-T{
-Introduced
-T}:T{
-8.0.16
 T}
 T{
 Type
@@ -2957,7 +2927,6 @@ This option was added in MySQL 8\&.0\&.16\&.
 allbox tab(:);
 lB l
 lB l
-lB l
 lB l.
 T{
 Command-Line Format
@@ -2970,7 +2939,7 @@ T}:T{
 String
 T}
 T{
-Default Value (≥ 8.0.16)
+Default Value
 T}:T{
 .PP
 TLSv1,TLSv1.1,TLSv1.2,TLSv1.3
@@ -2978,11 +2947,6 @@ TLSv1,TLSv1.1,TLSv1.2,TLSv1.3
 .PP
 TLSv1,TLSv1.1,TLSv1.2
 (otherwise)
-T}
-T{
-Default Value (≤ 8.0.15)
-T}:T{
-TLSv1,TLSv1.1,TLSv1.2
 T}
 .TE
 .sp 1
@@ -3144,17 +3108,11 @@ when using this option is the same as the MySQL Server version\&.
 .TS
 allbox tab(:);
 lB l
-lB l
 lB l.
 T{
 Command-Line Format
 T}:T{
 --zstd-compression-level=#
-T}
-T{
-Introduced
-T}:T{
-8.0.18
 T}
 T{
 Type

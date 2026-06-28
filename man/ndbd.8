@@ -2,12 +2,12 @@
 .\"     Title: ndbd
 .\"    Author: [FIXME: author] [see http://docbook.sf.net/el/author]
 .\" Generator: DocBook XSL Stylesheets v1.79.1 <http://docbook.sf.net/>
-.\"      Date: 03/23/2026
+.\"      Date: 06/18/2026
 .\"    Manual: MySQL Database System
 .\"    Source: MySQL 8.0
 .\"  Language: English
 .\"
-.TH "NDBD" "8" "03/23/2026" "MySQL 8\&.0" "MySQL Database System"
+.TH "NDBD" "8" "06/18/2026" "MySQL 8\&.0" "MySQL Database System"
 .\" -----------------------------------------------------------------
 .\" * Define some portability stuff
 .\" -----------------------------------------------------------------
@@ -534,46 +534,6 @@ Directory containing character sets\&.
 .IP \(bu 2.3
 .\}
 \fB\-\-connect\-delay=\fR\fB\fI#\fR\fR
-.TS
-allbox tab(:);
-lB l
-lB l
-lB l
-lB l
-lB l
-lB l.
-T{
-Command-Line Format
-T}:T{
---connect-delay=#
-T}
-T{
-Deprecated
-T}:T{
-Yes (removed in 8.0.28-ndb-8.0.28)
-T}
-T{
-Type
-T}:T{
-Numeric
-T}
-T{
-Default Value
-T}:T{
-5
-T}
-T{
-Minimum Value
-T}:T{
-0
-T}
-T{
-Maximum Value
-T}:T{
-3600
-T}
-.TE
-.sp 1
 Determines the time to wait between attempts to contact a management server when starting (the number of attempts is controlled by the
 \fB\-\-connect\-retries\fR
 option)\&. The default is 5 seconds\&.
@@ -598,9 +558,6 @@ lB l
 lB l
 lB l
 lB l
-lB l
-lB l
-lB l
 lB l.
 T{
 Command-Line Format
@@ -618,24 +575,9 @@ T}:T{
 12
 T}
 T{
-Minimum Value (≥ 8.0.28-ndb-8.0.28)
-T}:T{
--1
-T}
-T{
 Minimum Value
 T}:T{
 -1
-T}
-T{
-Minimum Value
-T}:T{
--1
-T}
-T{
-Minimum Value (≤ 8.0.27-ndb-8.0.27)
-T}:T{
-0
 T}
 T{
 Maximum Value
@@ -912,17 +854,11 @@ Also read groups with concat(group, suffix)\&.
 \fB\-\-filesystem\-password\fR
 .TS
 allbox tab(:);
-lB l
 lB l.
 T{
 Command-Line Format
 T}:T{
 --filesystem-password=password
-T}
-T{
-Introduced
-T}:T{
-8.0.31-ndb-8.0.31
 T}
 .TE
 .sp 1
@@ -950,17 +886,11 @@ Section\ \&25.6.14, \(lqFile System Encryption for NDB Cluster\(rq\&.
 \fB\-\-filesystem\-password\-from\-stdin\fR
 .TS
 allbox tab(:);
-lB l
 lB l.
 T{
 Command-Line Format
 T}:T{
 --filesystem-password-from-stdin={TRUE|FALSE}
-T}
-T{
-Introduced
-T}:T{
-8.0.31-ndb-8.0.31
 T}
 .TE
 .sp 1
@@ -1477,22 +1407,6 @@ Set node ID for this node, overriding any ID set by \-\-ndb\-connectstring\&.
 .IP \(bu 2.3
 .\}
 \fB\-\-ndb\-optimized\-node\-selection\fR
-.TS
-allbox tab(:);
-lB l
-lB l.
-T{
-Command-Line Format
-T}:T{
---ndb-optimized-node-selection
-T}
-T{
-Removed
-T}:T{
-8.0.31
-T}
-.TE
-.sp 1
 Enable optimizations for selection of nodes for transactions\&. Enabled by default; use
 \fB\-\-skip\-ndb\-optimized\-node\-selection\fR
 to disable\&.

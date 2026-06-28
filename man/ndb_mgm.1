@@ -2,12 +2,12 @@
 .\"     Title: ndb_mgm
 .\"    Author: [FIXME: author] [see http://docbook.sf.net/el/author]
 .\" Generator: DocBook XSL Stylesheets v1.79.1 <http://docbook.sf.net/>
-.\"      Date: 03/23/2026
+.\"      Date: 06/18/2026
 .\"    Manual: MySQL Database System
 .\"    Source: MySQL 8.0
 .\"  Language: English
 .\"
-.TH "NDB_MGM" "1" "03/23/2026" "MySQL 8\&.0" "MySQL Database System"
+.TH "NDB_MGM" "1" "06/18/2026" "MySQL 8\&.0" "MySQL Database System"
 .\" -----------------------------------------------------------------
 .\" * Define some portability stuff
 .\" -----------------------------------------------------------------
@@ -345,17 +345,11 @@ T}
 \fB\-\-backup\-password\-from\-stdin[=TRUE|FALSE]\fR
 .TS
 allbox tab(:);
-lB l
 lB l.
 T{
 Command-Line Format
 T}:T{
 --backup-password-from-stdin
-T}
-T{
-Introduced
-T}:T{
-8.0.24-ndb-8.0.24
 T}
 .TE
 .sp 1
@@ -375,22 +369,6 @@ as well\&.
 .IP \(bu 2.3
 .\}
 \fB\-\-character\-sets\-dir\fR
-.TS
-allbox tab(:);
-lB l
-lB l.
-T{
-Command-Line Format
-T}:T{
---character-sets-dir=path
-T}
-T{
-Removed
-T}:T{
-8.0.31
-T}
-.TE
-.sp 1
 Directory containing character sets\&.
 .RE
 .sp
@@ -535,22 +513,6 @@ Same as
 .IP \(bu 2.3
 .\}
 \fB\-\-core\-file\fR
-.TS
-allbox tab(:);
-lB l
-lB l.
-T{
-Command-Line Format
-T}:T{
---core-file
-T}
-T{
-Removed
-T}:T{
-8.0.31
-T}
-.TE
-.sp 1
 Write core file on error; used in debugging\&.
 .RE
 .sp
@@ -667,17 +629,11 @@ Also read groups with concat(group, suffix)\&.
 \fB\-\-encrypt\-backup\fR
 .TS
 allbox tab(:);
-lB l
 lB l.
 T{
 Command-Line Format
 T}:T{
 --encrypt-backup
-T}
-T{
-Introduced
-T}:T{
-8.0.24-ndb-8.0.24
 T}
 .TE
 .sp 1
@@ -925,22 +881,6 @@ Same as
 .IP \(bu 2.3
 .\}
 \fB\-\-ndb\-optimized\-node\-selection\fR
-.TS
-allbox tab(:);
-lB l
-lB l.
-T{
-Command-Line Format
-T}:T{
---ndb-optimized-node-selection
-T}
-T{
-Removed
-T}:T{
-8.0.31
-T}
-.TE
-.sp 1
 Enable optimizations for selection of nodes for transactions\&. Enabled by default; use
 \fB\-\-skip\-ndb\-optimized\-node\-selection\fR
 to disable\&.

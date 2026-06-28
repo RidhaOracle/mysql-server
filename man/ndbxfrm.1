@@ -2,12 +2,12 @@
 .\"     Title: ndbxfrm
 .\"    Author: [FIXME: author] [see http://docbook.sf.net/el/author]
 .\" Generator: DocBook XSL Stylesheets v1.79.1 <http://docbook.sf.net/>
-.\"      Date: 03/23/2026
+.\"      Date: 06/18/2026
 .\"    Manual: MySQL Database System
 .\"    Source: MySQL 8.0
 .\"  Language: English
 .\"
-.TH "NDBXFRM" "1" "03/23/2026" "MySQL 8\&.0" "MySQL Database System"
+.TH "NDBXFRM" "1" "06/18/2026" "MySQL 8\&.0" "MySQL Database System"
 .\" -----------------------------------------------------------------
 .\" * Define some portability stuff
 .\" -----------------------------------------------------------------
@@ -332,17 +332,11 @@ Options
 \fB\-c\fR
 .TS
 allbox tab(:);
-lB l
 lB l.
 T{
 Command-Line Format
 T}:T{
 --compress
-T}
-T{
-Introduced
-T}:T{
-8.0.22-ndb-8.0.22
 T}
 .TE
 .sp 1
@@ -366,17 +360,11 @@ using the names of the compressed file and an output file (with no options requi
 \fIkey\fR
 .TS
 allbox tab(:);
-lB l
 lB l.
 T{
 Command-Line Format
 T}:T{
 --decrypt-key=key
-T}
-T{
-Introduced
-T}:T{
-8.0.31-ndb-8.0.31
 T}
 .TE
 .sp 1
@@ -412,17 +400,11 @@ This option cannot be used together with
 \fB\-\-decrypt\-key\-from\-stdin\fR
 .TS
 allbox tab(:);
-lB l
 lB l.
 T{
 Command-Line Format
 T}:T{
 --decrypt-key-from-stdin
-T}
-T{
-Introduced
-T}:T{
-8.0.31-ndb-8.0.31
 T}
 .TE
 .sp 1
@@ -445,17 +427,11 @@ stdin\&.
 allbox tab(:);
 lB l
 lB l
-lB l
 lB l.
 T{
 Command-Line Format
 T}:T{
 --decrypt-password=password
-T}
-T{
-Introduced
-T}:T{
-8.0.22-ndb-8.0.22
 T}
 T{
 Type
@@ -501,17 +477,11 @@ This option cannot be used together with
 \fB\-\-decrypt\-password\-from\-stdin[=TRUE|FALSE]\fR
 .TS
 allbox tab(:);
-lB l
 lB l.
 T{
 Command-Line Format
 T}:T{
 --decrypt-password-from-stdin
-T}
-T{
-Introduced
-T}:T{
-8.0.24-ndb-8.0.24
 T}
 .TE
 .sp 1
@@ -638,17 +608,11 @@ CONCAT(\fIgroup\fR, \fIsuffix\fR)\&.
 allbox tab(:);
 lB l
 lB l
-lB l
 lB l.
 T{
 Command-Line Format
 T}:T{
 --encrypt-block-size=#
-T}
-T{
-Introduced
-T}:T{
-8.0.31-ndb-8.0.31
 T}
 T{
 Type
@@ -757,17 +721,11 @@ lB l
 lB l
 lB l
 lB l
-lB l
 lB l.
 T{
 Command-Line Format
 T}:T{
 --encrypt-block-size=#
-T}
-T{
-Introduced
-T}:T{
-8.0.29-ndb-8.0.29
 T}
 T{
 Type
@@ -811,17 +769,11 @@ lB l
 lB l
 lB l
 lB l
-lB l
 lB l.
 T{
 Command-Line Format
 T}:T{
 --encrypt-cipher=#
-T}
-T{
-Introduced
-T}:T{
-8.0.29-ndb-8.0.29
 T}
 T{
 Type
@@ -868,17 +820,11 @@ lB l
 lB l
 lB l
 lB l
-lB l
 lB l.
 T{
 Command-Line Format
 T}:T{
 --encrypt-kdf-iter-count=#
-T}
-T{
-Introduced
-T}:T{
-8.0.22-ndb-8.0.22
 T}
 T{
 Type
@@ -918,17 +864,11 @@ option\&.
 \fB\-\-encrypt\-key=\fR\fB\fIkey\fR\fR
 .TS
 allbox tab(:);
-lB l
 lB l.
 T{
 Command-Line Format
 T}:T{
 --encrypt-key=key
-T}
-T{
-Introduced
-T}:T{
-8.0.31-ndb-8.0.31
 T}
 .TE
 .sp 1
@@ -962,17 +902,11 @@ This option cannot be used together with
 \fB\-\-encrypt\-key\-from\-stdin\fR
 .TS
 allbox tab(:);
-lB l
 lB l.
 T{
 Command-Line Format
 T}:T{
 --encrypt-key-from-stdin
-T}
-T{
-Introduced
-T}:T{
-8.0.31-ndb-8.0.31
 T}
 .TE
 .sp 1
@@ -993,17 +927,11 @@ stdin\&.
 allbox tab(:);
 lB l
 lB l
-lB l
 lB l.
 T{
 Command-Line Format
 T}:T{
 --encrypt-password=password
-T}
-T{
-Introduced
-T}:T{
-8.0.22-ndb-8.0.22
 T}
 T{
 Type
@@ -1089,17 +1017,11 @@ This option cannot be used together with
 \fB\-\-encrypt\-password\-from\-stdin[=TRUE|FALSE]\fR
 .TS
 allbox tab(:);
-lB l
 lB l.
 T{
 Command-Line Format
 T}:T{
 --encrypt-password-from-stdin
-T}
-T{
-Introduced
-T}:T{
-8.0.24-ndb-8.0.24
 T}
 .TE
 .sp 1
@@ -1121,17 +1043,11 @@ with no password following the option\&.
 \fB\-?\fR
 .TS
 allbox tab(:);
-lB l
 lB l.
 T{
 Command-Line Format
 T}:T{
 --help
-T}
-T{
-Introduced
-T}:T{
-8.0.22-ndb-8.0.22
 T}
 .TE
 .sp 1
@@ -1150,17 +1066,11 @@ Prints usage information for the program\&.
 \fB\-i\fR
 .TS
 allbox tab(:);
-lB l
 lB l.
 T{
 Command-Line Format
 T}:T{
 --info
-T}
-T{
-Introduced
-T}:T{
-8.0.22-ndb-8.0.22
 T}
 .TE
 .sp 1
@@ -1313,17 +1223,11 @@ Print program argument list and exit\&.
 \fB\-?\fR
 .TS
 allbox tab(:);
-lB l
 lB l.
 T{
 Command-Line Format
 T}:T{
 --usage
-T}
-T{
-Introduced
-T}:T{
-8.0.22-ndb-8.0.22
 T}
 .TE
 .sp 1
@@ -1343,17 +1247,11 @@ Synonym for
 \fB\-V\fR
 .TS
 allbox tab(:);
-lB l
 lB l.
 T{
 Command-Line Format
 T}:T{
 --version
-T}
-T{
-Introduced
-T}:T{
-8.0.22-ndb-8.0.22
 T}
 .TE
 .sp 1

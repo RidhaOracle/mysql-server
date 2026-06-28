@@ -2,12 +2,12 @@
 .\"     Title: ndb_mgmd
 .\"    Author: [FIXME: author] [see http://docbook.sf.net/el/author]
 .\" Generator: DocBook XSL Stylesheets v1.79.1 <http://docbook.sf.net/>
-.\"      Date: 03/23/2026
+.\"      Date: 06/18/2026
 .\"    Manual: MySQL Database System
 .\"    Source: MySQL 8.0
 .\"  Language: English
 .\"
-.TH "NDB_MGMD" "8" "03/23/2026" "MySQL 8\&.0" "MySQL Database System"
+.TH "NDB_MGMD" "8" "06/18/2026" "MySQL 8\&.0" "MySQL Database System"
 .\" -----------------------------------------------------------------
 .\" * Define some portability stuff
 .\" -----------------------------------------------------------------
@@ -507,22 +507,6 @@ Causes the management server to bind to a specific network interface (host name 
 .IP \(bu 2.3
 .\}
 \fB\-\-character\-sets\-dir\fR
-.TS
-allbox tab(:);
-lB l
-lB l.
-T{
-Command-Line Format
-T}:T{
---character-sets-dir=path
-T}
-T{
-Removed
-T}:T{
-8.0.31
-T}
-.TE
-.sp 1
 Directory containing character sets\&.
 .RE
 .sp
@@ -539,17 +523,11 @@ Directory containing character sets\&.
 allbox tab(:);
 lB l
 lB l
-lB l
 lB l.
 T{
 Command-Line Format
 T}:T{
 --cluster-config-suffix=name
-T}
-T{
-Introduced
-T}:T{
-8.0.24
 T}
 T{
 Type
@@ -832,46 +810,6 @@ In NDB 8\&.0\&.27 and later, this must be an absolute path\&. Otherwise, the man
 .IP \(bu 2.3
 .\}
 \fB\-\-connect\-retries\fR
-.TS
-allbox tab(:);
-lB l
-lB l
-lB l
-lB l
-lB l
-lB l.
-T{
-Command-Line Format
-T}:T{
---connect-retries=#
-T}
-T{
-Removed
-T}:T{
-8.0.31
-T}
-T{
-Type
-T}:T{
-Integer
-T}
-T{
-Default Value
-T}:T{
-12
-T}
-T{
-Minimum Value
-T}:T{
-0
-T}
-T{
-Maximum Value
-T}:T{
-12
-T}
-.TE
-.sp 1
 Number of times to retry connection before giving up\&.
 .RE
 .sp
@@ -884,46 +822,6 @@ Number of times to retry connection before giving up\&.
 .IP \(bu 2.3
 .\}
 \fB\-\-connect\-retry\-delay\fR
-.TS
-allbox tab(:);
-lB l
-lB l
-lB l
-lB l
-lB l
-lB l.
-T{
-Command-Line Format
-T}:T{
---connect-retry-delay=#
-T}
-T{
-Removed
-T}:T{
-8.0.31
-T}
-T{
-Type
-T}:T{
-Integer
-T}
-T{
-Default Value
-T}:T{
-5
-T}
-T{
-Minimum Value
-T}:T{
-0
-T}
-T{
-Maximum Value
-T}:T{
-5
-T}
-.TE
-.sp 1
 Number of seconds to wait between attempts to contact management server\&.
 .RE
 .sp
@@ -970,22 +868,6 @@ Same as \-\-ndb\-connectstring\&.
 .IP \(bu 2.3
 .\}
 \fB\-\-core\-file\fR
-.TS
-allbox tab(:);
-lB l
-lB l.
-T{
-Command-Line Format
-T}:T{
---core-file
-T}
-T{
-Removed
-T}:T{
-8.0.31
-T}
-.TE
-.sp 1
 Write core file on error; used in debugging\&.
 .RE
 .sp
@@ -1485,22 +1367,6 @@ Set node ID for this node, overriding any ID set by \-\-ndb\-connectstring\&.
 .IP \(bu 2.3
 .\}
 \fB\-\-ndb\-optimized\-node\-selection\fR
-.TS
-allbox tab(:);
-lB l
-lB l.
-T{
-Command-Line Format
-T}:T{
---ndb-optimized-node-selection
-T}
-T{
-Removed
-T}:T{
-8.0.31
-T}
-.TE
-.sp 1
 Enable optimizations for selection of nodes for transactions\&. Enabled by default; use
 \fB\-\-skip\-ndb\-optimized\-node\-selection\fR
 to disable\&.

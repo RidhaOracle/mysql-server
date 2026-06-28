@@ -2,12 +2,12 @@
 .\"     Title: ndb_config
 .\"    Author: [FIXME: author] [see http://docbook.sf.net/el/author]
 .\" Generator: DocBook XSL Stylesheets v1.79.1 <http://docbook.sf.net/>
-.\"      Date: 03/23/2026
+.\"      Date: 06/18/2026
 .\"    Manual: MySQL Database System
 .\"    Source: MySQL 8.0
 .\"  Language: English
 .\"
-.TH "NDB_CONFIG" "1" "03/23/2026" "MySQL 8\&.0" "MySQL Database System"
+.TH "NDB_CONFIG" "1" "06/18/2026" "MySQL 8\&.0" "MySQL Database System"
 .\" -----------------------------------------------------------------
 .\" * Define some portability stuff
 .\" -----------------------------------------------------------------
@@ -491,17 +491,11 @@ T}
 allbox tab(:);
 lB l
 lB l
-lB l
 lB l.
 T{
 Command-Line Format
 T}:T{
 --cluster-config-suffix=name
-T}
-T{
-Introduced
-T}:T{
-8.0.24-ndb-8.0.24
 T}
 T{
 Type
@@ -641,17 +635,11 @@ option to obtain output in XML format\&.
 allbox tab(:);
 lB l
 lB l
-lB l
 lB l.
 T{
 Command-Line Format
 T}:T{
 --config-binary-file=path/to/file
-T}
-T{
-Introduced
-T}:T{
-8.0.32-ndb-8.0.32
 T}
 T{
 Type
@@ -1098,34 +1086,6 @@ Do not read default options from any option file other than login file\&.
 .IP \(bu 2.3
 .\}
 \fB\-\-nodeid=\fR\fB\fInode_id\fR\fR
-.TS
-allbox tab(:);
-lB l
-lB l
-lB l
-lB l.
-T{
-Command-Line Format
-T}:T{
---ndb-nodeid=#
-T}
-T{
-Removed
-T}:T{
-8.0.31
-T}
-T{
-Type
-T}:T{
-Integer
-T}
-T{
-Default Value
-T}:T{
-[none]
-T}
-.TE
-.sp 1
 Specify the node ID of the node for which configuration information is to be obtained\&.
 .RE
 .sp
@@ -1919,34 +1879,6 @@ Same as
 .IP \(bu 2.3
 .\}
 \fB\-\-ndb\-nodeid\fR
-.TS
-allbox tab(:);
-lB l
-lB l
-lB l
-lB l.
-T{
-Command-Line Format
-T}:T{
---ndb-nodeid=#
-T}
-T{
-Removed
-T}:T{
-8.0.31
-T}
-T{
-Type
-T}:T{
-Integer
-T}
-T{
-Default Value
-T}:T{
-[none]
-T}
-.TE
-.sp 1
 Set node ID for this node, overriding any ID set by
 \fB\-\-ndb\-connectstring\fR\&.
 .RE
@@ -1960,22 +1892,6 @@ Set node ID for this node, overriding any ID set by
 .IP \(bu 2.3
 .\}
 \fB\-\-core\-file\fR
-.TS
-allbox tab(:);
-lB l
-lB l.
-T{
-Command-Line Format
-T}:T{
---core-file
-T}
-T{
-Removed
-T}:T{
-8.0.31
-T}
-.TE
-.sp 1
 Write core file on error; used in debugging\&.
 .RE
 .sp
@@ -1988,22 +1904,6 @@ Write core file on error; used in debugging\&.
 .IP \(bu 2.3
 .\}
 \fB\-\-character\-sets\-dir\fR
-.TS
-allbox tab(:);
-lB l
-lB l.
-T{
-Command-Line Format
-T}:T{
---character-sets-dir=path
-T}
-T{
-Removed
-T}:T{
-8.0.31
-T}
-.TE
-.sp 1
 Directory containing character sets\&.
 .RE
 .sp
@@ -2108,22 +2008,6 @@ Number of seconds to wait between attempts to contact management server\&.
 .IP \(bu 2.3
 .\}
 \fB\-\-ndb\-optimized\-node\-selection\fR
-.TS
-allbox tab(:);
-lB l
-lB l.
-T{
-Command-Line Format
-T}:T{
---ndb-optimized-node-selection
-T}
-T{
-Removed
-T}:T{
-8.0.31
-T}
-.TE
-.sp 1
 Enable optimizations for selection of nodes for transactions\&. Enabled by default; use
 \fB\-\-skip\-ndb\-optimized\-node\-selection\fR
 to disable\&.
