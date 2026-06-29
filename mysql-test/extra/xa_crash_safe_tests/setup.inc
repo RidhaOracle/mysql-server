@@ -23,6 +23,7 @@
 # - mysql-test/t/xa_prepare_failure_before_prepare_2nd_phase.test
 # - mysql-test/t/xa_prepare_failure_before_prepare_in_engines.test
 # - mysql-test/t/xa_prepare_failure_before_prepare_tc.test
+# - mysql-test/t/xa_prepare_recover_after_gtid_action_crash.test
 # - mysql-test/t/xa_rollback_failure_before_gtid_externalization.test
 # - mysql-test/t/xa_rollback_failure_before_rollback_engines.test
 # - mysql-test/t/xa_rollback_failure_before_rollback_tc.test
@@ -84,6 +85,8 @@
 # - mysql-test/suite/rpl_gtid/t/rpl_gtid_xa_prepare_failure_before_prepare_2nd_phase.test
 # - mysql-test/suite/rpl_gtid/t/rpl_gtid_xa_prepare_failure_before_prepare_in_engines.test
 # - mysql-test/suite/rpl_gtid/t/rpl_gtid_xa_prepare_failure_before_write_binlog.test
+# - mysql-test/suite/rpl_gtid/t/rpl_gtid_xa_prepare_recover_after_gtid_action_crash.test
+# - mysql-test/suite/rpl_gtid/t/rpl_gtid_xa_prepare_recover_after_gtid_action_crash_nobinlog.test
 # - mysql-test/suite/rpl_gtid/t/rpl_gtid_xa_rollback_failure_after_rotate.test
 # - mysql-test/suite/rpl_gtid/t/rpl_gtid_xa_rollback_failure_before_gtid_externalization.test
 # - mysql-test/suite/rpl_gtid/t/rpl_gtid_xa_rollback_failure_before_rollback_engines.test

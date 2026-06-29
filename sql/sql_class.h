@@ -3920,7 +3920,7 @@ class THD : public MDL_context_owner,
     m_actions_before_gtid_state_update.push_back(std::move(f));
   }
 
-  /// Execute registered before-GTID-state-update actions.
+  /// Execute and remove registered before-GTID-state-update actions.
   ///
   /// @param is_commit Whether GTID state is committed.
   void call_actions_before_gtid_state_update(bool is_commit) {

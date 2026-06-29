@@ -321,8 +321,8 @@ XA PREPARE 'a';
 --source include/sync_slave_sql_with_master.inc
 
 --source include/rpl_connection_slave.inc
---let $xa_prepared_count = 1
---source include/wait_for_xa_prepared_count.inc
+--let $expected_prepared_xa_count = 1
+--source extra/xa_crash_safe_tests/assert_xa_recover.inc
 XA ROLLBACK 'a';
 --source include/save_binlog_position.inc
 
@@ -347,8 +347,8 @@ INSERT INTO t VALUES (3);
 XA END 'a';
 XA PREPARE 'a';
 --source include/sync_slave_sql_with_master.inc
---let $xa_prepared_count = 1
---source include/wait_for_xa_prepared_count.inc
+--let $expected_prepared_xa_count = 1
+--source extra/xa_crash_safe_tests/assert_xa_recover.inc
 XA ROLLBACK 'a';
 --source include/save_binlog_position.inc
 
