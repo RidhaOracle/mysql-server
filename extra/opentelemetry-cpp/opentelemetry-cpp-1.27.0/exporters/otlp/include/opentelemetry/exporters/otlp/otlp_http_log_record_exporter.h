@@ -85,6 +85,8 @@ private:
   std::unique_ptr<OtlpHttpClient> http_client_;
   // For testing
   friend class OtlpHttpLogRecordExporterTestPeer;
+
+public: // MySQL
   /**
    * Create an OtlpHttpLogRecordExporter using the specified http client.
    * Only tests can call this constructor directly.

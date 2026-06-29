@@ -1,6 +1,8 @@
 # Copyright The OpenTelemetry Authors
 # SPDX-License-Identifier: Apache-2.0
 
+# Local MySQL change: protobuf::libprotobuf -> ext::libprotobuf
+
 #
 # The dependency on opentelemetry-proto can be provided by order
 # of decreasing priority, options are:
@@ -191,8 +193,8 @@ endif()
 # libraries and linked against a statically built protobuf library. This may
 # result in crashes. To prevent such conflicts, we also need to build
 # opentelemetry_exporter_otlp_grpc_client as a static library.
-if(TARGET protobuf::libprotobuf)
-  get_target_property(protobuf_lib_type protobuf::libprotobuf TYPE)
+if(TARGET ext::libprotobuf)
+  get_target_property(protobuf_lib_type ext::libprotobuf TYPE)
 else()
   set(protobuf_lib_type "SHARED_LIBRARY")
   target_link_libraries(opentelemetry_proto PUBLIC ${Protobuf_LIBRARIES})
@@ -277,6 +279,14 @@ add_custom_command(
   COMMENT "[Run]: ${PROTOBUF_RUN_PROTOC_COMMAND}"
   DEPENDS ${PROTOBUF_GENERATE_DEPENDS})
 
+# MySQL local change (begin)
+IF(WITH_PROTOBUF STREQUAL "bundled")
+  INCLUDE_DIRECTORIES(BEFORE SYSTEM
+    "${BUNDLED_PROTO_SRCDIR}"
+    "${BUNDLED_ABSEIL_SRCDIR}")
+ENDIF()
+# MySQL local change (end)
+
 unset(OTELCPP_PROTO_TARGET_OPTIONS)
 if((NOT protobuf_lib_type STREQUAL "STATIC_LIBRARY")
    AND (NOT DEFINED BUILD_SHARED_LIBS OR BUILD_SHARED_LIBS))
@@ -321,8 +331,8 @@ set_target_properties(
              C_VISIBILITY_PRESET "hidden"
              CXX_VISIBILITY_PRESET "hidden"
              VISIBILITY_INLINES_HIDDEN OFF)
-if(NOT Protobuf_INCLUDE_DIRS AND TARGET protobuf::libprotobuf)
-  get_target_property(Protobuf_INCLUDE_DIRS protobuf::libprotobuf
+if(NOT Protobuf_INCLUDE_DIRS AND TARGET ext::libprotobuf)
+  get_target_property(Protobuf_INCLUDE_DIRS ext::libprotobuf
                       INTERFACE_INCLUDE_DIRECTORIES)
 endif()
 if(Protobuf_INCLUDE_DIRS)
@@ -404,9 +414,10 @@ if(OPENTELEMETRY_INSTALL)
     PATTERN "*.h")
 endif()
 
-if(TARGET protobuf::libprotobuf)
-  target_link_libraries(opentelemetry_proto PUBLIC protobuf::libprotobuf)
+if(TARGET ext::libprotobuf)
+  target_link_libraries(opentelemetry_proto PUBLIC ext::libprotobuf)
 else() # cmake 3.8 or lower
+  MESSAGE(FATAL_ERROR "Wrong protobuf library")
   target_link_libraries(opentelemetry_proto PUBLIC ${Protobuf_LIBRARIES})
 endif()
 

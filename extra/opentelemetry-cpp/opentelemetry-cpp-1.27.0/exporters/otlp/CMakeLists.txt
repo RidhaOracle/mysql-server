@@ -3,6 +3,8 @@
 
 include(${PROJECT_SOURCE_DIR}/cmake/pkgconfig.cmake)
 
+# Local MySQL change: protobuf::libprotobuf -> ext::libprotobuf
+
 if(protobuf_lib_type STREQUAL "STATIC_LIBRARY")
   set(OPENTELEMETRY_OTLP_TARGETS_LIB_TYPE STATIC)
 else()
@@ -30,6 +32,13 @@ target_include_directories(
   opentelemetry_otlp_recordable
   PUBLIC "$<BUILD_INTERFACE:${CMAKE_CURRENT_LIST_DIR}/include>"
          "$<INSTALL_INTERFACE:include>")
+
+# MySQL local change (begin)
+IF(WITH_PROTOBUF STREQUAL "bundled")
+  TARGET_INCLUDE_DIRECTORIES(opentelemetry_otlp_recordable SYSTEM BEFORE PUBLIC
+    "${BUNDLED_ABSEIL_SRCDIR}")
+ENDIF()
+# MySQL local change (end)
 
 set(OPENTELEMETRY_OTLP_TARGETS opentelemetry_otlp_recordable)
 
@@ -874,7 +883,7 @@ if(BUILD_TESTING)
   add_executable(otlp_recordable_test test/otlp_recordable_test.cc)
   target_link_libraries(
     otlp_recordable_test ${GTEST_BOTH_LIBRARIES} ${CMAKE_THREAD_LIBS_INIT}
-    opentelemetry_otlp_recordable protobuf::libprotobuf)
+    opentelemetry_otlp_recordable ext::libprotobuf)
   gtest_add_tests(
     TARGET otlp_recordable_test
     TEST_PREFIX exporter.otlp.
@@ -897,7 +906,7 @@ if(BUILD_TESTING)
   target_link_libraries(
     otlp_metrics_serialization_test ${GTEST_BOTH_LIBRARIES}
     ${CMAKE_THREAD_LIBS_INIT} opentelemetry_otlp_recordable
-    protobuf::libprotobuf)
+    ext::libprotobuf)
   gtest_add_tests(
     TARGET otlp_metrics_serialization_test
     TEST_PREFIX exporter.otlp.
@@ -992,7 +1001,7 @@ if(BUILD_TESTING)
       opentelemetry_exporter_otlp_http
       opentelemetry_http_client_nosend
       nlohmann_json::nlohmann_json
-      protobuf::libprotobuf)
+      ext::libprotobuf)
     gtest_add_tests(
       TARGET otlp_http_exporter_test
       TEST_PREFIX exporter.otlp.
@@ -1046,7 +1055,7 @@ if(BUILD_TESTING)
       opentelemetry_metrics
       opentelemetry_http_client_nosend
       nlohmann_json::nlohmann_json
-      protobuf::libprotobuf)
+      ext::libprotobuf)
     gtest_add_tests(
       TARGET otlp_http_metric_exporter_test
       TEST_PREFIX exporter.otlp.
@@ -1087,7 +1096,7 @@ if(BUILD_TESTING)
       ${GMOCK_LIB}
       opentelemetry_exporter_otlp_file
       nlohmann_json::nlohmann_json
-      protobuf::libprotobuf)
+      ext::libprotobuf)
     gtest_add_tests(
       TARGET otlp_file_exporter_test
       TEST_PREFIX exporter.otlp.
@@ -1139,7 +1148,7 @@ if(BUILD_TESTING)
       opentelemetry_exporter_otlp_file_metric
       opentelemetry_metrics
       nlohmann_json::nlohmann_json
-      protobuf::libprotobuf)
+      ext::libprotobuf)
     gtest_add_tests(
       TARGET otlp_file_metric_exporter_test
       TEST_PREFIX exporter.otlp.
