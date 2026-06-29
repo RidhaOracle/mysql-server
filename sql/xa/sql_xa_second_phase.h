@@ -173,6 +173,35 @@ class Sql_cmd_xa_second_phase : public Sql_cmd {
                transaction.
    */
   void assign_xid_to_thd(THD *thd) const;
+  /// Register an action that marks the transaction finalized for SQL
+  /// XA RECOVER before the GTID for the second phase statement is
+  /// externalized.
+  ///
+  /// The transaction remains cached as an XID reservation until normal cleanup
+  /// removes the cache entry.
+  /// Registration is conservative when a TC log may update GTID state. If no
+  /// update runs, the command-scope fallback cancels the action.
+  ///
+  /// @param thd The THD session object used to process the detached XA
+  ///            transaction.
+  void register_xa_recover_finalization_action(THD *thd) const;
+
+  /// Register an action that marks the transaction finalized for SQL
+  /// XA RECOVER before the GTID for the second phase statement is
+  /// externalized.
+  ///
+  /// The transaction remains cached as an XID reservation until normal cleanup
+  /// removes the cache entry.
+  /// Registration is conservative when a TC log may update GTID state. If no
+  /// update runs, the command-scope fallback cancels the action.
+  ///
+  /// @param thd The THD session object used to process the XA transaction.
+  /// @param trx_context Transaction context to mark finalized for SQL
+  ///                    XA RECOVER.
+  /// @param need_clear_owned_gtid Whether GTID state needs to be finalized
+  ///                              outside binlog group commit.
+  void register_xa_recover_finalization_action(
+      THD *thd, Transaction_ctx *trx_context, bool need_clear_owned_gtid) const;
   /**
     For replica applier threads, finishes the wait on the commit order and
     allows other threads to proceed.

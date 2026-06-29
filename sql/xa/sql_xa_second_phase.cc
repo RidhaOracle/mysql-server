@@ -29,6 +29,7 @@
 #include "sql/rpl_gtid.h"                // gtid_state_commit_or_rollback
 #include "sql/rpl_replica_commit_order_manager.h"  // Commit_order_manager
 #include "sql/sql_class.h"                         // THD
+#include "sql/tc_log.h"                            // tc_log
 #include "sql/transaction_info.h"                  // Transaction_ctx
 #include "sql/xa/transaction_cache.h"              // xa::Transaction_cache
 
@@ -166,6 +167,40 @@ void Sql_cmd_xa_second_phase::assign_xid_to_thd(THD *thd) const {
   thd_xs->start_detached_xa(this->m_xid, thd_xs->is_binlogged());
 }
 
+void Sql_cmd_xa_second_phase::register_xa_recover_finalization_action(
+    THD *thd) const {
+  assert(this->m_detached_trx_context != nullptr);
+  // A TC log may externalize GTID state, so register conservatively. Some TC
+  // implementations do not externalize it; the command-scope fallback then
+  // cancels the unused action. Without a TC log, register only when explicit
+  // owned-GTID cleanup will externalize GTID state.
+  if (tc_log == nullptr && !this->m_need_clear_owned_gtid) return;
+
+  auto detached_trx_context = this->m_detached_trx_context;
+  thd->register_action_before_gtid_state_update(
+      [detached_trx_context](bool is_commit) -> void {
+        if (is_commit)
+          xa::Transaction_cache::mark_finalized_for_recover(
+              detached_trx_context.get());
+      });
+}
+
+void Sql_cmd_xa_second_phase::register_xa_recover_finalization_action(
+    THD *thd, Transaction_ctx *trx_context, bool need_clear_owned_gtid) const {
+  assert(trx_context != nullptr);
+  // A TC log may externalize GTID state, so register conservatively. Some TC
+  // implementations do not externalize it; the command-scope fallback then
+  // cancels the unused action. Without a TC log, register only when explicit
+  // owned-GTID cleanup will externalize GTID state.
+  if (tc_log == nullptr && !need_clear_owned_gtid) return;
+
+  thd->register_action_before_gtid_state_update(
+      [trx_context](bool is_commit) -> void {
+        if (is_commit)
+          xa::Transaction_cache::mark_finalized_for_recover(trx_context);
+      });
+}
+
 void Sql_cmd_xa_second_phase::exit_commit_order(THD *thd) const {
   Commit_order_manager::wait_and_finish(
       thd, this->m_result);  // Remove from the commit order queue (no-op for
@@ -183,6 +218,10 @@ void Sql_cmd_xa_second_phase::cleanup_context(THD *thd) const {
   MDL_context_backup_manager::instance().delete_backup(
       this->m_xid->key(), this->m_xid->key_length());
 
+  // Recover finalization only hides the XID from SQL XA RECOVER. Keep the
+  // cache entry until this point so the XID remains reserved and concurrent
+  // same-XID second-phase checks keep using the same detached transaction
+  // identity.
   xa::Transaction_cache::remove(this->m_detached_trx_context.get());
   gtid_state_commit_or_rollback(thd, this->m_need_clear_owned_gtid,
                                 !this->m_result);
