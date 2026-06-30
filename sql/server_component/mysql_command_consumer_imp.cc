@@ -148,16 +148,30 @@ DEFINE_BOOL_METHOD(mysql_command_consumer_dom_imp::field_metadata,
        set context so they can be accessed upon return to the caller.
     */
     MEM_ROOT *mem_root = (*ctx->m_result)->alloc;
+    /*
+      Keep MYSQL_FIELD string metadata compatible with results materialized by
+      libmysql: the catalog is "def", and every copied string has its byte
+      length recorded in the corresponding length member.
+    */
+    constexpr char catalog[] = "def";
+    ctx->m_fields->catalog_length = sizeof(catalog) - 1;
+    ctx->m_fields->catalog =
+        strmake_root(mem_root, catalog, ctx->m_fields->catalog_length);
+    ctx->m_fields->db_length = strlen(field->db_name);
     ctx->m_fields->db =
-        strmake_root(mem_root, field->db_name, strlen(field->db_name));
+        strmake_root(mem_root, field->db_name, ctx->m_fields->db_length);
+    ctx->m_fields->table_length = strlen(field->table_name);
     ctx->m_fields->table =
-        strmake_root(mem_root, field->table_name, strlen(field->table_name));
+        strmake_root(mem_root, field->table_name, ctx->m_fields->table_length);
+    ctx->m_fields->org_table_length = strlen(field->org_table_name);
     ctx->m_fields->org_table = strmake_root(mem_root, field->org_table_name,
-                                            strlen(field->org_table_name));
+                                            ctx->m_fields->org_table_length);
+    ctx->m_fields->name_length = strlen(field->col_name);
     ctx->m_fields->name =
-        strmake_root(mem_root, field->col_name, strlen(field->col_name));
+        strmake_root(mem_root, field->col_name, ctx->m_fields->name_length);
+    ctx->m_fields->org_name_length = strlen(field->org_col_name);
     ctx->m_fields->org_name = strmake_root(mem_root, field->org_col_name,
-                                           strlen(field->org_col_name));
+                                           ctx->m_fields->org_name_length);
     ctx->m_fields->length = field->length;
     ctx->m_fields->charsetnr = field->charsetnr;
     ctx->m_fields->flags = field->flags;

@@ -267,6 +267,7 @@ SET(SERVER_TESTS
   make_sortkey
   mdl_sync
   my_decimal
+  mysql_command_consumer
   mysqld_funcs
   opt_costconstants
   opt_costmodel
