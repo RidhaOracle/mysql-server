@@ -6366,12 +6366,6 @@ class Item_view_ref final : public Item_ref {
   table_map used_tables() const override;
 
   bool eq(const Item *item) const override;
-  Item *get_tmp_table_item(THD *thd) override {
-    DBUG_TRACE;
-    Item *item = Item_ref::get_tmp_table_item(thd);
-    item->item_name = item_name;
-    return item;
-  }
   Ref_Type ref_type() const override { return VIEW_REF; }
 
   bool check_column_privileges(uchar *arg) override;

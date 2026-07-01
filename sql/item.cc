@@ -9187,12 +9187,23 @@ Item *Item_ref::get_tmp_table_item(THD *thd) {
   DBUG_TRACE;
   if (!result_field) {
     Item *result = ref_item()->get_tmp_table_item(thd);
+    if (result == nullptr) return nullptr;
+
+    if (result == ref_item()) {
+      auto *ref = new (thd->mem_root) Item_ref(thd, this);
+      if (ref == nullptr) return nullptr;
+      ref->link_referenced_item();
+      result = ref;
+    }
+
+    result->item_name = item_name;
     return result;
   }
 
   Item_field *item = new Item_field(result_field);
   if (item == nullptr) return nullptr;
 
+  item->item_name = item_name;
   item->set_orignal_db_name(m_orig_db_name);
   item->db_name = db_name;
   item->table_name = table_name;
