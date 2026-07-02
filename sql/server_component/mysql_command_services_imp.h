@@ -50,8 +50,9 @@ struct Mysql_res_handle {
   command_consumer_services is set by
   mysql_service_mysql_command_options::set() api,
   if it is nullptr then the default mysql_test_consumer services will be set.
-  data is allocated in mysql_text_consumer_factory_v1 service start() api,
-  and this data is retrived by csi_read_rows().
+  data is allocated in mysql_text_consumer_factory_v1 service start() api.
+  csi_read_rows() transfers it for mysql_store_result(); mysql_use_result()
+  consumes it through use_result_cursor until EOF or mysql_free_result().
   This information is used by mysql_text_consumer service apis.
   mcs_thd, mcs_protocol, mcs_user_name, mcs_password, mcs_tcpip_port,
   mcs_db and mcs_client_flag will be set by mysql_service_mysql_command_options
@@ -62,6 +63,7 @@ struct mysql_command_service_extn {
   bool is_thd_associated; /* this is used to free session_svc,
                              if it was allocated. */
   MYSQL_DATA *data = nullptr;
+  MYSQL_ROWS *use_result_cursor = nullptr;
   void *command_consumer_services = nullptr;
   SRV_CTX_H consumer_srv_data = nullptr;
   MYSQL_THD mcs_thd = nullptr;

@@ -92,6 +92,17 @@ SET @@GLOBAL.DEBUG = '+d, mysql_command_services_component_test_errno';
 SELECT test_mysql_command_services_error_code_udf("SELECT * FROM test.no_such_table");
 SET @@GLOBAL.DEBUG = '-d, mysql_command_services_component_test_errno';
 
+--echo # Test : a row execution error after metadata leaves the handle reusable
+CREATE TABLE test.mcs_invalid_json(value VARCHAR(32));
+INSERT INTO test.mcs_invalid_json VALUES ('not-json');
+CREATE VIEW test.no_such_table AS
+  SELECT JSON_EXTRACT(value, '$') AS value FROM test.mcs_invalid_json;
+GRANT SELECT ON test.no_such_table TO 'mysql.session'@'localhost';
+SELECT test_mysql_command_session_error_info_success_clears_udf();
+REVOKE SELECT ON test.no_such_table FROM 'mysql.session'@'localhost';
+DROP VIEW test.no_such_table;
+DROP TABLE test.mcs_invalid_json;
+
 --echo # Test : failing connect() when running in an initialized thread; cleanup (cmd_factory->close() + cmd_thread->end()) must not leak the session
 SELECT test_mysql_command_services_explicit_connect_fail_cleanup_udf();
 

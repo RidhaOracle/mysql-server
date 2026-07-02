@@ -144,10 +144,11 @@ DEFINE_BOOL_METHOD(mysql_command_consumer_dom_imp::field_metadata,
     auto *ctx = reinterpret_cast<Dom_ctx *>(srv_ctx_h);
     if (ctx == nullptr) return true;
     /* The field metadata strings are part of the query context and will be
-       freed after query execution. Copy the metadata strings into the result
-       set context so they can be accessed upon return to the caller.
+       freed after query execution. Copy them into MYSQL::field_alloc so
+       mysql_store_result() or mysql_use_result() transfers their ownership to
+       MYSQL_RES together with the MYSQL_FIELD array.
     */
-    MEM_ROOT *mem_root = (*ctx->m_result)->alloc;
+    MEM_ROOT *mem_root = ctx->m_mysql->field_alloc;
     /*
       Keep MYSQL_FIELD string metadata compatible with results materialized by
       libmysql: the catalog is "def", and every copied string has its byte
@@ -547,14 +548,18 @@ DEFINE_METHOD(void, mysql_command_consumer_dom_imp::end,
       ctx->m_mysql->fields = nullptr;
     }
 
-    /* The m_result is freed by
-       free_result->mysql_free_result()->free_rows() api.
-       In non result cases, it has to be freed here. */
+    /*
+      mysql_free_result() normally releases result data. If the consumer is
+      ended first, release it here and clear both extension aliases so later
+      cleanup cannot observe freed storage.
+    */
     if (*ctx->m_result) {
       (*ctx->m_result)->alloc->Clear();
       my_free((*ctx->m_result)->alloc);
       my_free(*ctx->m_result);
+      *ctx->m_result = nullptr;
     }
+    if (mcs_extn != nullptr) mcs_extn->use_result_cursor = nullptr;
     if (ctx->m_cur_field_offsets != nullptr) my_free(ctx->m_cur_field_offsets);
     delete ctx->m_cur_row_data;
     delete ctx->m_message;

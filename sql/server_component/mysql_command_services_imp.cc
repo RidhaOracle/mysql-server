@@ -333,6 +333,18 @@ DEFINE_BOOL_METHOD(mysql_command_services_imp::set,
   try {
     Mysql_handle *m_handle = reinterpret_cast<Mysql_handle *>(mysql_h);
     if (m_handle == nullptr) return true;
+    /*
+      Replacing the consumer calls its end() method, which may release DOM rows
+      still referenced by a mysql_use_result() result.
+    */
+    if (option == MYSQL_TEXT_CONSUMER_FACTORY &&
+        (m_handle->mysql->status != MYSQL_STATUS_READY ||
+         (m_handle->mysql->server_status & SERVER_MORE_RESULTS_EXISTS))) {
+      set_mysql_error(m_handle->mysql, CR_COMMANDS_OUT_OF_SYNC,
+                      unknown_sqlstate);
+      return true;
+    }
+
     auto mcs_ext = MYSQL_COMMAND_SERVICE_EXTN(m_handle->mysql);
     my_h_service consumer_handle;
     /*
