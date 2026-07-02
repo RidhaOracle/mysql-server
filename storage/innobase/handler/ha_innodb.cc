@@ -18436,7 +18436,7 @@ int ha_innobase::optimize(THD *,          /*!< in: connection thread handle */
   if (innodb_optimize_fulltext_only) {
     if (m_prebuilt->table->fts && m_prebuilt->table->fts->cache &&
         !dict_table_is_discarded(m_prebuilt->table)) {
-      fts_sync_table(m_prebuilt->table, false, true, false);
+      fts_sync_table(m_prebuilt->table, false, true);
       fts_optimize_table(m_prebuilt->table);
     }
     return (HA_ADMIN_OK);
