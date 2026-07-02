@@ -10103,9 +10103,12 @@ static bool make_join_query_block(JOIN *join, Item *cond) {
                   usable_keys.intersect(tab->table()->keys_in_use_for_order_by);
 
                 // Do a cost based search on the indexes that give sort order.
-                test_if_cheaper_ordering(
-                    tab, &join->order, tab->table(), usable_keys, -1,
-                    select_limit, &best_key, &read_direction, &select_limit);
+                {
+                  const Opt_trace_array trace_recheck_steps(trace, "steps");
+                  test_if_cheaper_ordering(
+                      tab, &join->order, tab->table(), usable_keys, -1,
+                      select_limit, &best_key, &read_direction, &select_limit);
+                }
                 if (best_key < 0)
                   recheck_reason = DONT_RECHECK;  // No usable keys
                 else {
