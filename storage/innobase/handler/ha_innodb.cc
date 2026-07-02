@@ -7388,10 +7388,9 @@ int ha_innobase::open(const char *name, int, uint open_flags,
                   table->s->table_name.str);
     }
 
-    /* Allow an open because a proper DISCARD should have set
-    all the flags and index root page numbers to FIL_NULL that
-    should prevent any DML from running but it should allow DDL
-    operations. */
+    /* Allow opening a discarded table so DDL such as IMPORT can run. DML
+    checks the discarded state and does not access the unavailable
+    tablespace. */
     no_tablespace = false;
 
   } else if (ib_table->ibd_file_missing) {
