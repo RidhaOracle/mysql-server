@@ -616,7 +616,10 @@ DB_restrictions_aggregator::DB_restrictions_aggregator(
                               grantee_global_access, requested_access),
       m_grantor_rl(grantor_db_restrictions),
       m_grantee_rl(grantee_db_restrictions),
-      m_sctx(sctx) {}
+      m_sctx(sctx),
+      m_current_user_is_grantee(m_sctx != nullptr &&
+                                m_grantee.user() == m_sctx->priv_user().str &&
+                                m_grantee.host() == m_sctx->priv_host().str) {}
 
 /**
   Driver function to aggregate restriction lists
@@ -813,9 +816,7 @@ void DB_restrictions_aggregator::aggregate_restrictions(
           if (sql_op == SQL_OP::GLOBAL_GRANT) {
             grantee_db_access = get_grantee_db_access(grantor_rl_itr.first);
           } else if (sql_op == SQL_OP::SET_ROLE && db_map != nullptr) {
-            const std::string key(grantor_rl_itr.first.c_str(),
-                                  grantor_rl_itr.first.length());
-            auto it = db_map->find(key);
+            auto it = db_map->find(grantor_rl_itr.first);
             grantee_db_access = (it != db_map->end()) ? it->second : 0L;
           }
 
@@ -866,9 +867,8 @@ void DB_restrictions_aggregator::aggregate_restrictions(
 
 /**
   Fetches the grantee's DB access on the specified DB
-  If security context of current user exists and has some active roles then
-  probe the security context since current user must be grantee.
-  Otherwise, probe the usual ACL Cache.
+  If the current user is the grantee and has some active roles, probe the
+  security context. Otherwise, probe the usual ACL cache for the grantee.
 
   @param [in] db_name   Database name for which we need to fetch the DB level
                         access.
@@ -877,22 +877,27 @@ void DB_restrictions_aggregator::aggregate_restrictions(
 Access_bitmask DB_restrictions_aggregator::get_grantee_db_access(
     const std::string &db_name) const {
   ulong db_access;
-  if (m_sctx && m_sctx->get_num_active_roles() > 0) {
+  if (m_current_user_is_grantee && m_sctx->get_num_active_roles() > 0) {
     LEX_CSTRING db = {db_name.c_str(), db_name.length()};
     db_access = m_sctx->db_acl(db, false);
   } else {
-    db_access = acl_get(current_thd, m_grantee.host().c_str(),
-                        m_sctx ? m_sctx->ip().str : m_grantee.host().c_str(),
-                        m_grantee.user().c_str(), db_name.c_str(), false);
+    db_access = acl_get(
+        current_thd, m_grantee.host().c_str(),
+        m_current_user_is_grantee ? m_sctx->ip().str : m_grantee.host().c_str(),
+        m_grantee.user().c_str(), db_name.c_str(), false);
   }
   return db_access;
 }
 
 /**
-  Fetches the grantee's DB access on the specified DB
-  If security context of current user exists and has some active roles then
-  probe the security context since current user must be grantee.
-  Otherwise, do not modify the access argument.
+  Fetches the grantee's DB access on the specified DB.
+
+  This variant is used only by DB-level GRANT/REVOKE processing. The caller
+  passes DB access already fetched from the ACL cache for the target grantee.
+  If the current user is the grantee, active roles in its security context may
+  provide additional effective DB access, so replace the input value with the
+  role-aware value. Otherwise, leave the caller-provided grantee DB access
+  unchanged.
 
   @param [in]  db_name   Database name for which we need to fetch the DB level
                          access.
@@ -900,8 +905,8 @@ Access_bitmask DB_restrictions_aggregator::get_grantee_db_access(
 */
 void DB_restrictions_aggregator::get_grantee_db_access(
     const std::string &db_name, Access_bitmask &access) const {
-  if (m_sctx && m_sctx->get_num_active_roles() > 0) {
-    LEX_CSTRING db = {db_name.c_str(), db_name.length()};
+  if (m_current_user_is_grantee && m_sctx->get_num_active_roles() > 0) {
+    const LEX_CSTRING db = {db_name.c_str(), db_name.length()};
     access = m_sctx->db_acl(db, false);
   }
 }
