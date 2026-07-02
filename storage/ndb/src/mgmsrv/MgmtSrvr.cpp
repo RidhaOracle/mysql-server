@@ -3795,6 +3795,14 @@ bool MgmtSrvr::alloc_node_id_impl(NodeId &nodeid, enum ndb_mgm_node_type type,
     return true;
   }
 
+  /* Error insert codes starting at 17000 -> temporary DNS error */
+  if (ERROR_INSERTED(17000 + nodeid)) {
+    error_code = NDB_MGM_ALLOCID_CONFIG_RETRY;
+    error_string.appfmt("Error %d inserted", g_errorInsert);
+    g_errorInsert = 0;  // clear error insert; succeed on retry
+    return false;
+  }
+
   /* Check the node id request. There are several stages of checks:
       1) Fundamental checks: is the cluster configuration available, does the
          requested id exist in it, does its configured type match the requested
