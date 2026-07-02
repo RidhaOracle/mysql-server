@@ -186,10 +186,8 @@ FTS auxiliary INDEX table and clear the cache at the end.
 @param[in,out]  sync            sync state
 @param[in]      unlock_cache    whether unlock cache lock when write node
 @param[in]      wait            whether wait when a sync is in progress
-@param[in]      has_dict        whether has dict operation lock
 @return DB_SUCCESS if all OK */
-static dberr_t fts_sync(fts_sync_t *sync, bool unlock_cache, bool wait,
-                        bool has_dict);
+static dberr_t fts_sync(fts_sync_t *sync, bool unlock_cache, bool wait);
 
 /** Release all resources help by the words rb tree e.g., the node ilist. */
 static void fts_words_free(ib_rbt_t *words); /*!< in: rb tree of words */
@@ -3603,7 +3601,7 @@ void fts_add_doc_from_tuple(fts_trx_table_t *ftt, doc_id_t doc_id,
       rw_lock_x_unlock(&table->fts->cache->lock);
 
       if (cache->total_size > fts_max_cache_size / 5 || fts_need_sync) {
-        fts_sync(cache->sync, true, false, false);
+        fts_sync(cache->sync, true, false);
       }
 
       mtr_start(&mtr);
@@ -3753,7 +3751,7 @@ static ulint fts_add_doc_by_id(fts_trx_table_t *ftt, doc_id_t doc_id,
           // we size smaller than permissible min value for this sys var
           const auto old_fts_max_cache_size = fts_max_cache_size;
           fts_max_cache_size = 100;
-          fts_sync(cache->sync, true, true, false);
+          fts_sync(cache->sync, true, true);
           fts_max_cache_size = old_fts_max_cache_size;
         });
 
@@ -3762,7 +3760,7 @@ static ulint fts_add_doc_by_id(fts_trx_table_t *ftt, doc_id_t doc_id,
                         os_event_wait(cache->sync->event););
 
         DBUG_EXECUTE_IF("fts_instrument_sync_debug",
-                        fts_sync(cache->sync, true, true, false););
+                        fts_sync(cache->sync, true, true););
 
         DEBUG_SYNC_C("fts_instrument_sync_request");
         DBUG_EXECUTE_IF("fts_instrument_sync_request",
@@ -4415,10 +4413,8 @@ FTS auxiliary INDEX table and clear the cache at the end.
 @param[in,out]  sync            sync state
 @param[in]      unlock_cache    whether unlock cache lock when write node
 @param[in]      wait            whether wait when a sync is in progress
-@param[in]      has_dict        whether has dict operation lock
 @return DB_SUCCESS if all OK */
-static dberr_t fts_sync(fts_sync_t *sync, bool unlock_cache, bool wait,
-                        bool has_dict) {
+static dberr_t fts_sync(fts_sync_t *sync, bool unlock_cache, bool wait) {
   ulint i;
   dberr_t error = DB_SUCCESS;
   fts_cache_t *cache = sync->table->fts->cache;
@@ -4445,11 +4441,7 @@ static dberr_t fts_sync(fts_sync_t *sync, bool unlock_cache, bool wait,
   DEBUG_SYNC_C("fts_sync_begin");
   fts_sync_begin(sync);
 
-  /* When sync in background, we hold dict operation lock
-  to prevent DDL like DROP INDEX, etc. */
-  if (has_dict) {
-    sync->trx->dict_operation_lock_mode = RW_S_LATCH;
-  }
+  ut_ad(sync->trx->dict_operation_lock_mode == 0);
 
 begin_sync:
   if (cache->total_size > fts_max_cache_size) {
@@ -4523,17 +4515,15 @@ FTS auxiliary INDEX table and clear the cache at the end.
 @param[in,out]  table           fts table
 @param[in]      unlock_cache    whether unlock cache when write node
 @param[in]      wait            whether wait for existing sync to finish
-@param[in]      has_dict        whether has dict operation lock
 @return DB_SUCCESS on success, error code on failure. */
-dberr_t fts_sync_table(dict_table_t *table, bool unlock_cache, bool wait,
-                       bool has_dict) {
+dberr_t fts_sync_table(dict_table_t *table, bool unlock_cache, bool wait) {
   dberr_t err = DB_SUCCESS;
 
   ut_ad(table->fts);
 
   if (!dict_table_is_discarded(table) && table->fts->cache &&
       !table->is_corrupted()) {
-    err = fts_sync(table->fts->cache->sync, unlock_cache, wait, has_dict);
+    err = fts_sync(table->fts->cache->sync, unlock_cache, wait);
   }
 
   return (err);

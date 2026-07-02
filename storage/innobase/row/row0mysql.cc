@@ -2668,6 +2668,7 @@ void row_mysql_freeze_data_dictionary(trx_t *trx, ut::Location location) {
 
   rw_lock_s_lock_gen(dict_operation_lock, 0, location);
 
+  ut_ad(rw_lock_own(dict_operation_lock, RW_LOCK_S));
   trx->dict_operation_lock_mode = RW_S_LATCH;
 }
 
@@ -2675,6 +2676,7 @@ void row_mysql_freeze_data_dictionary(trx_t *trx, ut::Location location) {
 void row_mysql_unfreeze_data_dictionary(trx_t *trx) /*!< in/out: transaction */
 {
   ut_a(trx->dict_operation_lock_mode == RW_S_LATCH);
+  ut_ad(rw_lock_own(dict_operation_lock, RW_LOCK_S));
 
   rw_lock_s_unlock(dict_operation_lock);
 
@@ -2693,6 +2695,7 @@ void row_mysql_lock_data_dictionary(trx_t *trx, ut::Location location) {
   no deadlocks or lock waits can occur then in these operations */
 
   rw_lock_x_lock_gen(dict_operation_lock, 0, location);
+  ut_ad(rw_lock_own(dict_operation_lock, RW_LOCK_X));
   trx->dict_operation_lock_mode = RW_X_LATCH;
 
   dict_sys_mutex_enter();
@@ -2702,6 +2705,7 @@ void row_mysql_lock_data_dictionary(trx_t *trx, ut::Location location) {
 void row_mysql_unlock_data_dictionary(trx_t *trx) /*!< in/out: transaction */
 {
   ut_a(trx->dict_operation_lock_mode == RW_X_LATCH);
+  ut_ad(rw_lock_own(dict_operation_lock, RW_LOCK_X));
 
   /* Serialize data dictionary operations with dictionary mutex:
   no deadlocks can occur then in these operations */
