@@ -4127,3 +4127,465 @@ SHOW WARNINGS;
 Level	Code	Message
 Note	1003	/* select#1 */ select `test`.`t1`.`f1` AS `f1` from `test`.`t1` where (`test`.`t1`.`f1` > 10)
 DROP TABLE t1;
+#
+# Bug#37543247 Missing optimization in hypergraph in case of
+#              multi-valued index
+#
+CREATE TABLE t1 (
+id INT NOT NULL,
+j  JSON NOT NULL,
+PRIMARY KEY (id),
+KEY k_arr_id ((CAST(j->'$[*]' AS SIGNED ARRAY)), id)
+);
+INSERT INTO t1 VALUES
+(1,'[20,30]'), (2,'[40]'),     (3,'[30]'),   (4,'[10,30]'),
+(5,'[50]'),    (6,'[30,30]'),  (7,'[]'),     (8,'[10,20,30]'),
+(9,'[10]'),    (10,'[30]');
+ANALYZE TABLE t1;
+Table	Op	Msg_type	Msg_text
+test.t1	analyze	status	OK
+EXPLAIN FORMAT=TREE SELECT id FROM t1 FORCE INDEX (k_arr_id)
+WHERE 30 MEMBER OF (j->'$[*]') AND id < 7 ORDER BY id DESC;
+EXPLAIN
+-> Filter: ((t1.id < 7) and json'30' member of (cast(json_extract(j,_utf8mb4'$[*]') as signed array)))  (rows=4)
+    -> Index range scan on t1 using k_arr_id over (30 MEMBER OF (json_extract(j,_utf8mb4'$[*]')) AND id < 7) (reverse)  (rows=4)
+
+Warnings:
+Note	1003	/* select#1 */ select `test`.`t1`.`id` AS `id` from `test`.`t1` FORCE INDEX (`k_arr_id`) where (json'30' member of (cast(json_extract(`j`,_utf8mb4'$[*]') as signed array)) and (`test`.`t1`.`id` < 7)) order by `test`.`t1`.`id` desc
+SELECT id FROM t1 FORCE INDEX (k_arr_id)
+WHERE 30 MEMBER OF (j->'$[*]') AND id < 7 ORDER BY id DESC;
+id
+6
+4
+3
+1
+EXPLAIN FORMAT=TREE SELECT id FROM t1 FORCE INDEX (k_arr_id)
+WHERE 30 MEMBER OF (j->'$[*]') AND id < 7 ORDER BY id ASC;
+EXPLAIN
+-> Filter: ((t1.id < 7) and json'30' member of (cast(json_extract(j,_utf8mb4'$[*]') as signed array)))  (rows=4)
+    -> Index range scan on t1 using k_arr_id over (30 MEMBER OF (json_extract(j,_utf8mb4'$[*]')) AND id < 7)  (rows=4)
+
+Warnings:
+Note	1003	/* select#1 */ select `test`.`t1`.`id` AS `id` from `test`.`t1` FORCE INDEX (`k_arr_id`) where (json'30' member of (cast(json_extract(`j`,_utf8mb4'$[*]') as signed array)) and (`test`.`t1`.`id` < 7)) order by `test`.`t1`.`id`
+SELECT id FROM t1 FORCE INDEX (k_arr_id)
+WHERE 30 MEMBER OF (j->'$[*]') AND id < 7 ORDER BY id ASC;
+id
+1
+3
+4
+6
+EXPLAIN FORMAT=TREE SELECT id FROM t1 FORCE INDEX (k_arr_id)
+WHERE 30 MEMBER OF (j->'$[*]') AND (id < 3 OR id > 7)
+ORDER BY id DESC;
+EXPLAIN
+-> Filter: (((t1.id < 3) or (t1.id > 7)) and json'30' member of (cast(json_extract(j,_utf8mb4'$[*]') as signed array)))  (rows=3)
+    -> Index range scan on t1 using k_arr_id over (30 MEMBER OF (json_extract(j,_utf8mb4'$[*]')) AND id < 3) OR (30 MEMBER OF (json_extract(j,_utf8mb4'$[*]')) AND 7 < id) (reverse)  (rows=3)
+
+Warnings:
+Note	1003	/* select#1 */ select `test`.`t1`.`id` AS `id` from `test`.`t1` FORCE INDEX (`k_arr_id`) where (json'30' member of (cast(json_extract(`j`,_utf8mb4'$[*]') as signed array)) and ((`test`.`t1`.`id` < 3) or (`test`.`t1`.`id` > 7))) order by `test`.`t1`.`id` desc
+SELECT id FROM t1 FORCE INDEX (k_arr_id)
+WHERE 30 MEMBER OF (j->'$[*]') AND (id < 3 OR id > 7)
+ORDER BY id DESC;
+id
+10
+8
+1
+EXPLAIN FORMAT=TREE SELECT id FROM t1 FORCE INDEX (k_arr_id)
+WHERE JSON_OVERLAPS(j->'$[*]', '[30]') ORDER BY id DESC;
+EXPLAIN
+-> Filter: json_overlaps(cast(json_extract(j,_utf8mb4'$[*]') as signed array),json'[30]')  (rows=6)
+    -> Index range scan on t1 using k_arr_id over (30 MEMBER OF (json_extract(j,_utf8mb4'$[*]'))) (reverse)  (rows=6)
+
+Warnings:
+Note	1003	/* select#1 */ select `test`.`t1`.`id` AS `id` from `test`.`t1` FORCE INDEX (`k_arr_id`) where json_overlaps(cast(json_extract(`j`,_utf8mb4'$[*]') as signed array),json'[30]') order by `test`.`t1`.`id` desc
+SELECT id FROM t1 FORCE INDEX (k_arr_id)
+WHERE JSON_OVERLAPS(j->'$[*]', '[30]') ORDER BY id DESC;
+id
+10
+8
+6
+4
+3
+1
+EXPLAIN FORMAT=TREE SELECT id FROM t1 FORCE INDEX (k_arr_id)
+WHERE JSON_CONTAINS(j->'$[*]', '[30]') ORDER BY id DESC;
+EXPLAIN
+-> Filter: json_contains(cast(json_extract(j,_utf8mb4'$[*]') as signed array),json'[30]')  (rows=6)
+    -> Index range scan on t1 using k_arr_id over (30 MEMBER OF (json_extract(j,_utf8mb4'$[*]'))) (reverse)  (rows=6)
+
+Warnings:
+Note	1003	/* select#1 */ select `test`.`t1`.`id` AS `id` from `test`.`t1` FORCE INDEX (`k_arr_id`) where json_contains(cast(json_extract(`j`,_utf8mb4'$[*]') as signed array),json'[30]') order by `test`.`t1`.`id` desc
+SELECT id FROM t1 FORCE INDEX (k_arr_id)
+WHERE JSON_CONTAINS(j->'$[*]', '[30]') ORDER BY id DESC;
+id
+10
+8
+6
+4
+3
+1
+EXPLAIN FORMAT=TREE SELECT id FROM t1 FORCE INDEX (k_arr_id)
+WHERE JSON_OVERLAPS(j->'$[*]', '[10,30]') ORDER BY id DESC;
+EXPLAIN
+-> Sort: t1.id DESC  (rows=9)
+    -> Filter: json_overlaps(cast(json_extract(j,_utf8mb4'$[*]') as signed array),json'[10, 30]')  (rows=9)
+        -> Index range scan on t1 using k_arr_id over (30 MEMBER OF (json_extract(j,_utf8mb4'$[*]'))) OR (10 MEMBER OF (json_extract(j,_utf8mb4'$[*]')))  (rows=9)
+
+Warnings:
+Note	1003	/* select#1 */ select `test`.`t1`.`id` AS `id` from `test`.`t1` FORCE INDEX (`k_arr_id`) where json_overlaps(cast(json_extract(`j`,_utf8mb4'$[*]') as signed array),json'[10, 30]') order by `test`.`t1`.`id` desc
+SELECT id FROM t1 FORCE INDEX (k_arr_id)
+WHERE JSON_OVERLAPS(j->'$[*]', '[10,30]') ORDER BY id DESC;
+id
+10
+9
+8
+6
+4
+3
+1
+EXPLAIN FORMAT=TREE SELECT id FROM t1 FORCE INDEX (k_arr_id)
+WHERE JSON_CONTAINS(j->'$[*]', '[10,30]') ORDER BY id DESC;
+EXPLAIN
+-> Sort: t1.id DESC  (rows=9)
+    -> Filter: json_contains(cast(json_extract(j,_utf8mb4'$[*]') as signed array),json'[10, 30]')  (rows=9)
+        -> Index range scan on t1 using k_arr_id over (30 MEMBER OF (json_extract(j,_utf8mb4'$[*]'))) OR (10 MEMBER OF (json_extract(j,_utf8mb4'$[*]')))  (rows=9)
+
+Warnings:
+Note	1003	/* select#1 */ select `test`.`t1`.`id` AS `id` from `test`.`t1` FORCE INDEX (`k_arr_id`) where json_contains(cast(json_extract(`j`,_utf8mb4'$[*]') as signed array),json'[10, 30]') order by `test`.`t1`.`id` desc
+SELECT id FROM t1 FORCE INDEX (k_arr_id)
+WHERE JSON_CONTAINS(j->'$[*]', '[10,30]') ORDER BY id DESC;
+id
+8
+4
+EXPLAIN FORMAT=TREE SELECT id FROM t1 FORCE INDEX (k_arr_id)
+WHERE JSON_OVERLAPS(j->'$[*]', '[10,20]')
+AND 30 MEMBER OF (j->'$[*]')
+ORDER BY id DESC;
+EXPLAIN
+-> Sort: t1.id DESC  (rows=5)
+    -> Filter: (json_overlaps(cast(json_extract(j,_utf8mb4'$[*]') as signed array),json'[10, 20]') and json'30' member of (cast(json_extract(j,_utf8mb4'$[*]') as signed array)))  (rows=5)
+        -> Index range scan on t1 using k_arr_id over (20 MEMBER OF (json_extract(j,_utf8mb4'$[*]'))) OR (10 MEMBER OF (json_extract(j,_utf8mb4'$[*]')))  (rows=5)
+
+Warnings:
+Note	1003	/* select#1 */ select `test`.`t1`.`id` AS `id` from `test`.`t1` FORCE INDEX (`k_arr_id`) where (json_overlaps(cast(json_extract(`j`,_utf8mb4'$[*]') as signed array),json'[10, 20]') and json'30' member of (cast(json_extract(`j`,_utf8mb4'$[*]') as signed array))) order by `test`.`t1`.`id` desc
+SELECT id FROM t1 FORCE INDEX (k_arr_id)
+WHERE JSON_OVERLAPS(j->'$[*]', '[10,20]')
+AND 30 MEMBER OF (j->'$[*]')
+ORDER BY id DESC;
+id
+8
+4
+1
+EXPLAIN FORMAT=TREE SELECT id FROM t1 FORCE INDEX (k_arr_id)
+WHERE 30 MEMBER OF (j->'$[*]') AND id BETWEEN 5 AND 7
+ORDER BY id DESC;
+EXPLAIN
+-> Filter: ((t1.id between 5 and 7) and json'30' member of (cast(json_extract(j,_utf8mb4'$[*]') as signed array)))  (rows=1)
+    -> Index range scan on t1 using k_arr_id over (30 MEMBER OF (json_extract(j,_utf8mb4'$[*]')) AND 5 <= id <= 7) (reverse)  (rows=1)
+
+Warnings:
+Note	1003	/* select#1 */ select `test`.`t1`.`id` AS `id` from `test`.`t1` FORCE INDEX (`k_arr_id`) where (json'30' member of (cast(json_extract(`j`,_utf8mb4'$[*]') as signed array)) and (`test`.`t1`.`id` between 5 and 7)) order by `test`.`t1`.`id` desc
+SELECT id FROM t1 FORCE INDEX (k_arr_id)
+WHERE 30 MEMBER OF (j->'$[*]') AND id BETWEEN 5 AND 7
+ORDER BY id DESC;
+id
+6
+EXPLAIN FORMAT=TREE SELECT /*+ NO_RANGE_OPTIMIZATION(t1) */ id
+FROM t1 FORCE INDEX (k_arr_id) ORDER BY id;
+EXPLAIN
+-> Sort: t1.id  (rows=10)
+    -> Table scan on t1  (rows=10)
+
+Warnings:
+Note	1003	/* select#1 */ select /*+ NO_RANGE_OPTIMIZATION(`t1`@`select#1`) */ `test`.`t1`.`id` AS `id` from `test`.`t1` FORCE INDEX (`k_arr_id`) order by `test`.`t1`.`id`
+SELECT /*+ NO_RANGE_OPTIMIZATION(t1) */ id
+FROM t1 FORCE INDEX (k_arr_id) ORDER BY id;
+id
+1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+DROP TABLE t1;
+CREATE TABLE t2 (
+pk INT NOT NULL AUTO_INCREMENT,
+id INT NOT NULL,
+j  JSON NOT NULL,
+PRIMARY KEY (pk),
+KEY k_arr_id ((CAST(j->'$[*]' AS SIGNED ARRAY)), id)
+);
+INSERT INTO t2 (id, j) VALUES
+(1,'[20,30]'), (2,'[40]'),  (3,'[30]'), (4,'[10,30]'),
+(5,'[50]'),    (6,'[30]'),  (8,'[10,20,30]');
+ANALYZE TABLE t2;
+Table	Op	Msg_type	Msg_text
+test.t2	analyze	status	OK
+EXPLAIN FORMAT=TREE SELECT id FROM t2
+WHERE 30 MEMBER OF (j->'$[*]') AND id < 7 ORDER BY id DESC;
+EXPLAIN
+-> Filter: ((t2.id < 7) and json'30' member of (cast(json_extract(j,_utf8mb4'$[*]') as signed array)))  (rows=4)
+    -> Index range scan on t2 using k_arr_id over (30 MEMBER OF (json_extract(j,_utf8mb4'$[*]')) AND id < 7) (reverse)  (rows=4)
+
+Warnings:
+Note	1003	/* select#1 */ select `test`.`t2`.`id` AS `id` from `test`.`t2` where (json'30' member of (cast(json_extract(`j`,_utf8mb4'$[*]') as signed array)) and (`test`.`t2`.`id` < 7)) order by `test`.`t2`.`id` desc
+SELECT id FROM t2
+WHERE 30 MEMBER OF (j->'$[*]') AND id < 7 ORDER BY id DESC;
+id
+6
+4
+3
+1
+EXPLAIN FORMAT=TREE SELECT id FROM t2
+WHERE 30 MEMBER OF (j->'$[*]') AND id < 7 ORDER BY id ASC;
+EXPLAIN
+-> Filter: ((t2.id < 7) and json'30' member of (cast(json_extract(j,_utf8mb4'$[*]') as signed array)))  (rows=4)
+    -> Index range scan on t2 using k_arr_id over (30 MEMBER OF (json_extract(j,_utf8mb4'$[*]')) AND id < 7)  (rows=4)
+
+Warnings:
+Note	1003	/* select#1 */ select `test`.`t2`.`id` AS `id` from `test`.`t2` where (json'30' member of (cast(json_extract(`j`,_utf8mb4'$[*]') as signed array)) and (`test`.`t2`.`id` < 7)) order by `test`.`t2`.`id`
+SELECT id FROM t2
+WHERE 30 MEMBER OF (j->'$[*]') AND id < 7 ORDER BY id ASC;
+id
+1
+3
+4
+6
+EXPLAIN FORMAT=TREE SELECT id, pk FROM t2 FORCE INDEX (k_arr_id)
+WHERE 30 MEMBER OF (j->'$[*]') ORDER BY id DESC, pk DESC;
+EXPLAIN
+-> Filter: json'30' member of (cast(json_extract(j,_utf8mb4'$[*]') as signed array))  (rows=5)
+    -> Index range scan on t2 using k_arr_id over (30 MEMBER OF (json_extract(j,_utf8mb4'$[*]'))) (reverse)  (rows=5)
+
+Warnings:
+Note	1003	/* select#1 */ select `test`.`t2`.`id` AS `id`,`test`.`t2`.`pk` AS `pk` from `test`.`t2` FORCE INDEX (`k_arr_id`) where json'30' member of (cast(json_extract(`j`,_utf8mb4'$[*]') as signed array)) order by `test`.`t2`.`id` desc,`test`.`t2`.`pk` desc
+SELECT id, pk FROM t2 FORCE INDEX (k_arr_id)
+WHERE 30 MEMBER OF (j->'$[*]') ORDER BY id DESC, pk DESC;
+id	pk
+8	7
+6	6
+4	4
+3	3
+1	1
+EXPLAIN FORMAT=TREE SELECT id, pk FROM t2 FORCE INDEX (k_arr_id)
+WHERE 30 MEMBER OF (j->'$[*]') ORDER BY id DESC;
+EXPLAIN
+-> Filter: json'30' member of (cast(json_extract(j,_utf8mb4'$[*]') as signed array))  (rows=5)
+    -> Index range scan on t2 using k_arr_id over (30 MEMBER OF (json_extract(j,_utf8mb4'$[*]'))) (reverse)  (rows=5)
+
+Warnings:
+Note	1003	/* select#1 */ select `test`.`t2`.`id` AS `id`,`test`.`t2`.`pk` AS `pk` from `test`.`t2` FORCE INDEX (`k_arr_id`) where json'30' member of (cast(json_extract(`j`,_utf8mb4'$[*]') as signed array)) order by `test`.`t2`.`id` desc
+SELECT id, pk FROM t2 FORCE INDEX (k_arr_id)
+WHERE 30 MEMBER OF (j->'$[*]') ORDER BY id DESC;
+id	pk
+8	7
+6	6
+4	4
+3	3
+1	1
+DROP TABLE t2;
+CREATE TABLE t3 (
+pk INT NOT NULL AUTO_INCREMENT,
+a  INT NOT NULL,
+id INT NOT NULL,
+j  JSON NOT NULL,
+PRIMARY KEY (pk),
+KEY k_a_arr_id (a, (CAST(j->'$[*]' AS SIGNED ARRAY)), id)
+);
+INSERT INTO t3 (a, id, j) VALUES
+(1, 100, '[10,30]'), (1,   1, '[20,30]'), (1,  50, '[30]'),
+(1,   4, '[10,30]'), (1, 200, '[30]'),
+(2,   3, '[30]'),    (2,  90, '[10,30]'), (2,   2, '[30]');
+ANALYZE TABLE t3;
+Table	Op	Msg_type	Msg_text
+test.t3	analyze	status	OK
+EXPLAIN FORMAT=TREE SELECT id FROM t3
+WHERE a = 1 AND 30 MEMBER OF (j->'$[*]') AND id < 150
+ORDER BY id DESC;
+EXPLAIN
+-> Filter: ((t3.id < 150) and (t3.a = 1) and json'30' member of (cast(json_extract(j,_utf8mb4'$[*]') as signed array)))  (rows=4)
+    -> Index range scan on t3 using k_a_arr_id over (a = 1 AND 30 MEMBER OF (json_extract(j,_utf8mb4'$[*]')) AND id < 150) (reverse)  (rows=4)
+
+Warnings:
+Note	1003	/* select#1 */ select `test`.`t3`.`id` AS `id` from `test`.`t3` where (json'30' member of (cast(json_extract(`j`,_utf8mb4'$[*]') as signed array)) and (`test`.`t3`.`id` < 150) and multiple equal(1, `test`.`t3`.`a`)) order by `test`.`t3`.`id` desc
+SELECT id FROM t3
+WHERE a = 1 AND 30 MEMBER OF (j->'$[*]') AND id < 150
+ORDER BY id DESC;
+id
+100
+50
+4
+1
+EXPLAIN FORMAT=TREE SELECT id FROM t3
+WHERE a = 1 AND 30 MEMBER OF (j->'$[*]') AND id < 150
+ORDER BY id ASC;
+EXPLAIN
+-> Filter: ((t3.id < 150) and (t3.a = 1) and json'30' member of (cast(json_extract(j,_utf8mb4'$[*]') as signed array)))  (rows=4)
+    -> Index range scan on t3 using k_a_arr_id over (a = 1 AND 30 MEMBER OF (json_extract(j,_utf8mb4'$[*]')) AND id < 150)  (rows=4)
+
+Warnings:
+Note	1003	/* select#1 */ select `test`.`t3`.`id` AS `id` from `test`.`t3` where (json'30' member of (cast(json_extract(`j`,_utf8mb4'$[*]') as signed array)) and (`test`.`t3`.`id` < 150) and multiple equal(1, `test`.`t3`.`a`)) order by `test`.`t3`.`id`
+SELECT id FROM t3
+WHERE a = 1 AND 30 MEMBER OF (j->'$[*]') AND id < 150
+ORDER BY id ASC;
+id
+1
+4
+50
+100
+EXPLAIN FORMAT=TREE SELECT a, id FROM t3 FORCE INDEX (k_a_arr_id)
+WHERE a > 0 AND 30 MEMBER OF (j->'$[*]') ORDER BY a, id;
+EXPLAIN
+-> Sort: t3.a, t3.id  (rows=8)
+    -> Filter: ((t3.a > 0) and json'30' member of (cast(json_extract(j,_utf8mb4'$[*]') as signed array)))  (rows=8)
+        -> Index range scan on t3 using k_a_arr_id over (0 < a)  (rows=12)
+
+Warnings:
+Note	1003	/* select#1 */ select `test`.`t3`.`a` AS `a`,`test`.`t3`.`id` AS `id` from `test`.`t3` FORCE INDEX (`k_a_arr_id`) where ((`test`.`t3`.`a` > 0) and json'30' member of (cast(json_extract(`j`,_utf8mb4'$[*]') as signed array))) order by `test`.`t3`.`a`,`test`.`t3`.`id`
+SELECT a, id FROM t3 FORCE INDEX (k_a_arr_id)
+WHERE a > 0 AND 30 MEMBER OF (j->'$[*]') ORDER BY a, id;
+a	id
+1	1
+1	4
+1	50
+1	100
+1	200
+2	2
+2	3
+2	90
+EXPLAIN FORMAT=TREE SELECT a, id FROM t3 FORCE INDEX (k_a_arr_id)
+WHERE a > 0 AND 30 MEMBER OF (j->'$[*]') ORDER BY a, id LIMIT 3;
+EXPLAIN
+-> Sort: t3.a, t3.id, limit input to 3 row(s) per chunk  (rows=3)
+    -> Filter: ((t3.a > 0) and json'30' member of (cast(json_extract(j,_utf8mb4'$[*]') as signed array)))  (rows=8)
+        -> Index range scan on t3 using k_a_arr_id over (0 < a)  (rows=12)
+
+Warnings:
+Note	1003	/* select#1 */ select `test`.`t3`.`a` AS `a`,`test`.`t3`.`id` AS `id` from `test`.`t3` FORCE INDEX (`k_a_arr_id`) where ((`test`.`t3`.`a` > 0) and json'30' member of (cast(json_extract(`j`,_utf8mb4'$[*]') as signed array))) order by `test`.`t3`.`a`,`test`.`t3`.`id` limit 3
+SELECT a, id FROM t3 FORCE INDEX (k_a_arr_id)
+WHERE a > 0 AND 30 MEMBER OF (j->'$[*]') ORDER BY a, id LIMIT 3;
+a	id
+1	1
+1	4
+1	50
+EXPLAIN FORMAT=TREE SELECT a, id FROM t3 FORCE INDEX (k_a_arr_id)
+WHERE a IN (1,2) AND 30 MEMBER OF (j->'$[*]') ORDER BY id;
+EXPLAIN
+-> Sort: t3.id  (rows=8)
+    -> Filter: ((t3.a in (1,2)) and json'30' member of (cast(json_extract(j,_utf8mb4'$[*]') as signed array)))  (rows=8)
+        -> Index range scan on t3 using k_a_arr_id over (a = 1 AND 30 MEMBER OF (json_extract(j,_utf8mb4'$[*]'))) OR (a = 2 AND 30 MEMBER OF (json_extract(j,_utf8mb4'$[*]')))  (rows=8)
+
+Warnings:
+Note	1003	/* select#1 */ select `test`.`t3`.`a` AS `a`,`test`.`t3`.`id` AS `id` from `test`.`t3` FORCE INDEX (`k_a_arr_id`) where ((`test`.`t3`.`a` in (1,2)) and json'30' member of (cast(json_extract(`j`,_utf8mb4'$[*]') as signed array))) order by `test`.`t3`.`id`
+SELECT a, id FROM t3 FORCE INDEX (k_a_arr_id)
+WHERE a IN (1,2) AND 30 MEMBER OF (j->'$[*]') ORDER BY id;
+a	id
+1	1
+2	2
+2	3
+1	4
+1	50
+2	90
+1	100
+1	200
+EXPLAIN FORMAT=TREE SELECT /*+ NO_RANGE_OPTIMIZATION(t3) */ a, id
+FROM t3 FORCE INDEX (k_a_arr_id)
+WHERE a = 1 AND 30 MEMBER OF (j->'$[*]') ORDER BY id DESC;
+EXPLAIN
+-> Sort: t3.id DESC  (rows=4)
+    -> Filter: json'30' member of (cast(json_extract(j,_utf8mb4'$[*]') as signed array))  (rows=4)
+        -> Index lookup on t3 using k_a_arr_id (a = 1)  (rows=4)
+
+Warnings:
+Note	1003	/* select#1 */ select /*+ NO_RANGE_OPTIMIZATION(`t3`@`select#1`) */ `test`.`t3`.`a` AS `a`,`test`.`t3`.`id` AS `id` from `test`.`t3` FORCE INDEX (`k_a_arr_id`) where (json'30' member of (cast(json_extract(`j`,_utf8mb4'$[*]') as signed array)) and multiple equal(1, `test`.`t3`.`a`)) order by `test`.`t3`.`id` desc
+SELECT /*+ NO_RANGE_OPTIMIZATION(t3) */ a, id
+FROM t3 FORCE INDEX (k_a_arr_id)
+WHERE a = 1 AND 30 MEMBER OF (j->'$[*]') ORDER BY id DESC;
+a	id
+1	200
+1	100
+1	50
+1	4
+1	1
+DROP TABLE t3;
+CREATE TABLE t4 (
+pk INT NOT NULL AUTO_INCREMENT,
+id INT NOT NULL,
+c  VARCHAR(50) NOT NULL,
+j  JSON NOT NULL,
+PRIMARY KEY (pk),
+KEY k_arr_id_c ((CAST(j->'$[*]' AS SIGNED ARRAY)), id, c(10))
+);
+INSERT INTO t4 (id, c, j) VALUES
+(3,'ccc','[30]'),   (1,'aaa','[30]'), (5,'bbb','[10,30]'),
+(9,'eee','[40]'),   (2,'ddd','[30]');
+ANALYZE TABLE t4;
+Table	Op	Msg_type	Msg_text
+test.t4	analyze	status	OK
+EXPLAIN FORMAT=TREE SELECT id FROM t4 FORCE INDEX (k_arr_id_c)
+WHERE 30 MEMBER OF (j->'$[*]') ORDER BY id;
+EXPLAIN
+-> Filter: json'30' member of (cast(json_extract(j,_utf8mb4'$[*]') as signed array))  (rows=4)
+    -> Index range scan on t4 using k_arr_id_c over (30 MEMBER OF (json_extract(j,_utf8mb4'$[*]')))  (rows=4)
+
+Warnings:
+Note	1003	/* select#1 */ select `test`.`t4`.`id` AS `id` from `test`.`t4` FORCE INDEX (`k_arr_id_c`) where json'30' member of (cast(json_extract(`j`,_utf8mb4'$[*]') as signed array)) order by `test`.`t4`.`id`
+SELECT id FROM t4 FORCE INDEX (k_arr_id_c)
+WHERE 30 MEMBER OF (j->'$[*]') ORDER BY id;
+id
+1
+2
+3
+5
+EXPLAIN FORMAT=TREE SELECT c FROM t4 FORCE INDEX (k_arr_id_c)
+WHERE 30 MEMBER OF (j->'$[*]') ORDER BY c DESC;
+EXPLAIN
+-> Sort: t4.c DESC  (rows=4)
+    -> Filter: json'30' member of (cast(json_extract(j,_utf8mb4'$[*]') as signed array))  (rows=4)
+        -> Index range scan on t4 using k_arr_id_c over (30 MEMBER OF (json_extract(j,_utf8mb4'$[*]')))  (rows=4)
+
+Warnings:
+Note	1003	/* select#1 */ select `test`.`t4`.`c` AS `c` from `test`.`t4` FORCE INDEX (`k_arr_id_c`) where json'30' member of (cast(json_extract(`j`,_utf8mb4'$[*]') as signed array)) order by `test`.`t4`.`c` desc
+SELECT c FROM t4 FORCE INDEX (k_arr_id_c)
+WHERE 30 MEMBER OF (j->'$[*]') ORDER BY c DESC;
+c
+ddd
+ccc
+bbb
+aaa
+DROP TABLE t4;
+CREATE TABLE t5 (
+pk INT NOT NULL AUTO_INCREMENT,
+c  VARCHAR(50) NOT NULL,
+id INT NOT NULL,
+j  JSON NOT NULL,
+PRIMARY KEY (pk),
+KEY k_c_arr_id (c(10), (CAST(j->'$[*]' AS SIGNED ARRAY)), id)
+);
+INSERT INTO t5 (c, id, j) VALUES
+('aaa', 3, '[30]'),   ('aaa', 1, '[30]'), ('aaa', 5, '[10,30]'),
+('aaa', 2, '[30]'),   ('bbb', 9, '[30]');
+ANALYZE TABLE t5;
+Table	Op	Msg_type	Msg_text
+test.t5	analyze	status	OK
+EXPLAIN FORMAT=TREE SELECT id FROM t5 FORCE INDEX (k_c_arr_id)
+WHERE c = 'aaa' AND 30 MEMBER OF (j->'$[*]') ORDER BY id DESC;
+EXPLAIN
+-> Sort: t5.id DESC  (rows=4)
+    -> Filter: ((t5.c = 'aaa') and json'30' member of (cast(json_extract(j,_utf8mb4'$[*]') as signed array)))  (rows=4)
+        -> Index range scan on t5 using k_c_arr_id over (c = 'aaa' AND 30 MEMBER OF (json_extract(j,_utf8mb4'$[*]')))  (rows=4)
+
+Warnings:
+Note	1003	/* select#1 */ select `test`.`t5`.`id` AS `id` from `test`.`t5` FORCE INDEX (`k_c_arr_id`) where (json'30' member of (cast(json_extract(`j`,_utf8mb4'$[*]') as signed array)) and multiple equal('aaa', `test`.`t5`.`c`)) order by `test`.`t5`.`id` desc
+SELECT id FROM t5 FORCE INDEX (k_c_arr_id)
+WHERE c = 'aaa' AND 30 MEMBER OF (j->'$[*]') ORDER BY id DESC;
+id
+5
+3
+2
+1
+DROP TABLE t5;
