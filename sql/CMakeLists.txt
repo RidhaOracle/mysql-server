@@ -857,22 +857,6 @@ IF(WIN32)
       )
 ENDIF()
 
-# Fixes "C1128: number of sections exceeded object file format limit" in MSVC
-IF(WIN32)
-  ADD_COMPILE_FLAGS(
-    gis/difference.cc
-    gis/difference_functor.cc
-    gis/intersection_functor.cc
-    gis/symdifference_functor.cc
-    gis/touches.cc
-    gis/union.cc
-    gis/union_functor.cc
-    gis/within.cc
-    item_geofunc.cc
-    item_geofunc_relchecks.cc
-    COMPILE_FLAGS "/bigobj")
-ENDIF()
-
 # Downgrade -Werror to warning for gcc
 IF(MY_COMPILER_IS_GNU)
   MY_CHECK_CXX_COMPILER_WARNING("error=maybe-uninitialized" HAS_WARN_FLAG)
@@ -979,6 +963,15 @@ TARGET_LINK_LIBRARIES(sql_main ${MYSQLD_STATIC_PLUGIN_LIBS}
 TARGET_LINK_LIBRARIES(sql_main ext::libprotobuf-lite)
 
 ADD_LIBRARY(sql_gis STATIC ${SQL_GIS_SOURCES})
+IF(WIN32)
+  # /bigobj fixes "C1128: number of sections exceeded object file format limit".
+  # It could be applied per file, when needed, but it causes per-file MSBuild
+  # metadata to be added for VC++, which in turn causes the compiler to compile
+  # then sequentially, as opposed to building them in parallel, needlessly
+  # prolonging the compilation time. See comment on
+  # SQL_DD_BASENAME_COLLISION_SOURCES for more details on this mechanism.
+  TARGET_COMPILE_OPTIONS(sql_gis PRIVATE "/bigobj")
+ENDIF()
 ADD_DEPENDENCIES(sql_gis GenServerSource)
 ADD_DEPENDENCIES(sql_gis GenDigestServerSource)
 ADD_DEPENDENCIES(sql_gis GenBootstrapPriv)
@@ -996,14 +989,72 @@ IF(COMPRESS_DEBUG_SECTIONS)
   ENDIF()
 ENDIF()
 
+SET(SQL_DD_GENERATED_DEPENDENCIES
+  GenFixPrivs
+  GenServerSource
+  GenDigestServerSource
+  GenBootstrapPriv
+  GenSysSchema
+  GenError
+  GenKeywordList
+)
+
+IF(MSVC)
+  # VC++ serializes compilation for sources with colliding object names within
+  # the same project. Move the later source of each collision out of sql_dd into
+  # a separate library that we link back to sql_dd. This improves compilation
+  # times and handles new collisions without maintaining a manual source list.
+  # In more detail, the msbuild is able to parallelise build per source group,
+  # using compiler's /MP option, as it is building the groups in sequence. And
+  # each change of output objfile (required by filename collisions) with /Fo
+  # creates a separate group. Refer to this documentation and project file for
+  # more details:
+  # https://learn.microsoft.com/en-us/visualstudio/msbuild/msbuild-batching?view=visualstudio
+  # https://learn.microsoft.com/en-us/cpp/build/reference/mp-build-with-multiple-processes?view=msvc-180
+  # https://learn.microsoft.com/en-us/cpp/build/reference/fo-object-file-name?view=msvc-180
+
+  SET(SQL_DD_OBJECT_NAMES)
+  SET(SQL_DD_BASENAME_COLLISION_OBJECT_NAMES)
+  SET(SQL_DD_BASENAME_COLLISION_SOURCES)
+  FOREACH(source ${DD_SOURCES})
+    # Different source extensions and letter case can still produce the same
+    # case-insensitive object name on Windows.
+    GET_FILENAME_COMPONENT(object_name "${source}" NAME_WLE)
+    STRING(TOLOWER "${object_name}" object_name)
+    LIST(FIND SQL_DD_OBJECT_NAMES "${object_name}" object_name_index)
+    IF(object_name_index EQUAL -1)
+      LIST(APPEND SQL_DD_OBJECT_NAMES "${object_name}")
+    ELSE()
+      LIST(FIND SQL_DD_BASENAME_COLLISION_OBJECT_NAMES
+        "${object_name}" collision_object_name_index)
+      IF(collision_object_name_index EQUAL -1)
+        LIST(APPEND SQL_DD_BASENAME_COLLISION_OBJECT_NAMES "${object_name}")
+      ELSE()
+        MESSAGE(WARNING
+          "DD source ${source} generates ${object_name}.obj, which collides "
+          "with at least two other sources. Rename the source, or improve "
+          "this CMake script to include another source group.")
+      ENDIF()
+      LIST(APPEND SQL_DD_BASENAME_COLLISION_SOURCES "${source}")
+    ENDIF()
+  ENDFOREACH()
+
+  LIST(REMOVE_ITEM DD_SOURCES ${SQL_DD_BASENAME_COLLISION_SOURCES})
+ENDIF()
+
 ADD_LIBRARY(sql_dd STATIC ${DD_SOURCES})
-ADD_DEPENDENCIES(sql_dd GenFixPrivs)
-ADD_DEPENDENCIES(sql_dd GenServerSource)
-ADD_DEPENDENCIES(sql_dd GenDigestServerSource)
-ADD_DEPENDENCIES(sql_dd GenBootstrapPriv)
-ADD_DEPENDENCIES(sql_dd GenSysSchema)
-ADD_DEPENDENCIES(sql_dd GenError)
-ADD_DEPENDENCIES(sql_dd GenKeywordList)
+ADD_DEPENDENCIES(sql_dd ${SQL_DD_GENERATED_DEPENDENCIES})
+
+IF(MSVC AND SQL_DD_BASENAME_COLLISION_SOURCES)
+  ADD_LIBRARY(sql_dd_basename_collisions STATIC
+    ${SQL_DD_BASENAME_COLLISION_SOURCES})
+
+  TARGET_LINK_LIBRARIES(sql_dd_basename_collisions sql_gis sql_main)
+  TARGET_LINK_LIBRARIES(sql_dd sql_dd_basename_collisions)
+
+  ADD_DEPENDENCIES(sql_dd_basename_collisions
+    ${SQL_DD_GENERATED_DEPENDENCIES})
+ENDIF()
 TARGET_LINK_LIBRARIES(sql_dd sql_gis sql_main)
 SET_TARGET_PROPERTIES(sql_dd PROPERTIES LINK_INTERFACE_MULTIPLICITY 3)
 
