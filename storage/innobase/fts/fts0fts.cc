@@ -5641,12 +5641,15 @@ void fts_savepoint_laststmt_refresh(trx_t *trx) /*!< in: transaction */
   fts_savepoint_t *savepoint;
 
   fts_trx = trx->fts_trx;
+  ut_ad(ib_vector_size(fts_trx->last_stmt) == 1);
 
   savepoint = static_cast<fts_savepoint_t *>(ib_vector_pop(fts_trx->last_stmt));
   fts_savepoint_free(savepoint);
 
   ut_ad(ib_vector_is_empty(fts_trx->last_stmt));
   savepoint = fts_savepoint_create(fts_trx->last_stmt, nullptr, nullptr);
+  ut_ad(ib_vector_size(fts_trx->last_stmt) == 1);
+  ut_ad(rbt_empty(savepoint->tables));
 }
 
 /********************************************************************
@@ -5698,6 +5701,8 @@ static void fts_undo_last_stmt(
 /** Rollback to savepoint identified by name. */
 void fts_savepoint_rollback_last_stmt(trx_t *trx) /*!< in: transaction */
 {
+  ulint n_savepoints;
+  ulint n_last_stmt;
   ib_vector_t *savepoints;
   fts_savepoint_t *savepoint;
   fts_savepoint_t *last_stmt;
@@ -5709,6 +5714,10 @@ void fts_savepoint_rollback_last_stmt(trx_t *trx) /*!< in: transaction */
 
   fts_trx = trx->fts_trx;
   savepoints = fts_trx->savepoints;
+  n_savepoints = ib_vector_size(savepoints);
+  n_last_stmt = ib_vector_size(fts_trx->last_stmt);
+  ut_ad_lt(0, n_savepoints);
+  ut_ad_lt(0, n_last_stmt);
 
   savepoint = static_cast<fts_savepoint_t *>(ib_vector_last(savepoints));
   last_stmt =
@@ -5733,6 +5742,10 @@ void fts_savepoint_rollback_last_stmt(trx_t *trx) /*!< in: transaction */
       fts_undo_last_stmt(*s_ftt, *l_ftt);
     }
   }
+
+  /* This should not alter transaction-level FTS savepoint stacks. */
+  ut_ad(ib_vector_size(savepoints) == n_savepoints);
+  ut_ad(ib_vector_size(fts_trx->last_stmt) == n_last_stmt);
 }
 
 /** Rollback to savepoint identified by name. */
