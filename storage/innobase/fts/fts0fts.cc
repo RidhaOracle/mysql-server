@@ -5651,8 +5651,8 @@ static void fts_undo_last_stmt(
 /** Rollback to savepoint identified by name. */
 void fts_savepoint_rollback_last_stmt(trx_t *trx) /*!< in: transaction */
 {
-  ulint n_savepoints;
-  ulint n_last_stmt;
+  ulint n_savepoints [[maybe_unused]];
+  ulint n_last_stmt [[maybe_unused]];
   ib_vector_t *savepoints;
   fts_savepoint_t *savepoint;
   fts_savepoint_t *last_stmt;
