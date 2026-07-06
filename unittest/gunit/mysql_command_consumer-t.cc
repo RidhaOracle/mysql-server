@@ -119,6 +119,9 @@ class MysqlCommandUseResultTest : public ::testing::Test {
                                                        nullptr))
       return true;
 
+    if (mysql_command_consumer_dom_imp::end_result_metadata(srv_ctx_, 0, 0))
+      return true;
+
     for (long long value : values) {
       if (mysql_command_consumer_dom_imp::start_row(srv_ctx_) ||
           mysql_command_consumer_dom_imp::get(srv_ctx_, value) ||
@@ -126,7 +129,7 @@ class MysqlCommandUseResultTest : public ::testing::Test {
         return true;
     }
 
-    return mysql_command_consumer_dom_imp::end_result_metadata(srv_ctx_, 0, 0);
+    return false;
   }
 
   bool materialize_next_command_rows(std::initializer_list<long long> values) {
