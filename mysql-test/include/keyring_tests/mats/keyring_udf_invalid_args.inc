@@ -41,6 +41,8 @@ SELECT keyring_key_remove('key3');
 # NULL type name
 --error ER_CANT_INITIALIZE_UDF
 SELECT keyring_key_generate('key', NULL, 16);
+# typed NULL type name
+SELECT keyring_key_generate('key', CAST(NULL AS CHAR), 16);
 # empty type name
 --error ER_CANT_INITIALIZE_UDF
 SELECT keyring_key_generate('key', '', 16);
