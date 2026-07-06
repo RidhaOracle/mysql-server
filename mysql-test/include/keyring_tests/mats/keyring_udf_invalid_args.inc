@@ -59,6 +59,8 @@ SELECT keyring_key_remove('key4');
 # NULL length
 --error ER_CANT_INITIALIZE_UDF
 SELECT keyring_key_generate('key', 'SECRET', NULL);
+--error ER_CANT_INITIALIZE_UDF
+SELECT keyring_key_generate('key', 'SECRET', CAST(NULL AS CHAR));
 # negative length
 --error ER_CANT_INITIALIZE_UDF
 SELECT keyring_key_generate('key', 'SECRET', -1);
