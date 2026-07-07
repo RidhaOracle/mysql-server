@@ -50,6 +50,7 @@ BULK Data Load. Currently treated like DDL */
 #include "sql/current_thd.h"
 #include "sql/field.h"
 #include "sql/sql_table.h"
+#include "sync0debug.h"
 #include "trx0roll.h"
 #include "trx0sys.h"
 #include "trx0undo.h"
@@ -230,6 +231,12 @@ dberr_t Loader::begin(const row_prebuilt_t *prebuilt, size_t data_size,
   dict_table_t *table = prebuilt->table;
   m_table = table;
   m_index = prebuilt->index;
+
+#ifdef UNIV_DEBUG
+  DBUG_EXECUTE_IF("bulk_load_find_reused_freed_page",
+                  Sync_point::add(prebuilt->trx->mysql_thd,
+                                  "bulk_load_find_reused_freed_page"););
+#endif /* UNIV_DEBUG */
 
   m_ctxs.resize(m_num_threads);
 
@@ -723,6 +730,10 @@ void Loader::Thread_data::free() {
 }
 
 dberr_t Loader::end(bool is_error) {
+#ifdef UNIV_DEBUG
+  Sync_point::erase(m_trx->mysql_thd, "bulk_load_find_reused_freed_page");
+#endif /* UNIV_DEBUG */
+
   dberr_t db_err = DB_SUCCESS;
 
   uint64_t max_rowid{0};

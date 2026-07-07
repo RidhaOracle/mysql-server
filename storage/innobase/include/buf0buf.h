@@ -518,6 +518,12 @@ static inline bool buf_page_peek(const page_id_t &page_id);
 
 #ifdef UNIV_DEBUG
 
+/** Checks whether a page is present in the buffer pool and marked as freed.
+The page is not fetched when it is absent.
+@param[in] page_id page id
+@return true if the page is present and marked as freed */
+bool buf_page_was_freed(const page_id_t &page_id) noexcept;
+
 /** Sets file_page_was_freed true if the page is found in the buffer pool.
 This function should be called when we free a file page and want the
 debug version to check that it is not accessed any more unless
