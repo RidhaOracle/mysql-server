@@ -2847,21 +2847,25 @@ static void row_import_discard_changes(
 
   ut_a(trx->dict_operation_lock_mode == RW_X_LATCH);
 
-  /* Since we update the index root page numbers on disk after
-  we've done a successful import. The table will not be loadable.
-  However, we need to ensure that the in memory root page numbers
-  are reset to "NULL". We assume these indexes were not added to AHI, otherwise
-  the btr_search_drop_page_hash_index() will fail for these indexes. */
+  /* The persistent DD is updated with imported index root page numbers only
+  after IMPORT succeeds. On failure, invalidate the roots in the in-memory
+  dictionary so B-tree operations cannot use stale root page numbers, and mark
+  the tablespace missing below.
+
+  Keep index->space intact so lazy AHI cleanup can match stale buffer-pool pages
+  to their indexes. Such pages can remain after the tablespace is closed and
+  still refer to these dict_index_t objects. */
 
   for (auto index : table->indexes) {
     index->page = FIL_NULL;
-    index->space = FIL_NULL;
   }
 
   table->ibd_file_missing = true;
 
   err = fil_close_tablespace(table->space);
   ut_a(err == DB_SUCCESS || err == DB_TABLESPACE_NOT_FOUND);
+
+  DEBUG_SYNC_C("row_import_discard_changes_after_close_tablespace");
 }
 
 /** Clean up after import tablespace. */
@@ -4513,9 +4517,8 @@ dberr_t row_import_for_mysql(dict_table_t *table, dd::Table *table_def,
       err = cfg.match_schema(trx->mysql_thd, table_def);
     }
 
-    /* Update index->page and SYS_INDEXES.PAGE_NO to match the
-    B-tree root page numbers in the tablespace. Use the index
-    name from the .cfg file to find match. */
+    /* Set the in-memory index roots from the B-tree root page numbers in the
+    .cfg file. The persistent DD is updated only after IMPORT succeeds. */
 
     if (err == DB_SUCCESS) {
       cfg.set_root_by_name();
@@ -4561,9 +4564,9 @@ dberr_t row_import_for_mysql(dict_table_t *table, dd::Table *table_def,
     if (err == DB_SUCCESS) {
       err = fetchIndexRootPages.build_row_import(&cfg);
 
-      /* Update index->page and SYS_INDEXES.PAGE_NO
-      to match the B-tree root page numbers in the
-      tablespace. */
+      /* Set the in-memory index roots from B-tree root page numbers discovered
+      in the tablespace. The persistent DD is updated only after IMPORT
+      succeeds. */
 
       if (err == DB_SUCCESS) {
         err = cfg.set_root_by_heuristic();
