@@ -119,7 +119,7 @@ Run:
 
 ```bash
 grep -qxF '*                          @seemasundara @gopshank' .github/CODEOWNERS
-test "$(grep -c '@RidhaOracle' .github/CODEOWNERS)" -eq 9
+test "$(grep -c '^[^#].*@RidhaOracle' .github/CODEOWNERS)" -eq 9
 ```
 
 Expected: both assertions pass; the catch-all has two owners and all nine area-specific entries remain.
