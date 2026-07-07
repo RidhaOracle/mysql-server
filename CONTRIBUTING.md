@@ -19,10 +19,9 @@ Before any contribution can be merged you must have signed the
 2. Sign the OCA, referencing that account.
 3. Use the **same email** on your Git commits (`git config user.email`).
 
-The `oca-check` workflow verifies signing status on every pull request and posts
-the result as a status check — no manual back-and-forth, no waiting on a human to
-confirm before review can start. PRs from contributors who have not signed are
-labeled `oca:unsigned` with a comment explaining the next step.
+Oracle verifies OCA status separately from this repository's GitHub Actions
+workflows. Follow any OCA guidance reported on the pull request before the
+change is merged.
 
 ## 2. Get a build in one command
 
@@ -78,7 +77,6 @@ Push your branch and open a PR against `trunk`. The
 [pull request template](.github/PULL_REQUEST_TEMPLATE.md) prompts for the few
 things reviewers always need. On open, CI automatically:
 
-- verifies your OCA status,
 - checks formatting,
 - builds Debug on gcc and clang,
 - runs the smoke MTR suite,

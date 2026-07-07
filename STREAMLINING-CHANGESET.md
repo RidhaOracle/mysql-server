@@ -29,7 +29,6 @@ change** — this is engineering workflow only.
 | `.github/workflows/pr-build.yml` | Debug build on gcc+clang, Boost+ccache caching | MariaDB, Valkey |
 | `.github/workflows/mtr-smoke.yml` | Curated fast MTR subset on every PR (<~20 min) | Valkey/CNCF |
 | `.github/workflows/clang-format.yml` | Format check using the **existing** `.clang-format` | ClickHouse |
-| `.github/workflows/oca-check.yml` | Automated OCA verification + label, replaces manual confirm | (closes a MySQL-specific gap) |
 | `.github/workflows/labeler.yml` + `.github/labeler.yml` | Auto-route PRs to area owners | Kubernetes/Valkey |
 | `.github/workflows/stale.yml` | Gentle hygiene, only for `needs-info` | OpenJDK triage norms |
 | `scripts/dev/*` | `bootstrap`/`build`/`mtr`/`format` so **local == CI** | PostgreSQL |
@@ -51,8 +50,8 @@ git add -A && git commit -m "devex: streamline contribution process (H1–H3 PoC
 ```
 
 The `.clang-format` already in the tree is reused as-is; nothing here redefines
-code style. The `oca-allowlist.txt` is a PoC fixture — wire `oca-check.yml` to the
-real OCA verification service for production.
+code style. OCA verification is handled separately by Oracle rather than by a
+workflow in this repository.
 
 ## The one-line argument
 

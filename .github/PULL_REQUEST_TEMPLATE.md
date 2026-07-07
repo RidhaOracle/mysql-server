@@ -17,7 +17,6 @@
 ### Contributor checklist
 
 - [ ] I have signed the [OCA](https://oca.opensource.oracle.com) with the email on these commits
-- [ ] I confirm the code being submitted is offered under the terms of the OCA, and that I am authorized to contribute it.
 - [ ] Code is formatted (`scripts/dev/format.sh`)
 - [ ] Commits are focused with descriptive messages
 - [ ] For a behavior/format/syntax change, an RFC was opened or linked: ______
