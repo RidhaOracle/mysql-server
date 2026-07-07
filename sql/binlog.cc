@@ -5980,7 +5980,7 @@ int MYSQL_BIN_LOG::open_crash_safe_index_file() {
     myf flags = MY_WME | MY_NABP | MY_WAIT_IF_FULL;
     if (is_relay_log) flags = flags | MY_REPORT_WAITING_IF_FULL;
 
-    if ((file = my_open(crash_safe_index_file_name, O_RDWR | O_CREAT,
+    if ((file = my_open(crash_safe_index_file_name, O_RDWR | O_CREAT | O_TRUNC,
                         MYF(MY_WME))) < 0 ||
         init_io_cache(&crash_safe_index_file, file, IO_SIZE, WRITE_CACHE, 0,
                       false, flags)) {
