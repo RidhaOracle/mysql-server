@@ -135,7 +135,7 @@ git commit -m "Update default code owners"
 
 **Files:**
 - Verify: `.github/workflows/*.yml`
-- Verify: all files changed since the latest implementation-plan commit
+- Verify: the seven implementation files changed since pre-implementation scope commit `e79588df945`
 
 - [ ] **Step 1: Parse every remaining workflow**
 
@@ -152,10 +152,9 @@ Expected: every remaining workflow path is printed and Ruby exits with status `0
 Run:
 
 ```bash
-BASE="$(git log -1 --format=%H -- Docs/superpowers/plans/2026-07-07-remove-oca-check.md)"
-git diff --check "$BASE"..HEAD
-git diff --stat "$BASE"..HEAD
-git diff "$BASE"..HEAD -- .github/CODEOWNERS .github/PULL_REQUEST_TEMPLATE.md .github/workflows/pr-template-check.yml .github/workflows/oca-check.yml .github/oca-allowlist.txt CONTRIBUTING.md STREAMLINING-CHANGESET.md
+git diff --check e79588df945..HEAD -- .github/CODEOWNERS .github/PULL_REQUEST_TEMPLATE.md .github/workflows/pr-template-check.yml .github/workflows/oca-check.yml .github/oca-allowlist.txt CONTRIBUTING.md STREAMLINING-CHANGESET.md
+git diff --stat e79588df945..HEAD -- .github/CODEOWNERS .github/PULL_REQUEST_TEMPLATE.md .github/workflows/pr-template-check.yml .github/workflows/oca-check.yml .github/oca-allowlist.txt CONTRIBUTING.md STREAMLINING-CHANGESET.md
+git diff e79588df945..HEAD -- .github/CODEOWNERS .github/PULL_REQUEST_TEMPLATE.md .github/workflows/pr-template-check.yml .github/workflows/oca-check.yml .github/oca-allowlist.txt CONTRIBUTING.md STREAMLINING-CHANGESET.md
 git status --short
 ```
 
