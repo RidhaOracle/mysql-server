@@ -8,7 +8,8 @@ Remove the repository-owned Oracle Contributor Agreement (OCA) automation becaus
 
 - Delete `.github/workflows/oca-check.yml`, including its status, label, and comment automation.
 - Delete `.github/oca-allowlist.txt`, which exists only as the deleted workflow's fallback data.
-- Keep the OCA requirements in `CONTRIBUTING.md`, `.github/PULL_REQUEST_TEMPLATE.md`, and `.github/workflows/pr-template-check.yml`.
+- Keep the signed-OCA requirement in `CONTRIBUTING.md`, `.github/PULL_REQUEST_TEMPLATE.md`, and `.github/workflows/pr-template-check.yml`.
+- Remove the separate “offered under the terms of the OCA” attestation from the pull request template and from the validator's synchronized expected template.
 - Remove statements in `CONTRIBUTING.md` that claim this repository verifies or labels OCA status. State instead that Oracle performs the check separately.
 - Remove the obsolete OCA workflow and allowlist entries from `STREAMLINING-CHANGESET.md`.
 - Change only the catch-all entry in `.github/CODEOWNERS` to `@seemasundara @gopshank` and update its surrounding comment. Leave path-specific `@RidhaOracle` entries unchanged.
@@ -21,6 +22,6 @@ Pull requests continue to ask contributors to confirm the OCA requirements. The 
 
 - Confirm the two OCA automation files are absent.
 - Search tracked files for references to `oca-check`, `oca-allowlist`, and OCA status labels; no active automation references should remain.
-- Confirm contributor-facing OCA requirements remain in the PR template and contribution guide.
+- Confirm the signed-OCA requirement remains while the separate legal attestation is absent.
 - Parse all remaining GitHub Actions YAML files.
 - Inspect the final diff to ensure unrelated files and the user's untracked `.DS_Store` files are untouched.
