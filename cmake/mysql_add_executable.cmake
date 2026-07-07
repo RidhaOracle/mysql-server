@@ -209,7 +209,12 @@ FUNCTION(MYSQL_ADD_EXECUTABLE target_arg)
       LIST(FIND ARG_LINK_LIBRARIES server_unittest_library foundit)
       IF(foundit GREATER_EQUAL 0)
         SET_PROPERTY(TARGET ${target} PROPERTY JOB_POOL_LINK one_job)
-        MYSQL_ADD_MSVC_UNITTEST_LINK_WAVE_DEPENDENCY(${target})
+        # Keep excluded targets out of the dependency lanes. A default-built
+        # target depending on an excluded target would pull it into the default
+        # build, including individual tests covered by merged executables.
+        IF(NOT ARG_EXCLUDE_FROM_ALL)
+          MYSQL_ADD_MSVC_UNITTEST_LINK_WAVE_DEPENDENCY(${target})
+        ENDIF()
       ENDIF()
     ENDIF()
   ENDIF()
