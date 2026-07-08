@@ -791,7 +791,6 @@ ENDIF()
 SET(SQL_SOURCE
   ${GEN_SOURCES}
   ${GEN_DIGEST_SOURCES}
-  ${GEN_KEYWORD_LIST_SOURCES}
   ${CONF_SOURCES}
   ${SQL_SHARED_SOURCES}
   ${SQL_HEADERS}
@@ -929,6 +928,9 @@ ADD_DEPENDENCIES(sql_main GenServerSource)
 ADD_DEPENDENCIES(sql_main GenDigestServerSource)
 ADD_DEPENDENCIES(sql_main GenBootstrapPriv)
 ADD_DEPENDENCIES(sql_main GenSysSchema)
+# mysqld.cc includes an RPL protobuf generated header, so sql_main must wait
+# for the small protobuf library even though it does not link that library.
+ADD_DEPENDENCIES(sql_main ${RPL_PROTOBUF_LITE_LIB})
 
 IF(DEFINED WITH_HYPERGRAPH_OPTIMIZER)
   IF(WITH_HYPERGRAPH_OPTIMIZER)
@@ -1006,7 +1008,6 @@ SET(SQL_DD_GENERATED_DEPENDENCIES
   GenBootstrapPriv
   GenSysSchema
   GenError
-  GenKeywordList
 )
 
 IF(MSVC)
@@ -1052,7 +1053,12 @@ IF(MSVC)
   LIST(REMOVE_ITEM DD_SOURCES ${SQL_DD_BASENAME_COLLISION_SOURCES})
 ENDIF()
 
-ADD_LIBRARY(sql_dd STATIC ${DD_SOURCES})
+# Keep keyword_list.h in its consuming target so its generation cannot race
+# with compilation of dd/impl/system_views/keywords.cc.
+ADD_LIBRARY(sql_dd STATIC
+  ${DD_SOURCES}
+  ${GEN_KEYWORD_LIST_SOURCES}
+  )
 ADD_DEPENDENCIES(sql_dd ${SQL_DD_GENERATED_DEPENDENCIES})
 TARGET_LINK_LIBRARIES(sql_dd
   PRIVATE ${SQL_SERVER_HEADER_LIBRARIES})
@@ -1258,7 +1264,8 @@ TARGET_LINK_LIBRARIES(rpl_replica
 IF(WIN32)
   # Silence warnings about: needs to have dll-interface
   TARGET_COMPILE_OPTIONS(rpl_replica PRIVATE "/wd4251")
-  ADD_COMPILE_FLAGS(mysqld.cc COMPILE_FLAGS "/wd4251")
+  # The generated RPL protobuf header triggers a false C26815 warning.
+  ADD_COMPILE_FLAGS(mysqld.cc COMPILE_FLAGS "/wd4251" "/wd26815")
   IF(WIN32_CLANG)
     ADD_COMPILE_FLAGS(mysqld.cc COMPILE_FLAGS " -Wno-microsoft-cast")
     ADD_COMPILE_FLAGS(log_event.cc COMPILE_FLAGS " -Wno-microsoft-template")
