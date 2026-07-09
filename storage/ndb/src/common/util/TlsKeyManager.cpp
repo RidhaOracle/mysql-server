@@ -76,6 +76,16 @@ void TlsKeyManager::log_error() const {
                          TlsKeyError::message(m_error), m_path_string);
 }
 
+static int error_callback(const char *str, size_t, void *vp) {
+  intptr_t r = reinterpret_cast<intptr_t>(vp);
+  g_eventLogger->error("NDB TLS [%" PRIuPTR "]: %s", r, str);
+  return 0;
+}
+
+static void log_openssl_errors(intptr_t r) {
+  ERR_print_errors_cb(error_callback, reinterpret_cast<void *>(r));
+}
+
 #if OPENSSL_VERSION_NUMBER < NDB_TLS_MINIMUM_OPENSSL
 
 void TlsKeyManager::init(int, const NodeCertificate *) {}
@@ -85,6 +95,8 @@ void TlsKeyManager::init(const char *, int, int) {}
 void TlsKeyManager::init(const char *, int, Node::Type) {}
 
 void TlsKeyManager::init(int, struct stack_st_X509 *, struct evp_pkey_st *) {}
+
+int TlsKeyManager::on_verify(int, struct x509_store_ctx_st *) { return 0; }
 
 #else
 
@@ -96,16 +108,6 @@ static constexpr const char *cipher_list =
     "TLS_CHACHA20_POLY1305_SHA256:TLS_AES_256_GCM_SHA384:"
     "TLS_AES_128_GCM_SHA256:TLS_AES_128_CCM_SHA256:TLS_AES_128_CCM_8_SHA256:"
     "ECDHE-ECDSA-AES128-GCM-SHA256";
-
-static int error_callback(const char *str, size_t, void *vp) {
-  intptr_t r = reinterpret_cast<intptr_t>(vp);
-  g_eventLogger->error("NDB TLS [%" PRIuPTR "]: %s", r, str);
-  return 0;
-}
-
-static void log_openssl_errors(intptr_t r) {
-  ERR_print_errors_cb(error_callback, reinterpret_cast<void *>(r));
-}
 
 void TlsKeyManager::init(const char *tls_search_path, int node_id,
                          int ndb_node_type) {
@@ -282,8 +284,6 @@ void TlsKeyManager::initialize_context() {
   cert_table_set(m_node_id, m_node_cert.cert());
 }
 
-#endif
-
 int TlsKeyManager::on_verify(int result, X509_STORE_CTX *store) {
   /* If result is 0, verification has failed, and this callback is
      our opportunity to write a log message.
@@ -328,6 +328,8 @@ int TlsKeyManager::on_verify(int result, X509_STORE_CTX *store) {
 
   return result;
 }
+
+#endif
 
 int TlsKeyManager::check_server_host_auth(const NdbSocket &socket,
                                           const char *hostname) {
