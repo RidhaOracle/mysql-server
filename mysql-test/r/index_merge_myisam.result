@@ -1031,6 +1031,12 @@ EXPLAIN
         "key3"
       ],
       "key": "union(intersect(key1,key1),intersect(key3,key3))",
+      "used_key_parts": [
+        "key1",
+        "key1",
+        "key3",
+        "key3"
+      ],
       "key_length": "5,5,5,5",
       "rows_examined_per_scan": 154,
       "rows_produced_per_join": 154,

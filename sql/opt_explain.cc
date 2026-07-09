@@ -426,6 +426,7 @@ class Explain_table_base : public Explain {
   bool explain_possible_keys() override;
 
   bool explain_key_parts(int key, uint key_parts);
+  bool explain_key_parts_for_range_scan(const AccessPath *range_scan);
   bool explain_key_and_len_quick(AccessPath *range_scan);
   bool explain_key_and_len_index(int key);
   bool explain_key_and_len_index(int key, uint key_length, uint key_parts);
@@ -961,14 +962,67 @@ bool Explain_table_base::explain_key_parts(int key, uint key_parts) {
   return false;
 }
 
+/**
+  Append names of the key parts used by a range access path to the current
+  EXPLAIN row.
+
+  For composite range access paths, recursively visit the child range scans and
+  append their used key-part names in the same order as key and key_length.
+
+  @param range_scan Range access path to explain.
+
+  @retval false Success.
+  @retval true  Error while appending a key part name.
+*/
+bool Explain_table_base::explain_key_parts_for_range_scan(
+    const AccessPath *range_scan) {
+  switch (range_scan->type) {
+    case AccessPath::INDEX_RANGE_SCAN:
+    case AccessPath::INDEX_SKIP_SCAN:
+    case AccessPath::GROUP_INDEX_SKIP_SCAN: {
+      const uint key = used_index(range_scan);
+      assert(key != MAX_KEY);
+      return explain_key_parts(key, get_used_key_parts(range_scan));
+    }
+    case AccessPath::INDEX_MERGE: {
+      TABLE *table = range_scan->index_merge().table;
+
+      // Keep the ordering consistent with add_keys_and_lengths_index_merge().
+      for (bool print_primary : {false, true}) {
+        for (AccessPath *child : *range_scan->index_merge().children) {
+          const bool is_primary = table->file->primary_key_is_clustered() &&
+                                  used_index(child) == table->s->primary_key;
+          if (is_primary != print_primary) continue;
+          if (explain_key_parts_for_range_scan(child)) return true;
+        }
+      }
+      return false;
+    }
+    case AccessPath::ROWID_INTERSECTION: {
+      for (AccessPath *child : *range_scan->rowid_intersection().children) {
+        if (explain_key_parts_for_range_scan(child)) return true;
+      }
+      return range_scan->rowid_intersection().cpk_child != nullptr &&
+             explain_key_parts_for_range_scan(
+                 range_scan->rowid_intersection().cpk_child);
+    }
+    case AccessPath::ROWID_UNION: {
+      for (AccessPath *child : *range_scan->rowid_union().children) {
+        if (explain_key_parts_for_range_scan(child)) return true;
+      }
+      return false;
+    }
+    default:
+      assert(false);
+      return false;
+  }
+}
+
 bool Explain_table_base::explain_key_and_len_quick(AccessPath *path) {
-  bool ret = false;
   StringBuffer<512> str_key(cs);
   StringBuffer<512> str_key_len(cs);
 
-  if (used_index(path) != MAX_KEY)
-    ret = explain_key_parts(used_index(range_scan_path),
-                            get_used_key_parts(path));
+  const bool ret = explain_key_parts_for_range_scan(path);
   add_keys_and_lengths(path, &str_key, &str_key_len);
   return (ret || fmt->entry()->col_key.set(str_key) ||
           fmt->entry()->col_key_len.set(str_key_len));
