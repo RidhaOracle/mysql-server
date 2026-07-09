@@ -9559,9 +9559,10 @@ const byte *fil_tablespace_redo_extend_wrapper(const byte *ptr, const byte *end,
     ut_a(fil_space_t::s_sys_space);
   } else {
     ut_a(tablespace_scanning != nullptr);
-    if (!tablespace_scanning->is_tablespace_file_found(space_id)) {
-      /* No nodes found for this tablespace ID. It's possible that the
-      nodes were deleted later. */
+    if (!fil_tablespace_lookup_for_recovery(space_id)) {
+      /* It's possible that it was deleted "later". We optimistically ignore it
+      now, and at the end of recovery we check if MLOG_FILE_DELETE for this
+      space_id was observed. */
       return fil_tablespace_redo_extend(ptr, end, space_id, true);
     }
 
@@ -9576,16 +9577,11 @@ const byte *fil_tablespace_redo_extend_wrapper(const byte *ptr, const byte *end,
               undo_truncate::id2num(space_id))) {
         return fil_tablespace_redo_extend(ptr, end, space_id, true);
       }
-      /* The `fil_tablespace_open_for_recovery()` could have called
-      tablespace_scanning->erase_path(space_id) if the keyring is
-      missing. Abort recovery if it happened. It may have been corrupted also,
-      in which case we abort it the same way.*/
-      if (err == DB_CORRUPTION ||
-          !tablespace_scanning->is_tablespace_file_found(space_id)) {
-        ib::fatal(UT_LOCATION_HERE, ER_IB_MSG_TABLESPACE_NOT_OPENED,
-                  ulong{space_id});
-      }
-      return nullptr;
+
+      /* More redo cannot resolve an error opening a file found during
+      tablespace discovery. */
+      ib::fatal(UT_LOCATION_HERE, ER_IB_MSG_TABLESPACE_NOT_OPENED,
+                ulong{space_id});
     }
   }
 
