@@ -1048,7 +1048,7 @@ int runRollbackNothing(NDBT_Context *ctx, NDBT_Step *step) {
 
 int runMassiveRollback(NDBT_Context *ctx, NDBT_Step *step) {
   NdbRestarter restarter;
-  const int records = 4 * restarter.getNumDbNodes();
+  const int records = 16 * restarter.getNumDbNodes();
 
   HugoTransactions hugoTrans(*ctx->getTab());
   if (hugoTrans.loadTable(GETNDB(step), records) != 0) {
@@ -1059,8 +1059,8 @@ int runMassiveRollback(NDBT_Context *ctx, NDBT_Step *step) {
   HugoOperations hugoOps(*ctx->getTab());
   Ndb *pNdb = GETNDB(step);
 
-  const Uint32 OPS_PER_TRANS = 256;
-  const Uint32 OPS_TOTAL = 4096;
+  const Uint32 OPS_PER_TRANS = 250;
+  const Uint32 OPS_TOTAL = 1000;  // MaxRowVersionsPerTransaction default value
 
   for (int row = 0; row < records; row++) {
     int res;
