@@ -99,7 +99,7 @@ TEST_F(Rem0recPageTest, TryGetNextOffsRejectsShortDisplacements) {
   EXPECT_FALSE(rec_try_get_next_offs(rec, true).has_value());
 }
 
-TEST_F(Rem0recPageTest, NextOffsetMustPrecedeHeapTop) {
+TEST_F(Rem0recPageTest, NextOffsetMustNotExceedHeapTop) {
   constexpr uint16_t rec_offset = 512;
   constexpr uint16_t heap_top = 1024;
   auto *rec = m_page + rec_offset;
@@ -116,7 +116,7 @@ TEST_F(Rem0recPageTest, NextOffsetMustPrecedeHeapTop) {
     EXPECT_TRUE(page_rec_try_get_next_offs(rec, comp).has_value());
 
     mach_write_to_2(rec - REC_NEXT, encode_target(heap_top));
-    EXPECT_FALSE(page_rec_try_get_next_offs(rec, comp).has_value());
+    EXPECT_TRUE(page_rec_try_get_next_offs(rec, comp).has_value());
 
     mach_write_to_2(rec - REC_NEXT, encode_target(heap_top + 1));
     EXPECT_FALSE(page_rec_try_get_next_offs(rec, comp).has_value());

@@ -653,8 +653,11 @@ static inline ut::Expected<uint16_t, uint16_t> page_rec_try_get_next_offs(
   }
 
   const page_t *page = page_align(rec);
-  /* PAGE_HEAP_TOP is the first free byte, not a valid record origin. */
-  if (offs.value() >= page_header_get_field(page, PAGE_HEAP_TOP)) {
+  /* A record with a zero-length data payload can have its origin at
+  PAGE_HEAP_TOP when it is the last record allocated from the page heap,
+  because its header and field metadata precede the origin. Only offsets
+  beyond the heap are invalid. */
+  if (offs.value() > page_header_get_field(page, PAGE_HEAP_TOP)) {
     return ut::Unexpected{offs.value()};
   }
 
