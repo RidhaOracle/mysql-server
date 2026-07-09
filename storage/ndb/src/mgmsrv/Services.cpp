@@ -329,8 +329,7 @@ extern int g_errorInsert;
 
 MgmApiSession::MgmApiSession(class MgmtSrvr &mgm, NdbSocket &&sock,
                              Uint64 session_id)
-    : SocketServer::Session(m_secure_socket),
-      m_secure_socket(std::move(sock)),
+    : m_secure_socket(std::move(sock)),
       m_mgmsrv(mgm),
       m_session_id(session_id),
       m_name("unknown:0") {

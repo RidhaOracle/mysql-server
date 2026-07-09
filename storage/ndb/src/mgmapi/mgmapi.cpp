@@ -72,10 +72,7 @@
         ParserRow<ParserDummy>::IgnoreMinMax, 0, 0, 0, 0, 0         \
   }
 
-class ParserDummy : private SocketServer::Session {
- public:
-  ParserDummy(const NdbSocket &sock) : SocketServer::Session(sock) {}
-};
+class ParserDummy : private SocketServer::Session {};
 
 typedef Parser<ParserDummy> Parser_t;
 
@@ -502,7 +499,7 @@ static const Properties *ndb_mgm_call(
   CHECK_TIMEDOUT_RET(handle, in, out, NULL, cmd);
 
   Parser_t::Context ctx;
-  ParserDummy session(handle->socket);
+  ParserDummy session;
   Parser_t parser(command_reply, in);
 
   const Properties *p = parser.parse(ctx, session);
