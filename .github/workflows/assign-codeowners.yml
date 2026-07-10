@@ -71,12 +71,26 @@ jobs:
             }
 
             const reviewers = eligible.filter((owner) => !existing.has(owner.toLowerCase()));
+            let reviewRequestSucceeded = reviewers.length === 0;
             if (reviewers.length > 0) {
-              await github.rest.pulls.requestReviewers({
-                ...context.repo,
-                pull_number: pr.number,
-                reviewers,
-              });
+              try {
+                await github.rest.pulls.requestReviewers({
+                  ...context.repo,
+                  pull_number: pr.number,
+                  reviewers,
+                });
+                reviewRequestSucceeded = true;
+              } catch (error) {
+                // Forks can retain upstream owners that are not collaborators.
+                // Keep the automation informational in that case.
+                if (error.status !== 422) throw error;
+                core.warning(`Could not request reviews: ${error.message}`);
+              }
+            }
+
+            if (!reviewRequestSucceeded) {
+              core.info('Skipping the review-request label because no reviewer was assigned.');
+              return;
             }
 
             const label = {
