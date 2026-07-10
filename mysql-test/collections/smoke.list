@@ -1,6 +1,6 @@
 # Curated fast PR signal — one representative test per major area.
 # Run via: scripts/dev/mtr.sh smoke  (also the MTR Smoke PR workflow)
-main.select
+main.select_all
 main.join
 main.subselect
 main.create

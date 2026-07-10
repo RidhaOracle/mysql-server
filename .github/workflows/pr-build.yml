@@ -6,7 +6,6 @@ on:
 
 permissions:
   contents: read
-  issues: write
 
 # Cancel superseded runs so a fast push doesn't queue behind a stale build.
 concurrency:
@@ -16,7 +15,7 @@ concurrency:
 jobs:
   build:
     name: Debug build (${{ matrix.compiler }})
-    runs-on: ubuntu-24.04-8core
+    runs-on: ubuntu-latest
     timeout-minutes: 90
     strategy:
       fail-fast: false
@@ -58,6 +57,9 @@ jobs:
     if: ${{ always() && !cancelled() }}
     needs: build
     runs-on: ubuntu-24.04
+    permissions:
+      issues: write
+      pull-requests: write
     steps:
       - name: Update build result label
         uses: actions/github-script@v7
