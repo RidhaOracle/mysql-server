@@ -2700,7 +2700,8 @@ check_reverse_order:
         tab->set_type(calc_join_type(tab->range_scan()));
         tab->use_quick = QS_RANGE;
         if (is_loose_index_scan(tab->range_scan()))
-          join->tmp_table_param.precomputed_group_by = true;
+          join->tmp_table_param.precomputed_group_by =
+              !is_agg_loose_index_scan(tab->range_scan());
         tab->position()->filter_effect = COND_FILTER_STALE;
       }
     }  // best_key >= 0

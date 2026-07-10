@@ -4737,7 +4737,8 @@ bool JOIN::make_tmp_tables_info() {
       */
       if (qep_tab[0].range_scan() &&
           is_loose_index_scan(qep_tab[0].range_scan()))
-        tmp_table_param.precomputed_group_by = true;
+        tmp_table_param.precomputed_group_by =
+            !is_agg_loose_index_scan(qep_tab[0].range_scan());
 
       ORDER_with_src dummy;  // TODO can use table->group here also
 
