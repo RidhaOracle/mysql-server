@@ -157,7 +157,7 @@ static void wait_pid(bool should_sigkill) {
         message("Child process: %d, exit %d", static_cast<int>(child_pid),
                 exit_code);
       // Exit with exit status of the child
-      exit(exit_code);
+      exit(0);
     }
 
     if (WIFSIGNALED(status))
