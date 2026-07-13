@@ -90,6 +90,7 @@ jobs:
       needs.codex.outputs.review_b64 != ''
     permissions:
       issues: write
+      pull-requests: write
     steps:
       - name: Post Codex feedback
         uses: actions/github-script@v7
