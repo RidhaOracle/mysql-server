@@ -46,7 +46,7 @@
      parent does not need to properly cleanup any child, it is handled
      automatically.
 
-  3. Signals received by the process will trigger same action as 2)
+  3. Signals received by the process will trigger the same action as 2)
 
 */
 
