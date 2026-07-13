@@ -1,4 +1,4 @@
-name: MTR Smoke
+name: MTR
 on:
   pull_request:
     branches: [trunk]
@@ -11,14 +11,14 @@ concurrency:
   group: mtr-${{ github.event.pull_request.number }}
   cancel-in-progress: true
 
-# Fast, curated test signal on every PR. The full suite (innodb, replication,
-# rpl, group_replication, …) runs nightly on trunk, not per-PR, to keep the
-# contributor feedback loop under ~20 minutes.
+# Run MTR's normal default test selection on every PR.
 jobs:
-  smoke:
+  mtr:
     runs-on: ubuntu-latest
+    # A full default MTR selection needs substantially more time than the
+    # retired smoke check. 360 minutes is GitHub-hosted runners' job maximum.
+    timeout-minutes: 360
     needs: []
-    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
       - run: scripts/dev/bootstrap.sh
@@ -32,20 +32,20 @@ jobs:
           key: ccache-gcc-${{ github.sha }}
           restore-keys: ccache-gcc-
       - run: scripts/dev/build.sh debug
-      - name: Run smoke suite
-        run: scripts/dev/mtr.sh smoke
+      - name: Run MTR
+        run: scripts/dev/mtr.sh
       - name: Publish test report
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: mtr-smoke-logs
+          name: mtr-logs
           path: build/mysql-test/var/log/
           retention-days: 5
 
   report:
     name: Label MTR result
     if: ${{ always() && !cancelled() }}
-    needs: smoke
+    needs: mtr
     runs-on: ubuntu-24.04
     permissions:
       issues: write
@@ -55,10 +55,10 @@ jobs:
         uses: actions/github-script@v7
         with:
           script: |
-            const passed = '${{ needs.smoke.result }}' === 'success';
+            const passed = '${{ needs.mtr.result }}' === 'success';
             const labels = [
-              { name: 'MTR Passed', color: '0E8A16', description: 'MTR smoke suite passed' },
-              { name: 'MTR Failed', color: 'D93F0B', description: 'MTR smoke suite failed' },
+              { name: 'MTR Passed', color: '0E8A16', description: 'MTR suite passed' },
+              { name: 'MTR Failed', color: 'D93F0B', description: 'MTR suite failed' },
             ];
 
             for (const label of labels) {
