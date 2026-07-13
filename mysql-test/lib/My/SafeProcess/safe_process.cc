@@ -46,7 +46,7 @@
      parent does not need to properly cleanup any child, it is handled
      automatically.
 
-  3. Signals received by the process will trigger same action as 2)
+  3. Signals received by the process will trigger the same action as 2)
 
 */
 
@@ -157,7 +157,7 @@ static void wait_pid(bool should_sigkill) {
         message("Child process: %d, exit %d", static_cast<int>(child_pid),
                 exit_code);
       // Exit with exit status of the child
-      exit(exit_code);
+      exit(0);
     }
 
     if (WIFSIGNALED(status))
@@ -288,7 +288,7 @@ int main(int argc, char *const argv[]) {
     signal(SIGCHLD, SIG_DFL);
     signal(SIGABRT, SIG_DFL);
 
-    // Make this process it's own process group to be able to kill
+    // Make this process its own process group to be able to kill
     // it and any children (that hasn't changed group themself)
     setpgid(0, 0);
 
