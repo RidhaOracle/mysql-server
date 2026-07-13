@@ -26,7 +26,7 @@ jobs:
       review_b64: ${{ steps.run_review.outputs.review_b64 }}
     steps:
       - name: Verify PR author can write
-        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        uses: actions/github-script@v7
         with:
           github-token: ${{ github.token }}
           script: |
@@ -40,7 +40,7 @@ jobs:
             }
 
       - name: Check out PR merge commit
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        uses: actions/checkout@v4
         with:
           ref: refs/pull/${{ github.event.pull_request.number }}/merge
           fetch-depth: 2
@@ -57,7 +57,7 @@ jobs:
           test "$(git rev-parse HEAD^2)" = "$EXPECTED_HEAD"
 
       - name: Check out trusted review client
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        uses: actions/checkout@v4
         with:
           ref: ${{ github.event.pull_request.base.sha }}
           fetch-depth: 1
@@ -92,7 +92,7 @@ jobs:
       issues: write
     steps:
       - name: Post Codex feedback
-        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        uses: actions/github-script@v7
         env:
           REVIEW_B64: ${{ needs.codex.outputs.review_b64 }}
         with:
@@ -134,7 +134,7 @@ jobs:
       statuses: write
     steps:
       - name: Publish Codex status on the PR head
-        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        uses: actions/github-script@v7
         env:
           REVIEW_RESULT: ${{ needs.codex.result }}
           POST_RESULT: ${{ needs.post_feedback.result }}
