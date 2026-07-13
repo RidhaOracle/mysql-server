@@ -1,3 +1,4 @@
+# Copyright (c) 2026, Oracle and/or its affiliates.
 <!-- Thanks for contributing to MySQL Server! The prompts below are the few
      things reviewers always need. Delete any that don't apply. -->
 

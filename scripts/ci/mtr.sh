@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Copyright (c) 2026, Oracle and/or its affiliates.
 # Run MySQL Test Run the same way CI does. Usage:
 #   scripts/ci/mtr.sh                    default MTR test selection (the PR check)
 #   scripts/ci/mtr.sh --suite=innodb ... raw args passed straight to ./mtr

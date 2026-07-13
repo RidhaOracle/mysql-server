@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Copyright (c) 2026, Oracle and/or its affiliates.
 # One-command configure + build. Usage: scripts/ci/build.sh [debug|release] [extra cmake args]
 # Keeps Boost out-of-tree and cached so re-clones don't re-download it.
 set -euo pipefail

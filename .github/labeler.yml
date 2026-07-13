@@ -1,3 +1,4 @@
+# Copyright (c) 2026, Oracle and/or its affiliates.
 # Area auto-labels, driven by the paths a PR touches. Keeps triage cheap and
 # routes reviews to the right owners (see CODEOWNERS).
 #

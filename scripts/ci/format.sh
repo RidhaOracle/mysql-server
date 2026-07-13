@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Copyright (c) 2026, Oracle and/or its affiliates.
 # Format staged C/C++ using the repo's existing .clang-format.
 # Run scripts/ci/format.sh with no args as a pre-commit hook; pass paths to format specific files.
 set -euo pipefail

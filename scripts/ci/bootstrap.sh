@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Copyright (c) 2026, Oracle and/or its affiliates.
 # Install/pin the build toolchain so a local build matches what reviewers'
 # automation sees. Tested on Ubuntu 24.04.
 set -euo pipefail
