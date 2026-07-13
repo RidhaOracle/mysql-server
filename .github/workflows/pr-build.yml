@@ -16,7 +16,7 @@ jobs:
   build:
     name: Debug build (${{ matrix.compiler }})
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 360
     strategy:
       fail-fast: false
       matrix:
