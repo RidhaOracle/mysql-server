@@ -19,7 +19,6 @@
 - [ ] I have signed the [OCA](https://oca.opensource.oracle.com) with the email on these commits
 - [ ] Code is formatted (`scripts/ci/format.sh`)
 - [ ] Commits are focused with descriptive messages
-- [ ] For a behavior/format/syntax change, an RFC was opened or linked: ______
 
 ### AI assistance
 

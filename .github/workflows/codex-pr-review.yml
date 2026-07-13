@@ -1,32 +1,54 @@
 name: Codex PR Review
 
 on:
-  pull_request:
+  pull_request_target:
     types: [opened, synchronize, reopened, ready_for_review]
+    branches: [trunk]
 
-permissions:
-  contents: read
+permissions: {}
+
+concurrency:
+  group: codex-pr-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
 
 jobs:
   codex:
-    if: github.event.pull_request.draft == false
+    # This job uses an API secret, so only trusted repository actors may run it.
+    if: >-
+      github.event.pull_request.draft == false &&
+      contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.pull_request.author_association)
     runs-on: ubuntu-24.04
     timeout-minutes: 20
+    permissions:
+      contents: read
     outputs:
       final_message: ${{ steps.run_codex.outputs.final-message }}
     steps:
-      - uses: actions/checkout@v4
+      - name: Check out PR merge commit
+        uses: actions/checkout@v4
         with:
           ref: refs/pull/${{ github.event.pull_request.number }}/merge
           fetch-depth: 2
           persist-credentials: false
+          path: source
+
+      - name: Verify PR merge commit
+        working-directory: source
+        env:
+          EXPECTED_BASE: ${{ github.event.pull_request.base.sha }}
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          test "$(git rev-parse HEAD^1)" = "$EXPECTED_BASE"
+          test "$(git rev-parse HEAD^2)" = "$EXPECTED_HEAD"
 
       - name: Summarize and review with Codex
         id: run_codex
         uses: openai/codex-action@v1
         with:
           openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+          working-directory: source
           sandbox: read-only
+          safety-strategy: drop-sudo
           prompt: |
             This is PR #${{ github.event.pull_request.number }} for ${{ github.repository }}.
 
@@ -64,4 +86,29 @@ jobs:
               repo: context.repo.repo,
               issue_number: context.payload.pull_request.number,
               body: process.env.CODEX_FINAL_MESSAGE,
+            });
+
+  report:
+    name: Report Codex result
+    if: >-
+      always() && !cancelled() &&
+      github.event.pull_request.draft == false &&
+      contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.pull_request.author_association)
+    needs: codex
+    runs-on: ubuntu-24.04
+    permissions:
+      statuses: write
+    steps:
+      - name: Publish Codex status on the PR head
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const passed = '${{ needs.codex.result }}' === 'success';
+            await github.rest.repos.createCommitStatus({
+              ...context.repo,
+              sha: context.payload.pull_request.head.sha,
+              state: passed ? 'success' : 'failure',
+              context: 'Codex PR Review',
+              description: passed ? 'Codex review completed' : 'Codex review failed',
+              target_url: `${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}`,
             });

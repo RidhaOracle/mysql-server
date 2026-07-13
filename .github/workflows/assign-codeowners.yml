@@ -1,8 +1,9 @@
 name: Assign Code Owners
 
 on:
-  pull_request:
+  pull_request_target:
     types: [opened, synchronize, reopened, ready_for_review, labeled]
+    branches: [trunk]
 
 permissions:
   contents: read
@@ -23,8 +24,7 @@ jobs:
         with:
           script: |
             const pr = context.payload.pull_request;
-            // TODO: Before merge, change this test ref to 'trunk'.
-            const codeownersRef = 'devex/streamline';
+            const codeownersRef = pr.base.sha;
             const path = '.github/CODEOWNERS';
 
             const response = await github.rest.repos.getContent({

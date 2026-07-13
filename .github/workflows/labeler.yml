@@ -1,16 +1,8 @@
 name: Auto Label
 
-# TODO: CHANGE BEFORE MERGE -> revert the trigger below to `pull_request_target`.
-#
-# `pull_request_target` is what the real upstream needs: it runs in the context
-# of the BASE repo and hands the job a write-scoped token even for PRs opened
-# from forks, so external contributors' PRs can still be labeled. It is set to
-# `pull_request` here only for this fork PoC because:
-#   1) a `pull_request_target` workflow must already exist on the base branch
-#      (trunk) to run at all, which it does not on this very first PR; and
-#   2) this PR is same-repo (head and base both on RidhaOracle/mysql-server),
-#      so `pull_request` already carries a write token and can apply labels.
-on: [pull_request]        # TODO: CHANGE BEFORE MERGE -> [pull_request_target]
+on:
+  pull_request_target:
+    branches: [trunk]
 
 permissions: { contents: read, pull-requests: write, issues: write }
 
