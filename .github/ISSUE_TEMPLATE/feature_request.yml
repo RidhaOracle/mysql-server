@@ -12,9 +12,3 @@ body:
     attributes:
       label: Proposed behavior
     validations: { required: true }
-  - type: checkboxes
-    id: scope
-    attributes:
-      label: Scope
-      options:
-        - label: This changes SQL syntax, on-disk format, or public behavior (an RFC will be needed)

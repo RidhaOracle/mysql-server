@@ -1,8 +1,0 @@
-blank_issues_enabled: false
-contact_links:
-  - name: Security vulnerability
-    url: https://www.oracle.com/corporate/security-practices/assurance/vulnerability/
-    about: Report security issues privately through Oracle's process — never as a public issue.
-  - name: Usage questions / general help
-    url: https://forums.mysql.com/
-    about: For "how do I…" questions, please use the community forums.
