@@ -11,13 +11,13 @@
 ### How was it tested?
 
 - [ ] Added/updated MTR tests under `mysql-test/`
-- [ ] `scripts/dev/mtr.sh smoke` passes locally
+- [ ] `scripts/ci/mtr.sh` passes locally
 - [ ] Ran the relevant full suite (name it): ______
 
 ### Contributor checklist
 
 - [ ] I have signed the [OCA](https://oca.opensource.oracle.com) with the email on these commits
-- [ ] Code is formatted (`scripts/dev/format.sh`)
+- [ ] Code is formatted (`scripts/ci/format.sh`)
 - [ ] Commits are focused with descriptive messages
 - [ ] For a behavior/format/syntax change, an RFC was opened or linked: ______
 

@@ -76,7 +76,7 @@ Valkey all have.
 | Horizon | Change | Why it's a prerequisite for directionality |
 |---|---|---|
 | 1 | GitHub-native CONTRIBUTING, templates, in-repo build guide | Makes the public tree usable as the entry point |
-| 2 | PR CI (build + smoke MTR), local build scripts, OCA automation, auto-routing | Gives the public tree a real, fast feedback loop — the thing a canonical tree must have |
+| 2 | PR CI (build + MTR), local build scripts, OCA automation, auto-routing | Gives the public tree a real, fast feedback loop — the thing a canonical tree must have |
 | 3 | RFC process, external committer model, bounded downstream areas | Completes the inversion: public trunk becomes upstream of record |
 
 You cannot flip directionality without horizons 1–2 first: a canonical tree that

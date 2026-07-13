@@ -27,11 +27,11 @@ change** — this is engineering workflow only.
 | File | Change | Modeled on |
 |---|---|---|
 | `.github/workflows/pr-build.yml` | Debug build on gcc+clang, Boost+ccache caching | MariaDB, Valkey |
-| `.github/workflows/mtr-smoke.yml` | Curated fast MTR subset on every PR (<~20 min) | Valkey/CNCF |
+| `.github/workflows/mtr.yml` | Default MTR test selection on every PR | Valkey/CNCF |
 | `.github/workflows/clang-format.yml` | Format check using the **existing** `.clang-format` | ClickHouse |
 | `.github/workflows/labeler.yml` + `.github/labeler.yml` | Auto-route PRs to area owners | Kubernetes/Valkey |
 | `.github/workflows/stale.yml` | Gentle hygiene, only for `needs-info` | OpenJDK triage norms |
-| `scripts/dev/*` | `bootstrap`/`build`/`mtr`/`format` so **local == CI** | PostgreSQL |
+| `scripts/ci/*` | `bootstrap`/`build`/`mtr`/`format` so **local == CI** | PostgreSQL |
 | `.github/CODEOWNERS` | Review routing + basis for committer model | OpenJDK |
 
 ### Horizon 3 — open development model (quarters)

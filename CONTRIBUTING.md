@@ -4,8 +4,8 @@ We welcome your code contributions. This guide gets you from a fresh clone to a
 merged pull request with as little friction as possible.
 
 > **TL;DR** — Sign the [OCA](https://oca.opensource.oracle.com), run
-> `scripts/dev/bootstrap.sh`, make your change, run `scripts/dev/mtr.sh smoke`,
-> and open a PR. CI builds your branch and runs a smoke suite automatically. A
+> `scripts/ci/bootstrap.sh`, make your change, run `scripts/ci/mtr.sh`,
+> and open a PR. CI builds your branch and runs MTR automatically. A
 > maintainer is assigned within the triage SLA below.
 
 ---
@@ -30,8 +30,8 @@ The fast path:
 
 ```bash
 # Reproducible toolchain + Boost, identical to CI:
-scripts/dev/bootstrap.sh        # installs/pins deps
-scripts/dev/build.sh debug      # configures + builds into build/
+scripts/ci/bootstrap.sh        # installs/pins deps
+scripts/ci/build.sh debug      # configures + builds into build/
 ```
 
 These scripts pin the same compiler, CMake, Ninja, Boost, and test tooling used
@@ -51,7 +51,7 @@ by CI, so "works locally" tracks "passes in CI."
 ## 4. Make the change
 
 - Match existing style; formatting is enforced by `.clang-format`. Run
-  `scripts/dev/format.sh` (or install the pre-commit hook below) so you never get
+  `scripts/ci/format.sh` (or install the pre-commit hook below) so you never get
   a review comment about whitespace.
 - Add or update tests. Every behavior change ships with MTR coverage under
   `mysql-test/`. See `docs/development/BUILD-FROM-SOURCE.md#running-tests`.
@@ -60,15 +60,14 @@ by CI, so "works locally" tracks "passes in CI."
 Optional but recommended — install the format pre-commit hook:
 
 ```bash
-ln -s ../../scripts/dev/format.sh .git/hooks/pre-commit
+ln -s ../../scripts/ci/format.sh .git/hooks/pre-commit
 ```
 
 ## 5. Run tests locally (the same ones CI runs)
 
 ```bash
-scripts/dev/mtr.sh smoke      # ~5 min curated subset, mirrors the PR check
-scripts/dev/mtr.sh main       # full main suite
-scripts/dev/mtr.sh --suite=innodb     # pass MTR args straight through
+scripts/ci/mtr.sh            # default MTR test selection, mirrors the PR check
+scripts/ci/mtr.sh --suite=innodb     # pass MTR args straight through
 ```
 
 ## 6. Open the pull request
@@ -79,11 +78,10 @@ things reviewers always need. On open, CI automatically:
 
 - checks formatting,
 - builds Debug on gcc and clang,
-- runs the smoke MTR suite,
+- runs MTR,
 - auto-labels the affected area and assigns a reviewer.
 
-You should see green (or actionable red) within ~20 minutes — without asking
-anyone.
+CI reports completion or actionable failures after the build and MTR run finish.
 
 ## What to expect from us (triage SLAs)
 

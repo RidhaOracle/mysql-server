@@ -12,4 +12,4 @@ $SUDO apt-get install -y --no-install-recommends \
   ccache git curl
 
 echo "Toolchain ready. Boost is fetched on first configure via -DDOWNLOAD_BOOST=1."
-echo "Next: scripts/dev/build.sh debug"
+echo "Next: scripts/ci/build.sh debug"

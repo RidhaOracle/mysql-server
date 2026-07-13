@@ -7,8 +7,8 @@ runs, so following it reproduces the automated checks locally.
 ## Native Ubuntu 24.04
 
 ```bash
-scripts/dev/bootstrap.sh        # toolchain + libs
-scripts/dev/build.sh debug      # configure (Ninja) + build into build/
+scripts/ci/bootstrap.sh        # toolchain + libs
+scripts/ci/build.sh debug      # configure (Ninja) + build into build/
 ```
 
 `build.sh` invokes CMake with `-DDOWNLOAD_BOOST=1 -DWITH_BOOST=~/.cache/mysql-boost`,
@@ -30,19 +30,17 @@ cmake --build build -j"$(nproc)"
 MySQL uses **MTR** (MySQL Test Run) under `mysql-test/`.
 
 ```bash
-scripts/dev/mtr.sh smoke              # curated fast subset — the PR check
-scripts/dev/mtr.sh main               # full main suite
-scripts/dev/mtr.sh --suite=innodb     # any suite; args pass straight to ./mtr
+scripts/ci/mtr.sh                    # default MTR test selection — the PR check
+scripts/ci/mtr.sh --suite=innodb     # any suite; args pass straight to ./mtr
 ```
 
-Logs land in `build/mysql-test/var/log/`. The smoke list lives at
-`mysql-test/collections/smoke.list` and is what the `MTR Smoke` PR workflow runs,
-so a green local smoke run predicts a green PR check.
+Logs land in `build/mysql-test/var/log/`. The `MTR` PR workflow invokes the same
+default MTR command, so a green local run predicts a green PR check.
 
 ## Troubleshooting
 
 | Symptom                              | Fix                                                        |
 |--------------------------------------|-----------------------------------------------------------|
 | Boost version error at configure     | delete `~/.cache/mysql-boost` and re-run `build.sh`        |
-| `bison: command not found`           | re-run `scripts/dev/bootstrap.sh`                          |
+| `bison: command not found`           | re-run `scripts/ci/bootstrap.sh`                          |
 | Slow rebuilds                        | confirm ccache is on the PATH; `ccache -s` shows hit rate  |

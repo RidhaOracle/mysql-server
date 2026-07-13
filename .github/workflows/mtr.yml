@@ -21,7 +21,7 @@ jobs:
     needs: []
     steps:
       - uses: actions/checkout@v4
-      - run: scripts/dev/bootstrap.sh
+      - run: scripts/ci/bootstrap.sh
       - uses: actions/cache@v4
         with:
           path: ~/.cache/mysql-boost
@@ -31,9 +31,9 @@ jobs:
           path: ~/.cache/ccache
           key: ccache-gcc-${{ github.sha }}
           restore-keys: ccache-gcc-
-      - run: scripts/dev/build.sh debug
+      - run: scripts/ci/build.sh debug
       - name: Run MTR
-        run: scripts/dev/mtr.sh
+        run: scripts/ci/mtr.sh
       - name: Publish test report
         if: always()
         uses: actions/upload-artifact@v4

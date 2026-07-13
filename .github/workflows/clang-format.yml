@@ -23,5 +23,5 @@ jobs:
             if ! clang-format-18 --style=file --dry-run --Werror "$f"; then fail=1; fi
           done
           if [ "$fail" -ne 0 ]; then
-            echo "::error::Run scripts/dev/format.sh to fix formatting."; exit 1
+            echo "::error::Run scripts/ci/format.sh to fix formatting."; exit 1
           fi

@@ -40,7 +40,7 @@
       - any-glob-to-any-file:
           - "cmake/**"
           - "CMakeLists.txt"
-          - "scripts/dev/**"
+          - "scripts/ci/**"
           - ".github/**"
 
 "tests":

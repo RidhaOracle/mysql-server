@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# One-command configure + build. Usage: build.sh [debug|release] [extra cmake args]
+# One-command configure + build. Usage: scripts/ci/build.sh [debug|release] [extra cmake args]
 # Keeps Boost out-of-tree and cached so re-clones don't re-download it.
 set -euo pipefail
 
