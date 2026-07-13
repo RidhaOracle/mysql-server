@@ -295,9 +295,7 @@ class Session : public SocketServer::Session {
 
  public:
   Session(NdbSocket &&socket, class Service *server)
-      : SocketServer::Session(m_socket),
-        m_server(server),
-        m_socket(std::move(socket)) {}
+      : m_server(server), m_socket(std::move(socket)) {}
   void runSession() override;
 };
 
