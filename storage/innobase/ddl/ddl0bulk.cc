@@ -981,7 +981,6 @@ dberr_t fill_tuple_up_to_n_cols(dtuple_t *tuple, const row_prebuilt_t *prebuilt,
                                 mem_heap_t *gcol_heap, bool &gcol_blobs_flushed,
                                 bool validate_gcols) {
   ut_ad(prebuilt->mysql_template);
-  const space_id_t space_id = prebuilt->space_id();
   TABLE *mysql_table = prebuilt->m_mysql_table;
   THD *thd = prebuilt->m_thd;
   auto share = mysql_table->s;
@@ -1126,11 +1125,13 @@ dberr_t fill_tuple_up_to_n_cols(dtuple_t *tuple, const row_prebuilt_t *prebuilt,
 
       byte *field_data = data_ptr + length_size;
       dfield_set_data(dfield, field_data, data_len);
+#ifdef UNIV_DEBUG
       if (sql_col.is_ext()) {
         byte *tmp = field_data + data_len - BTR_EXTERN_FIELD_REF_SIZE;
         lob::ref_t ref(tmp);
-        ut_ad(ref.space_id() == space_id);
+        ut_ad(ref.space_id() == prebuilt->space_id());
       }
+#endif /* UNIV_DEBUG */
     } else if (dtype->mtype == DATA_SYS) {
       ut_ad(!prebuilt->index->is_clustered());
       mach_write_to_6(row_id_data, sql_col.m_int_data);
