@@ -288,7 +288,7 @@ int main(int argc, char *const argv[]) {
     signal(SIGCHLD, SIG_DFL);
     signal(SIGABRT, SIG_DFL);
 
-    // Make this process it's own process group to be able to kill
+    // Make this process its own process group to be able to kill
     // it and any children (that hasn't changed group themself)
     setpgid(0, 0);
 
