@@ -1088,7 +1088,11 @@ static dberr_t log_check_file(const Log_files_context &ctx, Log_file_id file_id,
     return DB_NOT_FOUND;
   }
 
-  if (!os_file_check_mode(file_path.c_str(), false, read_only)) {
+  if (!os_file_check_mode(
+#ifdef UNIV_PFS_IO
+          innodb_log_file_key,
+#endif /* UNIV_PFS_IO */
+          file_path.c_str(), false, read_only)) {
     /* Error has been emitted in os_file_check_mode */
     return DB_ERROR;
   }
