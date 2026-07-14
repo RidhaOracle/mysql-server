@@ -507,9 +507,15 @@ static char *emit(UDF_INIT *initid [[maybe_unused]], UDF_ARGS *args,
       val.value_type = MYSQL_AUDIT_MESSAGE_VALUE_TYPE_STR;
       val.value.str.str = arguments[1];
       val.value.str.length = arg_lengths[1];
-    } else if (arg_res == 1) {
+    } else if (arg_res == 1 && arguments[1] != nullptr) {
       val.value_type = MYSQL_AUDIT_MESSAGE_VALUE_TYPE_NUM;
       val.value.num = *reinterpret_cast<long long *>(arguments[1]);
+    } else {
+      assert(arg_res == 1);
+      /* A numeric NULL value is written as a NULL string. */
+      val.value_type = MYSQL_AUDIT_MESSAGE_VALUE_TYPE_STR;
+      val.value.str.str = nullptr;
+      val.value.str.length = 0;
     }
 
     key_values[key] = val;
