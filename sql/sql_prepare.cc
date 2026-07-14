@@ -588,7 +588,7 @@ static bool set_parameter_value(Item_param *param, const uchar **pos,
         tm.hour = (uint)to[5] + day * 24;
         tm.minute = (uint)to[6];
         tm.second = (uint)to[7];
-        tm.second_part = (len > 8) ? (ulong)sint4korr(to + 8) : 0;
+        tm.second_part = (len == 12) ? (ulong)sint4korr(to + 8) : 0;
         if (tm.hour > 838) {
           /* TODO: add warning 'Data truncated' here */
           tm.hour = 838;
