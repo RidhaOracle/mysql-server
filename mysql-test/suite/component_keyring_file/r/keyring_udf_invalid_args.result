@@ -70,6 +70,9 @@ SELECT keyring_key_generate('key', 'SECRET', NULL);
 ERROR HY000: Can't initialize function 'keyring_key_generate'; Mismatch encountered. An integer argument is expected for key length.
 SELECT keyring_key_generate('key', 'SECRET', CAST(NULL AS CHAR));
 ERROR HY000: Can't initialize function 'keyring_key_generate'; Mismatch encountered. An integer argument is expected for key length.
+SELECT keyring_key_generate('key', 'SECRET', CAST(NULL AS SIGNED));
+keyring_key_generate('key', 'SECRET', CAST(NULL AS SIGNED))
+NULL
 SELECT keyring_key_generate('key', 'SECRET', -1);
 ERROR HY000: Can't initialize function 'keyring_key_generate'; Invalid length of the key.
 SELECT keyring_key_generate('key', 'SECRET', 0);
