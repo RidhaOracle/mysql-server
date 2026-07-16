@@ -6059,8 +6059,12 @@ void Dbtc::commitGciHandling(Signal *signal, Uint64 Tgci,
   Ptr<ApiConnectRecord> regApiPtr = apiConnectptr;
   regApiPtr.p->globalcheckpointid = Tgci;
 
+  const bool nfhandling = (c_ongoing_take_over_cnt > 0);
   LocalGcpRecord_list gcp_list(c_gcpRecordPool, c_gcpRecordList);
   if (gcp_list.first(localGcpPointer)) {
+    GcpRecordPtr prevGcpPointer;
+    prevGcpPointer.i = RNIL;
+
     /* IF THIS GLOBAL CHECKPOINT ALREADY EXISTS */
     do {
       if (regApiPtr.p->globalcheckpointid == localGcpPointer.p->gcpId) {
@@ -6070,6 +6074,47 @@ void Dbtc::commitGciHandling(Signal *signal, Uint64 Tgci,
       }
       if (unlikely(
               !(regApiPtr.p->globalcheckpointid > localGcpPointer.p->gcpId))) {
+        if (nfhandling) {
+          jam();
+          /*
+           * TC takeover can commit an older GCI after a newer GCI has already
+           * been added. Reopen the older GCI in sorted order.
+           */
+          GcpRecordPtr tmpGcpPointer;
+          if (unlikely(!c_gcpRecordPool.seize(tmpGcpPointer))) {
+            g_eventLogger->info("%u/%u", Uint32(Tgci >> 32), Uint32(Tgci));
+            crash_gcp(__LINE__, "Too many active global checkpoints.");
+          }
+          tmpGcpPointer.p->gcpId = Tgci;
+          tmpGcpPointer.p->apiConnectList.init();
+          tmpGcpPointer.p->gcpNomoretransRec = ZFALSE;
+
+          if (prevGcpPointer.i != RNIL) {
+            ndbrequire(prevGcpPointer.p->gcpId < Tgci);
+            ndbrequire(localGcpPointer.p->gcpId > Tgci);
+            g_eventLogger->info(
+                "DBTC %u: TC takeover reopening GCI %u/%u between "
+                "%u/%u and %u/%u",
+                instance(), Uint32(Tgci >> 32), Uint32(Tgci),
+                Uint32(prevGcpPointer.p->gcpId >> 32),
+                Uint32(prevGcpPointer.p->gcpId),
+                Uint32(localGcpPointer.p->gcpId >> 32),
+                Uint32(localGcpPointer.p->gcpId));
+            gcp_list.insertAfter(tmpGcpPointer, prevGcpPointer);
+            ndbassert(tmpGcpPointer.p->nextList == localGcpPointer.i);
+          } else {
+            ndbrequire(localGcpPointer.p->gcpId > Tgci);
+            g_eventLogger->info(
+                "DBTC %u: TC takeover reopening GCI %u/%u "
+                "before %u/%u",
+                instance(), Uint32(Tgci >> 32), Uint32(Tgci),
+                Uint32(localGcpPointer.p->gcpId >> 32),
+                Uint32(localGcpPointer.p->gcpId));
+            gcp_list.addFirst(tmpGcpPointer);
+          }
+          linkApiToGcp(tmpGcpPointer, regApiPtr);
+          return;
+        }
         g_eventLogger->info("%u/%u %u/%u",
                             Uint32(regApiPtr.p->globalcheckpointid >> 32),
                             Uint32(regApiPtr.p->globalcheckpointid),
@@ -6079,6 +6124,7 @@ void Dbtc::commitGciHandling(Signal *signal, Uint64 Tgci,
                   "Can not find global checkpoint record for commit.");
       }
       jam();
+      prevGcpPointer = localGcpPointer;
     } while (gcp_list.next(localGcpPointer));
   }
 
