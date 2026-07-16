@@ -6452,6 +6452,19 @@ void Dbtc::sendApiCommitSignal(Signal *signal,
 /*-------------------------------------------------------*/
 Ptr<Dbtc::ApiConnectRecord> Dbtc::sendApiCommitAndCopy(
     Signal *signal, ApiConnectRecordPtr const apiConnectptr) {
+#ifdef ERROR_INSERT
+  if (ERROR_INSERTED(8129)) {
+    /**
+     * Leave a committed, not completed transaction behind for TC takeover.
+     * The COMPLETE phase is delayed in complete010Lab() using the same
+     * error insert.  Unlike 8055 this does not disconnect the API node.
+     */
+    signal->theData[0] = 9999;
+    sendSignalWithDelay(CMVMI_REF, GSN_NDB_TAMPER, signal, 6000, 1);
+
+    goto err8055;
+  }
+
   if (ERROR_INSERTED(8055)) {
     /**
      * 1) Kill self
@@ -6468,6 +6481,7 @@ Ptr<Dbtc::ApiConnectRecord> Dbtc::sendApiCommitAndCopy(
 
     goto err8055;
   }
+#endif
 
   sendApiCommitSignal(signal, apiConnectptr);
 
@@ -6586,6 +6600,29 @@ void Dbtc::complete010Lab(Signal *signal,
                           ApiConnectRecordPtr const apiConnectptr) {
   TcConnectRecordPtr localTcConnectptr;
   ApiConnectRecord *const regApiPtr = apiConnectptr.p;
+
+#ifdef ERROR_INSERT
+  // Delay complete010Lab once by 10s
+  if (ERROR_INSERTED_CLEAR(8129)) {
+    jam();
+    signal->theData[0] = TcContinueB::ZSEND_COMPLETE_LOOP;
+    signal->theData[1] = apiConnectptr.i;
+    signal->theData[2] = tcConnectptr.i;
+    sendSignalWithDelay(cownref, GSN_CONTINUEB, signal, 10000, 3);
+    return;
+  }
+
+  // Delay complete010Lab once by 10s, leaving error insert set
+  if (ERROR_INSERTED(8130) && ERROR_INSERT_EXTRA == 0) {
+    jam();
+    ERROR_INSERT_EXTRA = 1;
+    signal->theData[0] = TcContinueB::ZSEND_COMPLETE_LOOP;
+    signal->theData[1] = apiConnectptr.i;
+    signal->theData[2] = tcConnectptr.i;
+    sendSignalWithDelay(cownref, GSN_CONTINUEB, signal, 10000, 3);
+    return;
+  }
+#endif
 
   localTcConnectptr.p = tcConnectptr.p;
   setApiConTimer(apiConnectptr, ctcTimer, __LINE__);
@@ -9810,6 +9847,18 @@ void Dbtc::execGCP_NOMORETRANS(Signal *signal) {
   Uint32 gci_hi = req->gci_hi;
   tcheckGcpId = gci_lo | (Uint64(gci_hi) << 32);
   const bool nfhandling = (c_ongoing_take_over_cnt > 0);
+
+#ifdef ERROR_INSERT
+  if (nfhandling && ERROR_INSERTED(8130)) {
+    g_eventLogger->info(
+        "DBTC %u: Error insert 8130 delaying GCP_NOMORETRANS %u/%u "
+        "during node failure handling",
+        instance(), gci_hi, gci_lo);
+    sendSignalWithDelay(reference(), GSN_GCP_NOMORETRANS, signal, 1000,
+                        signal->getLength());
+    return;
+  }
+#endif
 
   LocalGcpRecord_list gcp_list(c_gcpRecordPool, c_gcpRecordList);
   GcpRecordPtr gcpPtr;
