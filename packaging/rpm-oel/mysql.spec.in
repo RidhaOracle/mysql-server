@@ -345,6 +345,20 @@ Obsoletes:      mariadb-server-utils
 Obsoletes:      mariadb-galera-server
 Obsoletes:      mariadb-gssapi-server
 Obsoletes:      mariadb-oqgraph-engine
+%if 0%{?rhel} == 10
+# EL10 packages the MariaDB stack with versioned names. Obsolete the full
+# versioned stack so DNF does not select it alongside MySQL and hit file
+# conflicts on shared client/server binaries.
+Obsoletes:      mariadb11.8
+Obsoletes:      mariadb11.8-common
+Obsoletes:      mariadb11.8-errmsg
+Obsoletes:      mariadb11.8-backup
+Obsoletes:      mariadb11.8-cracklib-password-check
+Obsoletes:      mariadb11.8-gssapi-server
+Obsoletes:      mariadb11.8-server
+Obsoletes:      mariadb11.8-server-utils
+Obsoletes:      mariadb11.8-client-utils
+%endif
 Provides:       mysql-server = %{version}-%{release}
 Provides:       mysql-server%{?_isa} = %{version}-%{release}
 Provides:       mysql-compat-server = %{version}-%{release}
