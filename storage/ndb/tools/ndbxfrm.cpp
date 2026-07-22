@@ -383,7 +383,7 @@ int copy_file(const char src[], const char dst[]) {
       const ndb_off_t data_pos = src_xfrm.get_data_pos();
       const ndb_off_t data_size = src_xfrm.get_data_size();
       if (data_pos != data_size) {
-        fprintf(stderr, "Warning: Data read %jd of %jd bytes.",
+        fprintf(stderr, "Warning: Data read %jd of %jd bytes.\n",
                 intmax_t{data_pos}, intmax_t{data_size});
       }
       if (src_xfrm.is_encrypted()) {
