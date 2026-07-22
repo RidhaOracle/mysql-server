@@ -3692,8 +3692,8 @@ bool Prepared_statement::execute(THD *thd, String *expanded_query,
       m_arena.set_state(Query_arena::STMT_EXECUTED);
 
     if (!status && m_lex->sql_command == SQLCOM_CALL)
-      thd->get_protocol()->send_parameters(&m_lex->param_list,
-                                           is_sql_prepare());
+      status = thd->get_protocol()->send_parameters(&m_lex->param_list,
+                                                    is_sql_prepare());
     m_in_use = false;
 
     // Validate postconditions:
@@ -3848,7 +3848,8 @@ bool Prepared_statement::execute(THD *thd, String *expanded_query,
       }
     }
   }
-  return false;
+  execute_guard.reset();
+  return status;
 }
 
 void Prepared_statement::psi_execute_instrumentation(THD *thd) {
