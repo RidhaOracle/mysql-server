@@ -78,7 +78,7 @@ class Trpman : public SimulatedBlock {
   TrpId get_the_only_base_trp(NodeId nodeId) const;
   bool handles_this_trp(TrpId trpId);
   void close_com_failed_node(Signal *, NodeId);
-  void enable_com_node(Signal *, NodeId);
+  void enable_com_node(Signal *, NodeId, Uint32 heartbeatInterval);
   void set_db_hb_sender(NodeId dbHbSender);
 
   // Let TransporterReceiveHandleKernel::transporter_recv_from access
@@ -98,8 +98,8 @@ class Trpman : public SimulatedBlock {
 
   NodeId m_dbHbSender;
   TrpId m_dbHbSenderTrp;
-  Uint32 m_hbDbDb;
-  Uint32 m_hbDbApi;
+  Uint32 m_dbHbInterval;
+  Uint32 m_hbInterval[MAX_NTRANSPORTERS];
 
   static constexpr Uint32 m_activity_bin_bounds[TRP_ACTIVITY_HIST_BIN_COUNT] = {
       100,   200,   300,   400,   600,   800,   1000,
