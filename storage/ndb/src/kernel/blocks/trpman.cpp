@@ -108,6 +108,9 @@ void Trpman::set_db_hb_sender(NodeId dbHbSender) {
   jam();
   if (dbHbSender == ZNIL || dbHbSender == 0) {
     jam();
+    if (m_dbHbSenderTrp != 0 && handles_this_trp(m_dbHbSenderTrp)) {
+      m_hbInterval[m_dbHbSenderTrp] = 0;
+    }
     m_dbHbSender = 0;
     m_dbHbSenderTrp = 0;
   } else {
@@ -121,6 +124,9 @@ void Trpman::set_db_hb_sender(NodeId dbHbSender) {
     ndbrequire(dbHbSenderTrp != 0);
     if (m_dbHbSenderTrp != dbHbSenderTrp) {
       jam();
+      if (m_dbHbSenderTrp != 0 && handles_this_trp(m_dbHbSenderTrp)) {
+        m_hbInterval[m_dbHbSenderTrp] = 0;
+      }
       m_dbHbSenderTrp = dbHbSenderTrp;
       /*
        * Skip late heartbeat detection for next receive.
@@ -128,6 +134,9 @@ void Trpman::set_db_hb_sender(NodeId dbHbSender) {
        * receive.
        */
       NdbTick_Invalidate(&m_trp_activity[m_dbHbSenderTrp].last_recv);
+    }
+    if (m_dbHbInterval != 0 && handles_this_trp(m_dbHbSenderTrp)) {
+      m_hbInterval[m_dbHbSenderTrp] = m_dbHbInterval;
     }
   }
 }
@@ -252,6 +261,7 @@ void Trpman::close_com_failed_node(Signal *signal, NodeId nodeId) {
   for (unsigned i = 0; i < num_ids; i++) {
     const TrpId trpId = trp_ids[i];
     if (!handles_this_trp(trpId)) continue;
+    m_hbInterval[trpId] = 0;
     globalTransporterRegistry.setIOState(trpId, HaltIO);
     globalTransporterRegistry.start_disconnecting(trpId);
   }
@@ -351,10 +361,16 @@ void Trpman::execCLOSE_COMCONF(Signal *signal) {
              CloseComReqConf::SignalLengthDB, JBA);
 }
 
-void Trpman::enable_com_node(Signal *signal, NodeId nodeId) {
+void Trpman::enable_com_node(Signal *signal, NodeId nodeId,
+                             Uint32 heartbeatInterval) {
   const TrpId trpId = get_the_only_base_trp(nodeId);
   if (!handles_this_trp(trpId)) return;
 
+  if (getNodeInfo(nodeId).getType() != NodeInfo::DB) {
+    m_hbInterval[trpId] = heartbeatInterval;
+  } else {
+    m_hbInterval[trpId] = 0;
+  }
   globalTransporterRegistry.setIOState(trpId, NoHalt);
   setNodeInfo(nodeId).m_connected = true;
 
@@ -387,6 +403,11 @@ void Trpman::execENABLE_COMREQ(Signal *signal) {
   Uint32 senderData = enableComReq->m_senderData;
   Uint32 enableNodeId = enableComReq->m_enableNodeId;
   Uint32 dbHbSender = enableComReq->m_dbHbSender;
+  Uint32 heartbeatInterval = enableComReq->m_heartbeatInterval;
+  if (enableNodeId == 0 ||
+      getNodeInfo(enableNodeId).getType() == NodeInfo::DB) {
+    m_dbHbInterval = heartbeatInterval;
+  }
 
   /* Enable communication with all our NDB blocks to these nodes. */
   if (enableNodeId == 0) {
@@ -404,10 +425,10 @@ void Trpman::execENABLE_COMREQ(Signal *signal) {
       Uint32 tStartingNode = NodeBitmask::find(nodes, search_from);
       if (tStartingNode == NodeBitmask::NotFound) break;
       search_from = tStartingNode + 1;
-      enable_com_node(signal, tStartingNode);
+      enable_com_node(signal, tStartingNode, heartbeatInterval);
     }
   } else {
-    enable_com_node(signal, enableNodeId);
+    enable_com_node(signal, enableNodeId, heartbeatInterval);
   }
 
   set_db_hb_sender(dbHbSender);
@@ -575,11 +596,8 @@ void Trpman::execDBINFO_SCANREQ(Signal *signal) {
         row.write_uint32(globalTransporterRegistry.get_transporter_type(trpId));
 
         /* Heartbeat interval (ms) */
-        const NodeInfo::NodeType type = getNodeInfo(nodeId).getType();
-        bool is_db = (type == NodeInfo::DB);
-        if (!is_db || trpId == m_dbHbSenderTrp) {
-          Uint32 heartbeat_interval = is_db ? m_hbDbDb : m_hbDbApi;
-          row.write_uint32(heartbeat_interval);
+        if (m_hbInterval[trpId] != 0) {
+          row.write_uint32(m_hbInterval[trpId]);
         } else {
           row.write_null();  // heartbeat_interval
         }
@@ -789,12 +807,8 @@ void Trpman::execDBINFO_SCANREQ(Signal *signal) {
         row.write_uint32(globalTransporterRegistry.get_connect_count(
             trpId));  // connect_count
 
-        const NodeInfo::NodeType type = getNodeInfo(nodeId).getType();
-        bool is_db = (type == NodeInfo::DB);
-
-        if (!is_db || trpId == m_dbHbSenderTrp) {
-          Uint32 heartbeat_interval = is_db ? m_hbDbDb : m_hbDbApi;
-          row.write_uint32(heartbeat_interval);
+        if (m_hbInterval[trpId] != 0) {
+          row.write_uint32(m_hbInterval[trpId]);
         } else {
           row.write_null();  // heartbeat_interval
         }
@@ -848,17 +862,9 @@ void Trpman::execREAD_CONFIG_REQ(Signal *signal) {
 
   m_dbHbSender = 0;
   m_dbHbSenderTrp = 0;
+  m_dbHbInterval = 0;
 
-  const ndb_mgm_configuration_iterator *p =
-      m_ctx.m_config.getOwnConfigIterator();
-  ndbrequire(p != 0);
-
-  m_hbDbDb = 5000;  // ms
-  ndb_mgm_get_int_parameter(p, CFG_DB_HEARTBEAT_INTERVAL, &m_hbDbDb);
-
-  m_hbDbApi = 1500;  // ms
-  ndb_mgm_get_int_parameter(p, CFG_DB_API_HEARTBEAT_INTERVAL, &m_hbDbApi);
-
+  memset(m_hbInterval, 0, sizeof(m_hbInterval));
   memset(m_trp_activity, 0, sizeof(m_trp_activity));
 
   ReadConfigConf *conf = (ReadConfigConf *)signal->getDataPtrSend();
@@ -1334,9 +1340,8 @@ void Trpman::execTIME_SIGNAL(Signal *signal) {
 
     NDB_TICKS trp_last_recv = globalTransporterRegistry.get_last_recv(trp_id);
     if (likely(NdbTick_IsValid(m_trp_activity[trp_id].last_recv))) {
-      NodeId node_id =
+      const NodeId node_id =
           globalTransporterRegistry.get_transporter_node_id(trp_id);
-      bool is_db = (getNodeInfo(node_id).getType() == NODE_TYPE_DB);
       /*
        * We only know the time for the current last receive, not the first
        * receive in the last 50ms after a period of no data. By that elapsed_ms
@@ -1356,13 +1361,12 @@ void Trpman::execTIME_SIGNAL(Signal *signal) {
       m_trp_activity[trp_id].hist_bins[hist_bin_index]++;
 
       // Log late heartbeat
-      if (!is_db || trp_id == m_dbHbSenderTrp) {
-        Uint32 heartbeat_interval = is_db ? m_hbDbDb : m_hbDbApi;
+      if (m_hbInterval[trp_id] != 0) {
         /*
          * Since elapsed_ms may be an overestimate and not to report
          * late heartbeat when it was in time add TRP_TIME_SIGNAL_DELAY.
          */
-        if (elapsed_ms > heartbeat_interval + TRP_TIME_SIGNAL_DELAY) {
+        if (elapsed_ms > m_hbInterval[trp_id] + TRP_TIME_SIGNAL_DELAY) {
           signal->theData[0] = NDB_LE_LateHeartbeat;
           signal->theData[1] = node_id;
           signal->theData[2] = elapsed_ms;
