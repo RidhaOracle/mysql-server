@@ -1,4 +1,4 @@
-/* Copyright (c) 2025, 2026, Oracle and/or its affiliates.
+/* Copyright (c) 2026, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -21,25 +21,28 @@
    along with this program; if not, write to the Free Software
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
-#include <sys/sysctl.h>
+#pragma once
+
+#include <cerrno>
 #include <cstdint>
+#include <limits>
+#include <system_error>
 
-#include "my_system_api.h"
+namespace mysql::system_info::internal {
 
-/**
-  @file components/library_mysys/my_system_api/my_system_api_apple.cc
-  Functions to fetch the number of VCPUs from the system. APIs retrieve this
-  information using the affinity between the process and the VCPU or by reading
-  the system configuration
-*/
-
-uint32_t num_vcpus_using_affinity() { return 0; }
-
-uint32_t num_vcpus_using_config() {
-  int name[2] = {CTL_HW, HW_AVAILCPU};
-  int ncpu;
-
-  size_t size = sizeof(ncpu);
-  sysctl(name, 2, &ncpu, &size, nullptr, 0);
-  return ncpu;
+/** Return the current errno value in the generic error category. */
+[[nodiscard]] inline std::error_code errno_code() {
+  return {errno, std::generic_category()};
 }
+
+/** Return true if multiplying two unsigned 64-bit values would overflow. */
+[[nodiscard]] inline bool multiply_overflows(uint64_t lhs, uint64_t rhs) {
+  return rhs != 0 && lhs > std::numeric_limits<uint64_t>::max() / rhs;
+}
+
+/** Return true if adding two unsigned 64-bit values would overflow. */
+[[nodiscard]] inline bool add_overflows(uint64_t lhs, uint64_t rhs) {
+  return rhs > std::numeric_limits<uint64_t>::max() - lhs;
+}
+
+}  // namespace mysql::system_info::internal

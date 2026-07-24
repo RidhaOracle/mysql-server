@@ -21,37 +21,25 @@
    along with this program; if not, write to the Free Software
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
+#include <sys/sysctl.h>
 #include <cstdint>
-
-#include <unistd.h>  // getpid
-/* sys/cpuset.h requires sys/types.h which is included in unistd.h */
-#include <sys/cpuset.h>  // cpuset_t
-#include <sys/sysctl.h>  // sysctlbyname
 
 #include "my_system_api.h"
 
 /**
-  @file components/library_mysys/my_system_api/my_system_api_freebsd.cc
+  @file components/library_mysys/my_system_api/my_system_api_macos.cc
   Functions to fetch the number of VCPUs from the system. APIs retrieve this
   information using the affinity between the process and the VCPU or by reading
   the system configuration
 */
 
-uint32_t num_vcpus_using_affinity() {
-  cpuset_t cs;
-  CPU_ZERO(&cs);
-  if (cpuset_getaffinity(CPU_LEVEL_WHICH, CPU_WHICH_PID, getpid(), sizeof(cs),
-                         &cs) != 0) {
-    return 0;
-  }
-  return CPU_COUNT(&cs);
-}
+uint32_t num_vcpus_using_affinity() { return 0; }
 
 uint32_t num_vcpus_using_config() {
-  uint32_t num_vcpus = 0;
-  size_t num_vcpus_size = sizeof(uint32_t);
-  if (sysctlbyname("hw.ncpu", &num_vcpus, &num_vcpus_size, nullptr, 0) != 0) {
-    num_vcpus = 0;
-  }
-  return num_vcpus;
+  int name[2] = {CTL_HW, HW_AVAILCPU};
+  int ncpu;
+
+  size_t size = sizeof(ncpu);
+  sysctl(name, 2, &ncpu, &size, nullptr, 0);
+  return ncpu;
 }
