@@ -3827,6 +3827,8 @@ class THD : public MDL_context_owner,
     SE_GTID_RESET_LOG,
     /** Explicit request for SE to persist GTID for current transaction. */
     SE_GTID_PERSIST_EXPLICIT,
+    /** GTID table persistence was requested for current ownership. */
+    SE_GTID_TABLE_PERSIST_REQUESTED,
     /** Max element holding the biset size. */
     SE_GTID_MAX
   };
@@ -3899,6 +3901,20 @@ class THD : public MDL_context_owner,
     return !xid_state->has_state(XID_STATE::XA_NOTR);
   }
 
+  /// Mark GTID table persistence as requested for the currently owned GTID.
+  ///
+  /// This follows GTID ownership lifetime, not the shorter internal
+  /// storage-engine transaction used while accessing mysql.gtid_executed.
+  void set_gtid_table_persist_requested() {
+    m_se_gtid_flags.set(SE_GTID_TABLE_PERSIST_REQUESTED);
+  }
+
+  /// @return true if GTID table persistence was already requested for the
+  ///         currently owned GTID.
+  bool gtid_table_persist_requested() const {
+    return m_se_gtid_flags[SE_GTID_TABLE_PERSIST_REQUESTED];
+  }
+
 #ifdef HAVE_GTID_NEXT_LIST
   /**
     If this thread owns a set of GTIDs (i.e., GTID_NEXT_LIST != NULL),
@@ -3932,6 +3948,7 @@ class THD : public MDL_context_owner,
     }
     owned_gtid.clear();
     owned_tsid.clear();
+    m_se_gtid_flags.reset(SE_GTID_TABLE_PERSIST_REQUESTED);
     owned_gtid.dbug_print(nullptr, "set owned_gtid in clear_owned_gtids");
   }
 
