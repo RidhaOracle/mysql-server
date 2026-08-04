@@ -6498,7 +6498,6 @@ void Dbtc::sendApiCommitSignal(Signal *signal,
 /*-------------------------------------------------------*/
 Ptr<Dbtc::ApiConnectRecord> Dbtc::sendApiCommitAndCopy(
     Signal *signal, ApiConnectRecordPtr const apiConnectptr) {
-#ifdef ERROR_INSERT
   if (ERROR_INSERTED(8129)) {
     /**
      * Leave a committed, not completed transaction behind for TC takeover.
@@ -6527,7 +6526,6 @@ Ptr<Dbtc::ApiConnectRecord> Dbtc::sendApiCommitAndCopy(
 
     goto err8055;
   }
-#endif
 
   sendApiCommitSignal(signal, apiConnectptr);
 
