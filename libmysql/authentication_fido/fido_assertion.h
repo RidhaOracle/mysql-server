@@ -39,16 +39,16 @@ class fido_prepare_assert {
  public:
   fido_prepare_assert();
   ~fido_prepare_assert();
-  bool parse_challenge(const unsigned char *challenge);
+  bool parse_challenge(const unsigned char *challenge, size_t challenge_len);
   bool sign_challenge();
   void get_signed_challenge(unsigned char **challenge_res,
                             size_t &challenge_res_len);
 
  private:
   /* set client data has */
-  void set_scramble(unsigned char *scramble, size_t len);
+  void set_scramble(const unsigned char *scramble, size_t len);
   /* set credential ID */
-  void set_cred_id(unsigned char *cred, size_t len);
+  void set_cred_id(const unsigned char *cred, size_t len);
   /* set relying party ID */
   void set_rp_id(const char *rp_id);
 
@@ -73,7 +73,7 @@ class fido_prepare_assert {
 */
 class fido_assertion {
  public:
-  bool prepare_assert(const unsigned char *challenge);
+  bool prepare_assert(const unsigned char *challenge, size_t challenge_len);
   bool sign_challenge();
   void get_signed_challenge(unsigned char **challenge_res,
                             size_t &challenge_res_len);

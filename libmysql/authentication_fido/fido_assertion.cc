@@ -29,9 +29,45 @@
 #include "fido_assertion.h"
 #include "fido_common.h"
 
+#include <cstdint>
+#include <limits>
+
 #include "mysql_com.h" /* CHALLENGE_LENGTH */
 
 using namespace std;
+
+namespace {
+size_t fido_net_field_length_size(const unsigned char *pos) {
+  if (*pos <= 251) return 1;
+  if (*pos == 252) return 3;
+  if (*pos == 253) return 4;
+  return 9;
+}
+
+bool read_length_encoded_data(const unsigned char **pos,
+                              const unsigned char *end,
+                              const unsigned char **data, size_t *len,
+                              size_t min_len, size_t max_len) {
+  if (*pos >= end) return true;
+
+  const size_t length_size = fido_net_field_length_size(*pos);
+  if (static_cast<size_t>(end - *pos) < length_size) return true;
+
+  auto *mutable_pos = const_cast<unsigned char *>(*pos);
+  const uint64_t decoded_len = net_field_length_ll(&mutable_pos);
+  if (decoded_len == static_cast<uint64_t>(NULL_LENGTH) ||
+      decoded_len < min_len || decoded_len > max_len)
+    return true;
+
+  if (static_cast<uint64_t>(end - mutable_pos) < decoded_len) return true;
+
+  *data = mutable_pos;
+  *len = static_cast<size_t>(decoded_len);
+  mutable_pos += *len;
+  *pos = mutable_pos;
+  return false;
+}
+}  // namespace
 
 /**
   Construcutor to allocate memory for performing assertion (authentication)
@@ -49,37 +85,37 @@ fido_prepare_assert::~fido_prepare_assert() { fido_assert_free(&m_assert); }
   name and set it in fido_assert_t.
 
   @param [in] challenge       buffer holding the server challenge
+  @param [in] challenge_len   length of the server challenge
 
   @retval false received challenge was valid
   @retval true  received challenge was corrupt
 */
-bool fido_prepare_assert::parse_challenge(const unsigned char *challenge) {
-  char *str = nullptr;
-  unsigned char *to = const_cast<unsigned char *>(challenge);
-  /* length of challenge should be 32 bytes */
-  unsigned long len = net_field_length_ll(&to);
-  if (len != CHALLENGE_LENGTH) goto err;
-  /* extract challenge */
-  set_scramble(to, len);
+bool fido_prepare_assert::parse_challenge(const unsigned char *challenge,
+                                          size_t challenge_len) {
+  if (!challenge) return true;
 
-  to += len;
-  /* length of relying party ID */
-  len = net_field_length_ll(&to);
-  /* Length of relying party ID should not be > 255 */
-  if (len > 255) goto err;
-  /* extract relying party ID */
-  str = new (std::nothrow) char[len + 1];
-  memcpy(str, to, len);
-  str[len] = 0;
-  set_rp_id(str);
-  delete[] str;
+  const unsigned char *to = challenge;
+  const unsigned char *end = challenge + challenge_len;
+  const unsigned char *data = nullptr;
+  size_t len = 0;
 
-  to += len;
-  /* length of cred ID */
-  len = net_field_length_ll(&to);
-  /* extract cred ID */
-  set_cred_id(to, len);
-  to += len;
+  if (read_length_encoded_data(&to, end, &data, &len, CHALLENGE_LENGTH,
+                               CHALLENGE_LENGTH))
+    goto err;
+  set_scramble(data, len);
+
+  if (read_length_encoded_data(&to, end, &data, &len, 0,
+                               RELYING_PARTY_ID_LENGTH))
+    goto err;
+  {
+    string str(reinterpret_cast<const char *>(data), len);
+    set_rp_id(str.c_str());
+  }
+
+  if (read_length_encoded_data(&to, end, &data, &len, 0,
+                               numeric_limits<size_t>::max()))
+    goto err;
+  set_cred_id(data, len);
 
   return false;
 
@@ -162,7 +198,8 @@ void fido_prepare_assert::get_signed_challenge(unsigned char **challenge_res,
   @param [in] scramble   buffer holding random salt
   @param [in] len        length of salt
 */
-void fido_prepare_assert::set_scramble(unsigned char *scramble, size_t len) {
+void fido_prepare_assert::set_scramble(const unsigned char *scramble,
+                                       size_t len) {
   fido_assert_set_clientdata_hash(m_assert, scramble, len);
 }
 
@@ -172,7 +209,7 @@ void fido_prepare_assert::set_scramble(unsigned char *scramble, size_t len) {
   @param [in] cred   buffer holding credential ID
   @param [in] len    length of credential ID
 */
-void fido_prepare_assert::set_cred_id(unsigned char *cred, size_t len) {
+void fido_prepare_assert::set_cred_id(const unsigned char *cred, size_t len) {
   fido_assert_allow_cred(m_assert, cred, len);
 }
 
@@ -224,8 +261,9 @@ size_t fido_prepare_assert::get_signature_len() {
 /**
   Helper method to prepare all context required to perform assertion.
 */
-bool fido_assertion::prepare_assert(const unsigned char *challenge) {
-  return m_fido_prepare_assert.parse_challenge(challenge);
+bool fido_assertion::prepare_assert(const unsigned char *challenge,
+                                    size_t challenge_len) {
+  return m_fido_prepare_assert.parse_challenge(challenge, challenge_len);
 }
 
 /**

@@ -139,6 +139,7 @@ static int fido_auth_client(MYSQL_PLUGIN_VIO *vio, MYSQL *) {
 
   /** Get the challenge from the MySQL server. */
   server_challenge_len = vio->read_packet(vio, &server_challenge);
+  if (server_challenge_len < 0) return true;
   if (server_challenge_len == 0) {
     /*
       an empty packet means registration step is pending, thus for now allow
@@ -161,7 +162,8 @@ static int fido_auth_client(MYSQL_PLUGIN_VIO *vio, MYSQL *) {
 #endif
   {
     fido_assertion *fa = new fido_assertion();
-    if (fa->prepare_assert(server_challenge) || fa->sign_challenge()) {
+    if (fa->prepare_assert(server_challenge, server_challenge_len) ||
+        fa->sign_challenge()) {
       delete fa;
       return true;
     }
