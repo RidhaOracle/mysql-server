@@ -25,8 +25,10 @@
 
 #include <cstring>
 #include <initializer_list>
+#include <string>
 
 #include "my_alloc.h"
+#include "sql/mysqld.h"
 #include "sql/server_component/mysql_command_backend.h"
 #include "sql/server_component/mysql_command_consumer_imp.h"
 #include "sql/server_component/mysql_command_services_imp.h"
@@ -80,6 +82,115 @@ TEST(MysqlCommandConsumerTest, FieldMetadataPopulatesCatalogAndLengths) {
   EXPECT_EQ(std::strlen(field.col_name), mysql_field.name_length);
   EXPECT_STREQ(field.org_col_name, mysql_field.org_name);
   EXPECT_EQ(std::strlen(field.org_col_name), mysql_field.org_name_length);
+}
+
+class MysqlCommandAuthenticatedOptionsTest : public ::testing::Test {
+ protected:
+  void SetUp() override {
+    saved_bind_address_ = my_bind_addr_str;
+    saved_disable_networking_ = opt_disable_networking;
+    saved_mysqld_port_ = mysqld_port;
+    // Ensure endpoint validation cannot mask the option-file rejection.
+    opt_disable_networking = false;
+    mysqld_port = 1;
+
+    mysql_handle_.mysql = mysql_init(nullptr);
+    ASSERT_NE(nullptr, mysql_handle_.mysql);
+    mysql_handle_.client_methods = mysql_handle_.mysql->methods;
+
+    ASSERT_FALSE(mysql_command_services_imp::set(
+        reinterpret_cast<MYSQL_H>(&mysql_handle_), MYSQL_COMMAND_USER_NAME,
+        "mcs_auth_user"));
+    ASSERT_FALSE(mysql_command_services_imp::set(
+        reinterpret_cast<MYSQL_H>(&mysql_handle_), MYSQL_COMMAND_PASSWORD,
+        "mcs_auth_password"));
+  }
+
+  void TearDown() override {
+    if (mysql_handle_.mysql != nullptr) mysql_close(mysql_handle_.mysql);
+    my_bind_addr_str = saved_bind_address_;
+    opt_disable_networking = saved_disable_networking_;
+    mysqld_port = saved_mysqld_port_;
+  }
+
+  std::string bind_address_;
+  Mysql_handle mysql_handle_;
+  char *saved_bind_address_ = nullptr;
+  bool saved_disable_networking_ = false;
+  uint saved_mysqld_port_ = 0;
+};
+
+TEST_F(MysqlCommandAuthenticatedOptionsTest, RejectsReadDefaultFile) {
+  constexpr char default_file[] = "my";
+  ASSERT_FALSE(
+      mysql_command_services_imp::set(reinterpret_cast<MYSQL_H>(&mysql_handle_),
+                                      MYSQL_READ_DEFAULT_FILE, default_file));
+
+  EXPECT_TRUE(mysql_command_services_imp::connect(
+      reinterpret_cast<MYSQL_H>(&mysql_handle_)));
+  EXPECT_EQ(CR_INVALID_PARAMETER_NO, mysql_errno(mysql_handle_.mysql));
+}
+
+TEST_F(MysqlCommandAuthenticatedOptionsTest, RejectsReadDefaultGroup) {
+  constexpr char default_group[] = "mcs_auth_defaults";
+  ASSERT_FALSE(
+      mysql_command_services_imp::set(reinterpret_cast<MYSQL_H>(&mysql_handle_),
+                                      MYSQL_READ_DEFAULT_GROUP, default_group));
+
+  EXPECT_TRUE(mysql_command_services_imp::connect(
+      reinterpret_cast<MYSQL_H>(&mysql_handle_)));
+  EXPECT_EQ(CR_INVALID_PARAMETER_NO, mysql_errno(mysql_handle_.mysql));
+}
+
+TEST_F(MysqlCommandAuthenticatedOptionsTest,
+       RejectsLoopbackForNonmatchingBindAddress) {
+  bind_address_ = "192.0.2.1";
+  my_bind_addr_str = bind_address_.data();
+  ASSERT_FALSE(
+      mysql_command_services_imp::set(reinterpret_cast<MYSQL_H>(&mysql_handle_),
+                                      MYSQL_COMMAND_HOST_NAME, "127.0.0.1"));
+
+  EXPECT_TRUE(mysql_command_services_imp::connect(
+      reinterpret_cast<MYSQL_H>(&mysql_handle_)));
+  EXPECT_EQ(CR_INVALID_PARAMETER_NO, mysql_errno(mysql_handle_.mysql));
+}
+
+TEST(MysqlCommandBindAddressTest, ValidatesLiteralMatrix) {
+  struct Test_case {
+    const char *bind_address;
+    bool use_ipv4;
+    bool expected;
+  };
+
+  constexpr Test_case test_cases[] = {
+      {"*", true, true},
+      {"*", false, true},
+      {"127.0.0.1", true, true},
+      {"0.0.0.0", true, true},
+      {"::1", false, true},
+      {"::", false, true},
+      {"127.0.0.1", false, false},
+      {"0.0.0.0", false, false},
+      {"::1", true, false},
+      {"::", true, false},
+      {"localhost", true, false},
+      {"localhost", false, false},
+      {"127.0.0.1,192.0.2.10", true, false},
+      {"::1,2001:db8::1", false, false},
+      {"192.0.2.1", true, false},
+      {nullptr, true, false},
+      {nullptr, false, false},
+  };
+
+  for (const auto &test_case : test_cases) {
+    EXPECT_EQ(test_case.expected,
+              mysql_command_services_imp::bind_address_accepts_loopback(
+                  test_case.bind_address, test_case.use_ipv4))
+        << "bind_address="
+        << (test_case.bind_address == nullptr ? "<null>"
+                                              : test_case.bind_address)
+        << ", use_ipv4=" << test_case.use_ipv4;
+  }
 }
 
 class MysqlCommandUseResultTest : public ::testing::Test {

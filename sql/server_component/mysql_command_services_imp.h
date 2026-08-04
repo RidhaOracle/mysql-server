@@ -36,8 +36,18 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 #define MYSQL_SESSION_USER "mysql.session"
 #define MYSQL_SYS_HOST "localhost"
 
+enum class mysql_command_connection_mode {
+  kEmbedded,
+  kAuthenticated,
+  kAuthenticationAttempted
+};
+
 struct Mysql_handle {
   MYSQL *mysql = nullptr;
+  const MYSQL_METHODS *client_methods = nullptr;
+  // A failed mysql_real_connect() frees MYSQL::extension, so mode lives here.
+  mysql_command_connection_mode connection_mode =
+      mysql_command_connection_mode::kEmbedded;
 };
 
 struct Mysql_res_handle {
@@ -94,6 +104,10 @@ struct mysql_command_service_extn {
 */
 class mysql_command_services_imp {
  public:
+  /** Check whether a literal bind value accepts a loopback address family. */
+  static bool bind_address_accepts_loopback(const char *bind_address,
+                                            bool use_ipv4);
+
   /* mysql_command_factory service apis */
   static DEFINE_BOOL_METHOD(init, (MYSQL_H * mysql_h));
   static DEFINE_BOOL_METHOD(connect, (MYSQL_H mysql_h));
