@@ -1493,21 +1493,19 @@ int ha_innobase::parallel_scan_init(void *&scan_ctx, size_t *num_threads,
     max_threads = std::min(max_threads, max_desired_threads);
   }
 
-  max_threads =
-      Parallel_reader::available_threads(max_threads, use_reserved_threads);
-
-  if (max_threads == 0) {
-    return (HA_ERR_GENERIC);
-  }
-
   const auto row_len = m_prebuilt->mysql_row_len;
 
   auto adapter = ut::new_withkey<Parallel_reader_adapter>(
-      UT_NEW_THIS_FILE_PSI_KEY, max_threads, row_len);
+      UT_NEW_THIS_FILE_PSI_KEY, max_threads, row_len, use_reserved_threads);
 
   if (adapter == nullptr) {
-    Parallel_reader::release_threads(max_threads);
     return (HA_ERR_OUT_OF_MEM);
+  }
+
+  max_threads = adapter->max_threads();
+  if (max_threads == 0) {
+    ut::delete_(adapter);
+    return (HA_ERR_GENERIC);
   }
 
   Parallel_reader::Scan_range full_scan{};
@@ -10019,23 +10017,21 @@ int ha_innopart::parallel_scan_init(void *&scan_ctx, size_t *num_threads,
 
   ut_a(max_threads <= Parallel_reader::MAX_THREADS);
 
-  max_threads = static_cast<ulong>(
-      Parallel_reader::available_threads(max_threads, use_reserved_threads));
-
-  if (max_threads == 0) {
-    return (HA_ERR_GENERIC);
-  }
-
   scan_ctx = nullptr;
 
   const auto row_len = m_prebuilt->mysql_row_len;
 
   auto adapter = ut::new_withkey<Parallel_reader_adapter>(
-      UT_NEW_THIS_FILE_PSI_KEY, max_threads, row_len);
+      UT_NEW_THIS_FILE_PSI_KEY, max_threads, row_len, use_reserved_threads);
 
   if (adapter == nullptr) {
-    Parallel_reader::release_threads(max_threads);
     return (HA_ERR_OUT_OF_MEM);
+  }
+
+  max_threads = adapter->max_threads();
+  if (max_threads == 0) {
+    ut::delete_(adapter);
+    return (HA_ERR_GENERIC);
   }
 
   auto trx = m_prebuilt->trx;
