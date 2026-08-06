@@ -100,7 +100,8 @@ mysql_event_tracking_connection_subclass_t Event_tracking_implementation::
 bool Event_tracking_implementation::Event_tracking_connection_implementation::
     callback(const mysql_event_tracking_connection_data *data) {
   try {
-    if (data->event_subclass == EVENT_TRACKING_CONNECTION_CONNECT) {
+    if (data->event_subclass == EVENT_TRACKING_CONNECTION_CONNECT ||
+        data->event_subclass == EVENT_TRACKING_CONNECTION_CHANGE_USER) {
       THD *thd;
       mysql_service_mysql_current_thread_reader->get(&thd);
       /** Notify event coordinator */
