@@ -2,9 +2,9 @@
 # Area auto-labels, driven by the paths a PR touches. Keeps triage cheap and
 # routes reviews to the right owners (see CODEOWNERS).
 #
-# Format note: actions/labeler@v5 requires the `changed-files` /
+# Format note: actions/labeler@v5+ requires the `changed-files` /
 # `any-glob-to-any-file` structure below. The older flat "label: [globs]"
-# layout (v4) is NOT compatible with v5 and fails to parse.
+# layout (v4) is NOT compatible with current releases and fails to parse.
 
 "innodb":
   - changed-files:
