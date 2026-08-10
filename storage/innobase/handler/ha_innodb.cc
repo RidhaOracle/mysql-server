@@ -13782,6 +13782,7 @@ int create_table_info_t::create_table(const dd::Table *dd_table,
   size_t stmt_len;
 
   DBUG_TRACE;
+  DEBUG_SYNC_C("before_copy_ddl_tmp_table_fk_inserted");
   assert(m_form->s->keys <= MAX_KEY);
 
   /* Check if dd table has hidden fts doc id index.
@@ -14177,6 +14178,9 @@ int innobase_basic_ddl::create_impl(THD *thd, const char *name, TABLE *form,
   error = info.create_table_update_dict();
 
   if (evictable && !(info.is_temp_table() || info.is_intrinsic_temp_table())) {
+    /* COPY ALTER test sync point: the table and its FK metadata are in
+    the dictionary cache, but detach() below has not yet made it evictable. */
+    DEBUG_SYNC_C("after_copy_ddl_tmp_table_fk_inserted");
     info.detach();
   }
 
