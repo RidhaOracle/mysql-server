@@ -3,7 +3,7 @@ name: Assign Code Owners
 
 on:
   pull_request_target:
-    types: [opened, synchronize, reopened, ready_for_review, labeled]
+    types: [ready_for_review, labeled]
     branches: [trunk]
 
 permissions:
@@ -17,7 +17,15 @@ concurrency:
 
 jobs:
   assign:
-    if: ${{ !github.event.pull_request.draft && contains(github.event.pull_request.labels.*.name, 'OCA Verified') }}
+    # Request owners once after OCA verification. Keep Review Requested as a
+    # durable marker so later PR updates do not restore manually removed reviewers.
+    if: >-
+      ${{
+        !github.event.pull_request.draft &&
+        contains(github.event.pull_request.labels.*.name, 'OCA Verified') &&
+        !contains(github.event.pull_request.labels.*.name, 'Review Requested') &&
+        (github.event.action != 'labeled' || github.event.label.name == 'OCA Verified')
+      }}
     runs-on: ubuntu-24.04
     steps:
       - name: Request review from code owners
