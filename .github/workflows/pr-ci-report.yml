@@ -24,7 +24,7 @@ jobs:
       ready: ${{ steps.resolve.outputs.ready }}
       pr_number: ${{ steps.resolve.outputs.pr_number }}
       head_sha: ${{ steps.resolve.outputs.head_sha }}
-      result: ${{ steps.resolve.outputs.result }}
+      classification: ${{ steps.resolve.outputs.classification }}
       run_attempt: ${{ steps.resolve.outputs.run_attempt }}
       run_id: ${{ steps.resolve.outputs.run_id }}
       workflow_key: ${{ steps.resolve.outputs.workflow_key }}
@@ -217,7 +217,7 @@ jobs:
             }
             core.setOutput('pr_number', String(pullNumber));
             core.setOutput('head_sha', headSha);
-            core.setOutput('result', result);
+            core.setOutput('classification', result);
             core.setOutput('run_attempt', String(runAttempt));
             core.setOutput('run_id', String(runId));
             core.setOutput('workflow_key', config.key);
@@ -235,8 +235,7 @@ jobs:
       queue: max
     permissions:
       actions: read
-      issues: write
-      pull-requests: read
+      pull-requests: write
       statuses: write
     steps:
       - name: Publish status and labels
@@ -244,7 +243,7 @@ jobs:
         env:
           SOURCE_HEAD_SHA: ${{ needs.resolve.outputs.head_sha }}
           SOURCE_PR_NUMBER: ${{ needs.resolve.outputs.pr_number }}
-          SOURCE_RESULT: ${{ needs.resolve.outputs.result }}
+          SOURCE_RESULT: ${{ needs.resolve.outputs.classification }}
           SOURCE_RUN_ATTEMPT: ${{ needs.resolve.outputs.run_attempt }}
           SOURCE_RUN_ID: ${{ needs.resolve.outputs.run_id }}
           SOURCE_WORKFLOW_KEY: ${{ needs.resolve.outputs.workflow_key }}
