@@ -166,8 +166,7 @@ jobs:
       needs.codex.outputs.review_json != '' &&
       needs.codex.outputs.reviewed_sha != ''
     permissions:
-      issues: write
-      pull-requests: read
+      pull-requests: write
     steps:
       - name: Post Codex feedback
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
