@@ -31,6 +31,8 @@ this program; if not, write to the Free Software Foundation, Inc.,
 
 /* Include necessary SQL headers */
 #include <assert.h>
+#include <set>
+
 #include <current_thd.h>
 #include <debug_sync.h>
 #include <key_spec.h>
@@ -6858,7 +6860,10 @@ static void innobase_rename_col_discard_foreign(
       information to see any one gets affected by this rename, and discard
       them from cache */
 
-      std::list<dict_foreign_t *> fk_evict;
+      // A self-referencing foreign key appears in both sets. Ensure each
+      // affected constraint is collected once, so it is removed from the cache
+      // only once.
+      std::set<dict_foreign_t *> fk_evict;
 
       for (auto fk : old_table->foreign_set) {
         dict_foreign_t *foreign = fk;
@@ -6869,7 +6874,7 @@ static void innobase_rename_col_discard_foreign(
             continue;
           }
 
-          fk_evict.push_back(foreign);
+          fk_evict.insert(foreign);
           break;
         }
       }
@@ -6883,7 +6888,7 @@ static void innobase_rename_col_discard_foreign(
             continue;
           }
 
-          fk_evict.push_back(foreign);
+          fk_evict.insert(foreign);
           break;
         }
       }
