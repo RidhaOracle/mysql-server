@@ -24,16 +24,27 @@ jobs:
         with:
           script: |
             const label = {
-              name: 'integrate',
+              name: 'Integrate',
               color: '5319E7',
               description: 'Advisory only: current trusted approval observed; revalidate before merge',
             };
 
-            try {
-              await github.rest.issues.getLabel({ ...context.repo, name: label.name });
-              await github.rest.issues.updateLabel({ ...context.repo, ...label });
-            } catch (error) {
-              if (error.status !== 404) throw error;
+            const repositoryLabels = await github.paginate(
+              github.rest.issues.listLabelsForRepo,
+              { ...context.repo, per_page: 100 },
+            );
+            const existingLabel = repositoryLabels.find(
+              (candidate) => candidate.name.toLowerCase() === label.name.toLowerCase(),
+            );
+            if (existingLabel) {
+              await github.rest.issues.updateLabel({
+                ...context.repo,
+                name: existingLabel.name,
+                new_name: label.name,
+                color: label.color,
+                description: label.description,
+              });
+            } else {
               await github.rest.issues.createLabel({ ...context.repo, ...label });
             }
 
@@ -90,7 +101,7 @@ jobs:
               });
               if (!isEligiblePull(currentPull)) {
                 await removeIntegrate(pr.number);
-                core.info(`Removed integrate from PR #${pr.number}; the PR is not eligible.`);
+                core.info(`Removed Integrate from PR #${pr.number}; the PR is not eligible.`);
                 continue;
               }
               const evaluatedHead = currentPull.head.sha;
@@ -142,18 +153,18 @@ jobs:
                 if (!isEligiblePull(afterLabelPull) || afterLabelPull.head.sha !== evaluatedHead) {
                   await removeIntegrate(pr.number);
                   core.warning(
-                    `PR #${pr.number} changed during label publication; integrate was removed.`,
+                    `PR #${pr.number} changed during label publication; Integrate was removed.`,
                   );
                   continue;
                 }
                 core.info(
-                  `Marked PR #${pr.number} as integrate; current trusted approvals: ` +
+                  `Marked PR #${pr.number} as Integrate; current trusted approvals: ` +
                   `${approvers.join(', ')}.`,
                 );
               } else {
                 await removeIntegrate(pr.number);
                 core.info(
-                  `Removed integrate from PR #${pr.number}; no current trusted approval remains.`,
+                  `Removed Integrate from PR #${pr.number}; no current trusted approval remains.`,
                 );
               }
             }

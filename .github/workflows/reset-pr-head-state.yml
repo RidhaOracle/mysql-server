@@ -34,7 +34,7 @@ jobs:
               'Build Failed',
               'MTR Passed',
               'MTR Failed',
-              'integrate',
+              'Integrate',
             ];
             for (const name of headBoundLabels) {
               try {
