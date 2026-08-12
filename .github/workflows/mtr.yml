@@ -21,6 +21,12 @@ jobs:
     needs: []
     permissions:
       contents: read
+    env:
+      # Match the GCC PR build and trusted cache warmer exactly. ccache
+      # includes the compiler name in its cache key, so allowing CMake to
+      # discover cc/c++ here would prevent reuse of gcc/g++ entries.
+      CC: gcc
+      CXX: g++
     steps:
       - name: Check out PR merge commit
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -65,9 +71,19 @@ jobs:
           path: ~/.cache/ccache
           key: ccache-gcc-${{ github.event.pull_request.head.sha }}
           restore-keys: ccache-gcc-
+      - name: Show runner resources
+        working-directory: source
+        run: |
+          echo "CPU cores: $(nproc)"
+          free -h
+          df -h .
       - name: Build
         working-directory: source
         run: ../trusted/scripts/ci/build.sh debug
+      - name: Show ccache stats
+        if: always()
+        working-directory: source
+        run: ccache --show-stats
       - name: Run MTR
         working-directory: source
         run: ../trusted/scripts/ci/mtr.sh --parallel=auto
