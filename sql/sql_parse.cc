@@ -1659,19 +1659,15 @@ gr_incoming_connection_cb get_gr_incoming_connection() {
  * @param fd Connection file descriptor
  * @param ssl_ctx Connection SSL Context
  *
- * @return int 1 in case of error delegating the connection.
- *             0, otherwise.
+ * @return the result of handing the connection to Group Replication
  */
-int call_gr_incoming_connection_cb(THD *thd, int fd, SSL *ssl_ctx) {
-  int error_return = 1;
+Gr_incoming_connection_status call_gr_incoming_connection_cb(THD *thd, int fd,
+                                                             SSL *ssl_ctx) {
+  auto gr_connection_callback = get_gr_incoming_connection();
+  if (gr_connection_callback == nullptr)
+    return Gr_incoming_connection_status::ERROR;
 
-  if (gr_incoming_connection_cb gr_connection_callback =
-          get_gr_incoming_connection();
-      gr_connection_callback) {
-    error_return = gr_connection_callback(thd, fd, ssl_ctx);
-  }
-
-  return error_return;
+  return gr_connection_callback(thd, fd, ssl_ctx);
 }
 
 /**
@@ -1947,14 +1943,22 @@ bool dispatch_command(THD *thd, const COM_DATA *com_data,
         break;
       }
 
-      if (!error && call_gr_incoming_connection_cb(
-                        thd, thd->active_vio->mysql_socket.fd,
-                        thd->active_vio->ssl_arg
-                            ? static_cast<SSL *>(thd->active_vio->ssl_arg)
-                            : nullptr)) {
-        my_error(ER_UNKNOWN_COM_ERROR, MYF(0));
-        error = true;
-        break;
+      if (!error) {
+        const Gr_incoming_connection_status handoff_result =
+            call_gr_incoming_connection_cb(
+                thd, thd->active_vio->mysql_socket.fd,
+                thd->active_vio->ssl_arg
+                    ? static_cast<SSL *>(thd->active_vio->ssl_arg)
+                    : nullptr);
+        if (handoff_result != Gr_incoming_connection_status::ACCEPTED) {
+          if (handoff_result == Gr_incoming_connection_status::BUSY) {
+            my_error(ER_GRP_RPL_CONNECTION_HANDOFF_BUSY, MYF(0));
+          } else {
+            my_error(ER_UNKNOWN_COM_ERROR, MYF(0));
+          }
+          error = true;
+          break;
+        }
       }
 
       my_ok(thd);
