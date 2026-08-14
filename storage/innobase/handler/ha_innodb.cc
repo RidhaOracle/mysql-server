@@ -21673,6 +21673,11 @@ static int validate_innodb_redo_log_encrypt(THD *thd, SYS_VAR *var, void *save,
     return (0);
   }
 
+  /* Complete a physical redo block boundary using the current setting. */
+  if (!srv_read_only_mode) {
+    log_encryption_write_dummy_barrier();
+  }
+
   /* If encryption is to be disabled. This will just make sure I/O doesn't
   write REDO encrypted from now on. */
   if (target == false) {
