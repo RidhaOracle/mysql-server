@@ -54,7 +54,12 @@ jobs:
               ['MTR', {
                 key: 'mtr',
                 path: '.github/workflows/mtr.yml',
-                primarySteps: [{ job: 'mtr', step: 'Run MTR' }],
+                primarySteps: [
+                  { job: 'MTR (replication)', step: 'Run MTR' },
+                  { job: 'MTR (storage)', step: 'Run MTR' },
+                  { job: 'MTR (core)', step: 'Run MTR' },
+                  { job: 'MTR (services)', step: 'Run MTR' },
+                ],
               }],
               ['Format Check', {
                 key: 'format',
@@ -161,24 +166,41 @@ jobs:
             if (run.conclusion === 'action_required') {
               result = 'pending';
             } else if (!workflowChanged) {
+              // Include every attempt so "Re-run failed jobs" can combine a
+              // retried shard with successful shards from an earlier attempt.
               const jobs = await github.paginate(
-                github.rest.actions.listJobsForWorkflowRunAttempt,
+                github.rest.actions.listJobsForWorkflowRun,
                 {
                   ...context.repo,
                   run_id: runId,
-                  attempt_number: runAttempt,
+                  filter: 'all',
                   per_page: 100,
                 },
               );
               const primaryConclusions = [];
               let expectedLayout = true;
               for (const expected of config.primarySteps) {
-                const matchingJobs = jobs.filter((job) => job.name === expected.job);
-                if (matchingJobs.length !== 1) {
+                const matchingJobs = jobs.filter((job) => (
+                  job.name === expected.job &&
+                  Number.isSafeInteger(Number(job.run_attempt)) &&
+                  Number(job.run_attempt) > 0 &&
+                  Number(job.run_attempt) <= runAttempt
+                ));
+                if (matchingJobs.length === 0) {
                   expectedLayout = false;
                   break;
                 }
-                const matchingSteps = (matchingJobs[0].steps || [])
+                const latestAttempt = Math.max(
+                  ...matchingJobs.map((job) => Number(job.run_attempt)),
+                );
+                const latestJobs = matchingJobs.filter(
+                  (job) => Number(job.run_attempt) === latestAttempt,
+                );
+                if (latestJobs.length !== 1 || latestJobs[0].status !== 'completed') {
+                  expectedLayout = false;
+                  break;
+                }
+                const matchingSteps = (latestJobs[0].steps || [])
                   .filter((step) => step.name === expected.step);
                 if (matchingSteps.length !== 1) {
                   expectedLayout = false;
