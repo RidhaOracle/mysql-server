@@ -11,14 +11,32 @@ concurrency:
   group: mtr-${{ github.event.pull_request.number }}
   cancel-in-progress: true
 
-# Run MTR's normal default test selection on every PR.
+# Run MTR's normal default test selection on every PR, split by suite so each
+# shard stays below MTR's suite timeout and the runner's job time limit.
 jobs:
   mtr:
+    name: MTR (${{ matrix.shard }})
     runs-on: ubuntu-latest
     # A full default MTR selection needs substantially more time than the
     # retired smoke check. 360 minutes is GitHub-hosted runners' job maximum.
     timeout-minutes: 360
     needs: []
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - shard: replication
+            suites: binlog,binlog_gtid,binlog_nogtid,clone,federated,rpl,rpl_gtid,rpl_nogtid
+            run_unit_tests: false
+          - shard: storage
+            suites: encryption,innodb,innodb_fts,innodb_gis,innodb_undo,innodb_zip,parts
+            run_unit_tests: false
+          - shard: core
+            suites: auth_sec,collations,component_connection_control,component_keyring_file,connection_control,funcs_2,gcol,gis,information_schema,interactive_utilities,jdv,json,main,opt_trace,query_rewrite_plugins,x
+            run_unit_tests: false
+          - shard: services
+            suites: perfschema,router,secondary_engine,service_status_var_registration,service_sys_var_registration,service_udf_registration,sys_vars,sysschema,test_service_sql_api,test_services
+            run_unit_tests: true
     permissions:
       contents: read
     env:
@@ -86,12 +104,20 @@ jobs:
         run: ccache --show-stats
       - name: Run MTR
         working-directory: source
-        run: ../trusted/scripts/ci/mtr.sh --parallel=auto
+        env:
+          MTR_SUITES: ${{ matrix.suites }}
+          MTR_RUN_UNIT_TESTS: ${{ matrix.run_unit_tests }}
+        run: |
+          args=(--parallel=auto "--suite=${MTR_SUITES}")
+          if [[ "${MTR_RUN_UNIT_TESTS}" == "true" ]]; then
+            args+=(--unit-tests)
+          fi
+          ../trusted/scripts/ci/mtr.sh "${args[@]}"
       - name: Publish test report
         if: ${{ always() && !cancelled() }}
         # The privileged reporter never downloads or executes this untrusted artifact.
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: mtr-logs-${{ github.run_id }}-${{ github.run_attempt }}
+          name: mtr-logs-${{ matrix.shard }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: source/build/mysql-test/var/log/
           retention-days: 5
