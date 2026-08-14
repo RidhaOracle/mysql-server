@@ -837,6 +837,13 @@ bool Sql_cmd_load_table::execute_bulk(THD *thd) {
     }
   });
 
+  ulonglong auto_increment_value = 0;
+  if (table_ref->table->found_next_number_field) {
+    HA_CREATE_INFO create_info;
+    table_ref->table->file->update_create_info(&create_info);
+    auto_increment_value = create_info.auto_increment_value;
+  }
+
   if (!table_ref->table->file->is_table_empty()) {
     m_non_empty_table = true;
   }
@@ -926,6 +933,15 @@ bool Sql_cmd_load_table::execute_bulk(THD *thd) {
   }
 
   TABLE *const bulk_loaded_table = bulk_loaded_table_ref->table;
+
+  if (!m_non_empty_table && auto_increment_value != 0 &&
+      bulk_loaded_table->file->bulk_load_preserve_auto_increment(
+          auto_increment_value) != 0) {
+    my_error(ER_INTERNAL_ERROR, MYF(0),
+             "BULK LOAD: Failed to preserve AUTO_INCREMENT value");
+    success = false;
+    return true;
+  }
 
   if (validate_check_constraints_for_bulk_load(thd, bulk_loaded_table)) {
     return true;

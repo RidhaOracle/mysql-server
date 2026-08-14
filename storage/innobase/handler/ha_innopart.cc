@@ -4199,6 +4199,28 @@ int ha_innopart::bulk_load_end(THD *thd, void *load_ctx, bool is_error) {
   return error;
 }
 
+int ha_innopart::bulk_load_preserve_auto_increment(
+    ulonglong auto_increment_value) {
+  const int error =
+      ha_innobase::bulk_load_preserve_auto_increment(auto_increment_value);
+  if (error != 0 || table->found_next_number_field == nullptr) {
+    return error;
+  }
+
+  dict_table_t *innodb_table = m_prebuilt->table;
+  dict_table_autoinc_lock(innodb_table);
+  const uint64_t next_auto_increment = dict_table_autoinc_read(innodb_table);
+  dict_table_autoinc_unlock(innodb_table);
+
+  lock_auto_increment();
+  m_part_share->next_auto_inc_val =
+      std::max<ulonglong>(m_part_share->next_auto_inc_val, next_auto_increment);
+  m_part_share->auto_inc_initialized = true;
+  unlock_auto_increment();
+
+  return 0;
+}
+
 void ha_innopart::clear_blob_heaps() {
   DBUG_TRACE;
   if (m_parts == nullptr) {

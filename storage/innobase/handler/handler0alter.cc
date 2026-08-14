@@ -11617,3 +11617,25 @@ int ha_innobase::bulk_load_end(THD *thd, void *load_ctx, bool is_error) {
   bool any_error = is_error || db_err != DB_SUCCESS;
   return any_error ? HA_ERR_GENERIC : 0;
 }
+
+int ha_innobase::bulk_load_preserve_auto_increment(
+    ulonglong auto_increment_value) {
+  if (auto_increment_value == 0 || table->found_next_number_field == nullptr) {
+    return 0;
+  }
+
+  dict_table_t *innodb_table = m_prebuilt->table;
+  dict_table_autoinc_lock(innodb_table);
+  dict_table_autoinc_update_if_greater(innodb_table, auto_increment_value);
+  const uint64_t final_autoinc = dict_table_autoinc_read(innodb_table);
+  dict_table_autoinc_set_col_pos(innodb_table,
+                                 table->found_next_number_field->field_index());
+  dict_table_autoinc_unlock(innodb_table);
+
+  if (!innodb_table->is_temporary()) {
+    /* DD stores the last assigned value; the in-memory counter is next. */
+    dict_table_autoinc_persist(innodb_table, final_autoinc - 1);
+  }
+
+  return 0;
+}
