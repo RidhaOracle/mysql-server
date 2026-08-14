@@ -17,7 +17,6 @@
 
 ### Contributor checklist
 
-- [ ] I have signed the [OCA](https://oca.opensource.oracle.com) with the email on these commits
 - [ ] Code is formatted (`scripts/ci/format.sh`)
 - [ ] Commits are focused with descriptive messages
 
