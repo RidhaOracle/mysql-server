@@ -57,7 +57,13 @@ class Parallel_reader_adapter {
   /** Constructor.
   @param[in]  max_threads       Maximum threads to use for all scan contexts.
   @param[in]  rowlen            Row length.  */
-  Parallel_reader_adapter(size_t max_threads, ulint rowlen);
+  Parallel_reader_adapter(size_t max_threads, ulint rowlen,
+                          bool use_reserved_threads = false);
+
+  /** @return the number of global parallel-read slots reserved. */
+  [[nodiscard]] size_t max_threads() const {
+    return m_parallel_reader.max_threads();
+  }
 
   /** Destructor. */
   ~Parallel_reader_adapter() = default;
