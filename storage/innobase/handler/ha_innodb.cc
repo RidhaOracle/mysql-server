@@ -11001,20 +11001,23 @@ int ha_innobase::sample_init(void *&scan_ctx, double sampling_percentage,
     }
   }
 
-  /* Parallel read is not currently supported for sampling. */
-  size_t max_threads = Parallel_reader::available_threads(1, false);
-
-  if (max_threads == 0) {
-    return HA_ERR_SAMPLING_INIT_FAILED;
-  }
+  /* Sampling uses one asynchronous worker to produce records for
+  sample_next(). A synchronous scan would block waiting for sample_next()
+  before sample_init() returns. Multiple workers cannot safely write to the
+  single caller-provided buffer. */
+  constexpr size_t max_threads = 1;
 
   Histogram_sampler *sampler = ut::new_withkey<Histogram_sampler>(
       UT_NEW_THIS_FILE_PSI_KEY, max_threads, sampling_seed, sampling_percentage,
       sampling_method);
 
   if (sampler == nullptr) {
-    Parallel_reader::release_threads(max_threads);
     return HA_ERR_OUT_OF_MEM;
+  }
+
+  if (sampler->max_threads() == 0) {
+    ut::delete_(sampler);
+    return HA_ERR_SAMPLING_INIT_FAILED;
   }
 
   scan_ctx = static_cast<void *>(sampler);
