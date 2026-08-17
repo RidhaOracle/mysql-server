@@ -1505,6 +1505,20 @@ int MYSQL_BIN_LOG::gtid_end_transaction(THD *thd) {
   if (thd->owned_gtid.sidno > 0) {
     assert(thd->variables.gtid_next.type == ASSIGNED_GTID);
 
+    DBUG_EXECUTE_IF(
+        "rpl_gtid_table_sync_flush_privileges_gtid_end_transaction", {
+          if (thd->slave_thread && thd->lex->sql_command == SQLCOM_FLUSH &&
+              (thd->lex->type & REFRESH_GRANT)) {
+            const char wait_for_test[] = "now WAIT_FOR gtid_flush_arm";
+            const char wait_to_continue[] =
+                "now SIGNAL gtid_flush_hit WAIT_FOR gtid_flush_go";
+            assert(opt_debug_sync_timeout > 0);
+            assert(!debug_sync_set_action(thd, STRING_WITH_LEN(wait_for_test)));
+            assert(
+                !debug_sync_set_action(thd, STRING_WITH_LEN(wait_to_continue)));
+          }
+        });
+
     Transaction_ctx *trn_ctx = thd->get_transaction();
     if (!opt_bin_log || (thd->slave_thread && !opt_log_replica_updates) ||
         trn_ctx->m_transaction_flushed == Transaction_flushed::NO) {

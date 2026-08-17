@@ -85,6 +85,7 @@ enum_return_status Gtid_state::acquire_ownership(THD *thd, const Gtid &gtid) {
   assert(!executed_gtids.contains_gtid(gtid));
   DBUG_PRINT("info", ("gtid=%d:%" PRId64, gtid.sidno, gtid.gno));
   assert(thd->owned_gtid.sidno == 0);
+  assert(!thd->gtid_table_persist_requested());
   if (owned_gtids.add_gtid_owner(gtid, thd->thread_id()) != RETURN_STATUS_OK)
     goto err;
   if (thd->get_gtid_next_list() != nullptr) {
@@ -715,6 +716,10 @@ int Gtid_state::save(THD *thd) {
   assert(thd->owned_gtid.sidno > 0);
   int error = 0;
 
+  if (thd->gtid_table_persist_requested()) {
+    return 0;
+  }
+
   int ret = gtid_table_persistor->save(thd, &thd->owned_gtid);
   if (1 == ret) {
     /*
@@ -722,10 +727,14 @@ int Gtid_state::save(THD *thd) {
       open it. Ignore the error.
     */
     thd->clear_error();
-    if (!thd->get_stmt_da()->is_set())
+    if (!thd->get_stmt_da()->is_set()) {
       thd->get_stmt_da()->set_ok_status(0, 0, nullptr);
-  } else if (-1 == ret)
+    }
+  } else if (-1 == ret) {
     error = -1;
+  } else {
+    thd->set_gtid_table_persist_requested();
+  }
 
   return error;
 }
