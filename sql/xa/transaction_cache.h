@@ -25,12 +25,16 @@
 #ifndef XA_TRANSACTION_CACHE_H_INCLUDED
 #define XA_TRANSACTION_CACHE_H_INCLUDED
 
-#include <string.h>
 #include <sys/types.h>
-#include <list>
+#include <functional>
+#include <memory>
 #include <mutex>
+#include <string>
+#include <utility>
+#include <vector>
 
 #include "lex_string.h"
+#include "map_helpers.h"  // malloc_unordered_map
 #include "my_dbug.h"
 #include "my_inttypes.h"
 #include "my_sqlcommand.h"
@@ -55,7 +59,6 @@ namespace xa {
 class Transaction_cache {
  public:
   using transaction_ptr = std::shared_ptr<Transaction_ctx>;
-  using unordered_map = malloc_unordered_map<std::string, transaction_ptr>;
   using list = std::vector<transaction_ptr>;
   using filter_predicate_t = std::function<bool(transaction_ptr const &)>;
 
@@ -87,6 +90,20 @@ class Transaction_cache {
                            from a cache.
   */
   static void remove(Transaction_ctx *transaction);
+  /// Mark a transaction finalized for SQL XA RECOVER without releasing its XID
+  /// reservation from the cache.
+  ///
+  /// This is used after XA COMMIT/XA ROLLBACK has completed in engines, but
+  /// before the statement GTID is made visible. The cache entry must remain
+  /// present for two reasons:
+  /// 1. To keep the XID reserved until per-XID cleanup, such as MDL context
+  ///    backup deletion, is done.
+  /// 2. To keep the cached detached transaction identity available for
+  ///    concurrent same-XID second-phase checks until final cleanup removes the
+  ///    entry.
+  ///
+  /// @param transaction Transaction context to hide from SQL XA RECOVER.
+  static void mark_finalized_for_recover(Transaction_ctx *transaction);
   /**
     Inserts a transaction context identified by a given XID.
 
@@ -133,12 +150,14 @@ class Transaction_cache {
     @return The transaction context if found and valid, nullptr otherwise.
    */
   static transaction_ptr find(XID *xid, filter_predicate_t filter = nullptr);
-  /**
-    Retrieves the list of transaction contexts cached.
-
-    @return A vector with all transaction contexts cached so far.
-   */
-  static list get_cached_transactions();
+  /// Retrieves cached transaction contexts visible through SQL XA RECOVER.
+  ///
+  /// Entries finalized for recover are skipped here, but remain in the cache
+  /// as XID reservations until final cleanup removes them.
+  ///
+  /// @return A vector with all cached transaction contexts visible through
+  ///         SQL XA RECOVER.
+  static list get_transactions_visible_to_xa_recover();
   /**
     Initializes the transaction cache underlying resources.
    */
@@ -149,6 +168,38 @@ class Transaction_cache {
   static void dispose();
 
  private:
+  enum class Xa_recover_visibility { Visible, Hidden };
+
+  /// Cached transaction context and its visibility through SQL XA RECOVER.
+  class Cache_entry {
+   public:
+    /// @param transaction Transaction context stored by the cache entry.
+    explicit Cache_entry(transaction_ptr transaction)
+        : m_transaction(std::move(transaction)) {}
+
+    /// @return Transaction context stored by the cache entry.
+    const transaction_ptr &transaction() const { return m_transaction; }
+
+    /// @retval true The transaction can be listed by SQL XA RECOVER.
+    /// @retval false The transaction XID remains reserved, but hidden from SQL
+    ///                XA RECOVER.
+    bool is_visible_to_xa_recover() const {
+      return m_xa_recover_visibility == Xa_recover_visibility::Visible;
+    }
+
+    /// Mark finalized for SQL XA RECOVER while keeping the XID reserved.
+    void mark_finalized_for_recover() {
+      m_xa_recover_visibility = Xa_recover_visibility::Hidden;
+    }
+
+   private:
+    transaction_ptr m_transaction;
+    Xa_recover_visibility m_xa_recover_visibility =
+        Xa_recover_visibility::Visible;
+  };
+
+  using unordered_map = malloc_unordered_map<std::string, Cache_entry>;
+
   /** A lock to serialize the access to `m_transaction_cache` */
   mysql_mutex_t m_LOCK_transaction_cache;
 #ifdef HAVE_PSI_INTERFACE

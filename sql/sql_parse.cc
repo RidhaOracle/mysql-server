@@ -5184,6 +5184,8 @@ void THD::reset_for_next_command() {
   DBUG_TRACE;
   assert(!thd->sp_runtime_ctx); /* not for substatements of routines */
   assert(!thd->in_sub_stmt);
+  // Before-GTID actions are statement-local and must be consumed before reuse.
+  assert(thd->m_actions_before_gtid_state_update.empty());
   thd->reset_item_list();
   /*
     Those two lines below are theoretically unneeded as

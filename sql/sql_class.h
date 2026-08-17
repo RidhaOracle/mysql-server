@@ -52,6 +52,8 @@
 #include <stack>
 #include <string>
 #include <unordered_map>
+#include <utility>  // move
+#include <vector>   // vector
 
 #include "dur_prop.h"  // durability_properties
 #include "lex_string.h"
@@ -3975,6 +3977,9 @@ class THD : public MDL_context_owner,
   /// Callback functions that determine if GTID rollback shall be skipped.
   std::list<std::function<bool(const THD &)>> m_skip_gtid_rollback_checkers;
 
+  /// Actions to execute before owned GTID state is externalized.
+  std::vector<std::function<void(bool)>> m_actions_before_gtid_state_update;
+
  public:
   /// Invoke the callback functions that determine if GTID rollback shall be
   /// skipped, and return true as soon as one of them returns true; otherwise
@@ -3994,6 +3999,23 @@ class THD : public MDL_context_owner,
     auto it = std::prev(m_skip_gtid_rollback_checkers.end());
     return Scope_guard{
         [this, it] { this->m_skip_gtid_rollback_checkers.erase(it); }};
+  }
+
+  /// Register an action that will run before this THD externalizes its owned
+  /// GTID state.
+  ///
+  /// @param f Action to execute. The action argument is true when GTID state
+  ///          is committed and false when GTID state is rolled back.
+  void register_action_before_gtid_state_update(std::function<void(bool)> f) {
+    m_actions_before_gtid_state_update.push_back(std::move(f));
+  }
+
+  /// Execute and remove registered before-GTID-state-update actions.
+  ///
+  /// @param is_commit Whether GTID state is committed.
+  void call_actions_before_gtid_state_update(bool is_commit) {
+    for (auto &action : m_actions_before_gtid_state_update) action(is_commit);
+    m_actions_before_gtid_state_update.clear();
   }
 
   /*
