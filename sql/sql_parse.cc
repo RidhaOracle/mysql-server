@@ -3394,7 +3394,7 @@ int mysql_execute_command(THD *thd, bool first_level) {
     Disable binlog so that the BEGIN is not logged in binlog.
    */
   if (lex->create_info && lex->create_info->m_transactional_ddl &&
-      !thd->slave_thread) {
+      !(thd->slave_thread || thd->is_binlog_applier())) {
     const Disable_binlog_guard binlog_guard(thd);
     if (trans_begin(thd, MYSQL_START_TRANS_OPT_READ_WRITE)) return true;
   }
