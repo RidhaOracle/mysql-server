@@ -63,7 +63,7 @@ bool Sql_cmd_xa_recover::trans_xa_recover(THD *thd) {
                                 Protocol::SEND_NUM_ROWS | Protocol::SEND_EOF))
     return true;
 
-  auto list = xa::Transaction_cache::get_cached_transactions();
+  auto list = xa::Transaction_cache::get_transactions_visible_to_xa_recover();
   for (const auto &transaction : list) {
     XID_STATE *xs = transaction->xid_state();
     if (xs->has_state(XID_STATE::XA_PREPARED)) {

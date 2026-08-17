@@ -52,6 +52,10 @@ namespace {
   @return 0 if the transaction was successfully prepared, > 0 otherwise.
  */
 int process_xa_prepare(THD *thd);
+/// Mark an XA transaction as prepared before the prepare GTID is externalized.
+///
+/// @param thd The THD session object holding the XA transaction.
+void mark_xa_prepared(THD *thd);
 /**
   Detaches the active XA transaction from the current THD session.
 
@@ -174,9 +178,7 @@ bool Sql_cmd_xa_prepare::trans_xa_prepare(THD *thd) {
       ::process_xa_prepare(thd))
     return true;
 
-  xid_state->set_state(XID_STATE::XA_PREPARED);
-  MYSQL_SET_TRANSACTION_XA_STATE(thd->m_transaction_psi,
-                                 (int)xid_state->get_state());
+  mark_xa_prepared(thd);
   if (thd->rpl_thd_ctx.session_gtids_ctx().notify_after_xa_prepare(thd))
     LogErr(WARNING_LEVEL, ER_TRX_GTID_COLLECT_REJECT);
 
@@ -202,6 +204,9 @@ int process_xa_prepare(THD *thd) {
   if (trn_ctx->is_active(Transaction_ctx::SESSION)) {
     bool gtid_error = false, need_clear_owned_gtid = false;
     std::tie(gtid_error, need_clear_owned_gtid) = commit_owned_gtids(thd, true);
+    // Drain leftovers after clean_up_guard performs normal GTID finalization.
+    auto gtid_action_guard = create_scope_guard(
+        [thd]() { thd->call_actions_before_gtid_state_update(false); });
     auto clean_up_guard = create_scope_guard([&]() {
       if (error != 0) ha_rollback_trans(thd, true);
 
@@ -221,6 +226,17 @@ int process_xa_prepare(THD *thd) {
       return error = 1;
     }
 
+    // A TC log may externalize GTID state, so register conservatively. Some
+    // implementations do not externalize it; gtid_action_guard then cancels
+    // the unused action. Without a TC log, register only when explicit
+    // owned-GTID cleanup will externalize GTID state.
+    if (tc_log != nullptr || need_clear_owned_gtid) {
+      thd->register_action_before_gtid_state_update(
+          [thd](bool is_commit) -> void {
+            if (is_commit) mark_xa_prepared(thd);
+          });
+    }
+
     if (Commit_order_manager::wait(thd)) {  // Ensure externalization order
                                             // for applier threads.
       thd->commit_error = THD::CE_NONE;
@@ -238,10 +254,23 @@ int process_xa_prepare(THD *thd) {
                     thd, /* all */ true)) != 0)
       return error;
 
-    assert(thd->get_transaction()->xid_state()->has_state(XID_STATE::XA_IDLE));
+    assert(
+        thd->get_transaction()->xid_state()->has_state(XID_STATE::XA_IDLE) ||
+        thd->get_transaction()->xid_state()->has_state(XID_STATE::XA_PREPARED));
   }
 
   return error;
+}
+
+void mark_xa_prepared(THD *thd) {
+  DBUG_TRACE;
+  auto xid_state = thd->get_transaction()->xid_state();
+  if (xid_state->has_state(XID_STATE::XA_PREPARED)) return;
+
+  assert(xid_state->has_state(XID_STATE::XA_IDLE));
+  xid_state->set_state(XID_STATE::XA_PREPARED);
+  MYSQL_SET_TRANSACTION_XA_STATE(thd->m_transaction_psi,
+                                 (int)xid_state->get_state());
 }
 
 bool detach_xa_transaction(THD *thd) {
