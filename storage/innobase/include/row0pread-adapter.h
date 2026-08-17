@@ -56,7 +56,9 @@ class Parallel_reader_adapter {
 
   /** Constructor.
   @param[in]  max_threads       Maximum threads to use for all scan contexts.
-  @param[in]  rowlen            Row length.  */
+  @param[in]  rowlen            Row length.
+  @param[in]  use_reserved_threads
+                                 Whether to use reserved parallel-read slots. */
   Parallel_reader_adapter(size_t max_threads, ulint rowlen,
                           bool use_reserved_threads = false);
 
