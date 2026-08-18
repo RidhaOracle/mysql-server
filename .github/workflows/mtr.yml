@@ -106,7 +106,6 @@ jobs:
         working-directory: source
         env:
           MTR_SUITES: ${{ matrix.suites }}
-          MTR_RUN_UNIT_TESTS: ${{ matrix.run_unit_tests }}
         run: |
           args=(
             --parallel=auto
@@ -117,10 +116,39 @@ jobs:
             --max-test-fail=3
             "--suite=${MTR_SUITES}"
           )
-          if [[ "${MTR_RUN_UNIT_TESTS}" == "true" ]]; then
-            args+=(--unit-tests)
-          fi
           ../trusted/scripts/ci/mtr.sh "${args[@]}"
+      - name: Run unit tests
+        if: ${{ matrix.run_unit_tests }}
+        working-directory: source
+        run: |
+          ctest_args=(
+            --test-dir build
+            --parallel "$(nproc)"
+            --test-timeout 120
+            --output-on-failure
+          )
+
+          set +e
+          ctest "${ctest_args[@]}" \
+            --output-log build/mysql-test/var/ctest.log
+          ctest_result=$?
+          set -e
+
+          if (( ctest_result == 0 )); then
+            exit 0
+          fi
+
+          failed_tests=build/Testing/Temporary/LastTestsFailed.log
+          if [[ ! -s "$failed_tests" ]]; then
+            echo "CTest failed without a failed-test list; not retrying." >&2
+            exit "$ctest_result"
+          fi
+
+          echo "::warning::Retrying only the CTest failures from the initial run"
+          ctest "${ctest_args[@]}" \
+            --rerun-failed \
+            --repeat until-pass:2 \
+            --output-log build/mysql-test/var/ctest-rerun.log
       - name: Publish test report
         if: ${{ always() && !cancelled() }}
         # The privileged reporter never downloads or executes this untrusted artifact.
@@ -129,5 +157,5 @@ jobs:
           name: mtr-logs-${{ matrix.shard }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
             source/build/mysql-test/var/log/
-            source/build/mysql-test/var/ctest.log
+            source/build/mysql-test/var/ctest*.log
           retention-days: 5

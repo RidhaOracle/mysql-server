@@ -60,6 +60,7 @@ jobs:
                   { job: 'MTR (storage)', step: 'Run MTR' },
                   { job: 'MTR (core)', step: 'Run MTR' },
                   { job: 'MTR (services)', step: 'Run MTR' },
+                  { job: 'MTR (services)', step: 'Run unit tests' },
                 ],
               }],
               ['Format Check', {
