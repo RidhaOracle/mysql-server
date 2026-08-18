@@ -26,8 +26,9 @@ jobs:
             const label = {
               name: 'Integrate',
               color: '5319E7',
-              description: 'Advisory only: current trusted approval observed; revalidate before merge',
+              description: 'Advisory only: OCA verified and trusted approval observed; revalidate before merge',
             };
+            const requiredLabelName = 'OCA Verified';
 
             const repositoryLabels = await github.paginate(
               github.rest.issues.listLabelsForRepo,
@@ -61,6 +62,10 @@ jobs:
             };
 
             const expectedRepository = `${context.repo.owner}/${context.repo.repo}`;
+            const hasRequiredLabel = (pull) => pull?.labels?.some((candidate) => (
+              String(candidate?.name || candidate).toLowerCase() ===
+                requiredLabelName.toLowerCase()
+            ));
             const isEligiblePull = (pull) => (
               pull?.state === 'open' &&
               !pull?.draft &&
@@ -104,6 +109,13 @@ jobs:
                 core.info(`Removed Integrate from PR #${pr.number}; the PR is not eligible.`);
                 continue;
               }
+              if (!hasRequiredLabel(currentPull)) {
+                await removeIntegrate(pr.number);
+                core.info(
+                  `Removed Integrate from PR #${pr.number}; ${requiredLabelName} is missing.`,
+                );
+                continue;
+              }
               const evaluatedHead = currentPull.head.sha;
 
               const reviews = await github.paginate(github.rest.pulls.listReviews, {
@@ -139,8 +151,9 @@ jobs:
                 pull_number: pr.number,
               });
               const unchanged = isEligiblePull(freshPull) && freshPull.head.sha === evaluatedHead;
+              const ocaVerified = hasRequiredLabel(freshPull);
 
-              if (unchanged && approvers.length > 0) {
+              if (unchanged && ocaVerified && approvers.length > 0) {
                 await github.rest.issues.addLabels({
                   ...context.repo,
                   issue_number: pr.number,
@@ -150,10 +163,15 @@ jobs:
                   ...context.repo,
                   pull_number: pr.number,
                 });
-                if (!isEligiblePull(afterLabelPull) || afterLabelPull.head.sha !== evaluatedHead) {
+                if (
+                  !isEligiblePull(afterLabelPull) ||
+                  !hasRequiredLabel(afterLabelPull) ||
+                  afterLabelPull.head.sha !== evaluatedHead
+                ) {
                   await removeIntegrate(pr.number);
                   core.warning(
-                    `PR #${pr.number} changed during label publication; Integrate was removed.`,
+                    `PR #${pr.number} changed or lost ${requiredLabelName} during label ` +
+                    'publication; Integrate was removed.',
                   );
                   continue;
                 }
@@ -163,8 +181,13 @@ jobs:
                 );
               } else {
                 await removeIntegrate(pr.number);
+                const reason = !ocaVerified
+                  ? `${requiredLabelName} is missing`
+                  : !unchanged
+                    ? 'the PR changed or is no longer eligible'
+                    : 'no current trusted approval remains';
                 core.info(
-                  `Removed Integrate from PR #${pr.number}; no current trusted approval remains.`,
+                  `Removed Integrate from PR #${pr.number}; ${reason}.`,
                 );
               }
             }
