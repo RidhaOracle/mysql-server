@@ -298,6 +298,62 @@ bool Loader::set_source_table_data(
     const std::vector<Bulk_load::Source_table_data> &source_table_data) {
   m_original_table_name = source_table_data.at(0).table;
   assert(source_table_data.size() == m_num_threads);
+
+  auto n_required_bound_cols =
+      prebuilt->index->is_clustered()
+          ? dict_index_get_n_ordering_defined_by_user(prebuilt->index)
+          : dict_index_get_n_unique_in_tree(prebuilt->index);
+  if (n_required_bound_cols == 0) {
+    /* A generated clustered index is searched using DB_ROW_ID. */
+    n_required_bound_cols = 1;
+  }
+
+  auto validate_bounds = [&](const std::optional<Rows_mysql> &lower_bound,
+                             const std::optional<Rows_mysql> &upper_bound) {
+    /* A bound can contain the full source row, while the search tuple only
+    contains the fields required for the index comparison. */
+    if (lower_bound.has_value() &&
+        lower_bound->get_num_cols() < n_required_bound_cols) {
+      ib::error() << "ddl_bulk source-table lower bound has too few columns: "
+                     "index="
+                  << prebuilt->index->name()
+                  << ", bound_columns=" << lower_bound->get_num_cols()
+                  << ", required_columns=" << n_required_bound_cols;
+      ut_ad(lower_bound->get_num_cols() >= n_required_bound_cols);
+      return false;
+    }
+
+    if (upper_bound.has_value() &&
+        upper_bound->get_num_cols() < n_required_bound_cols) {
+      ib::error() << "ddl_bulk source-table upper bound has too few columns: "
+                     "index="
+                  << prebuilt->index->name()
+                  << ", bound_columns=" << upper_bound->get_num_cols()
+                  << ", required_columns=" << n_required_bound_cols;
+      ut_ad(upper_bound->get_num_cols() >= n_required_bound_cols);
+      return false;
+    }
+
+    if (lower_bound.has_value() && upper_bound.has_value() &&
+        lower_bound->get_num_cols() != upper_bound->get_num_cols()) {
+      ib::error() << "ddl_bulk source-table bounds have different column "
+                     "counts: index="
+                  << prebuilt->index->name()
+                  << ", lower_bound_columns=" << lower_bound->get_num_cols()
+                  << ", upper_bound_columns=" << upper_bound->get_num_cols();
+      ut_ad(lower_bound->get_num_cols() == upper_bound->get_num_cols());
+      return false;
+    }
+
+    return true;
+  };
+
+  for (const auto &data : source_table_data) {
+    if (!validate_bounds(data.range.first, data.range.second)) {
+      return false;
+    }
+  }
+
   for (size_t index = 0; index < m_num_threads; ++index) {
     auto success = m_ctxs[index].set_source_table_data(
         prebuilt, source_table_data.at(index));
@@ -1350,6 +1406,7 @@ bool Loader::Table_reader::init(const std::string &schema,
                                 const std::optional<Rows_mysql> &lower_bound,
                                 const std::optional<Rows_mysql> &upper_bound) {
   assert(!m_initialized);
+
   m_initialized = true;
   m_table_name = table;
   m_prebuilt = prebuilt;
@@ -1419,39 +1476,45 @@ bool Loader::Table_reader::init(const std::string &schema,
   uint64_t last_row_id;
   std::list<Btree_multi::Btree_load *> list_subtrees;
   if (m_lower_bound.has_value()) {
-    ib_tpl_t tuple;
+    /* The lower-bound tuple is needed only to position the cursor. */
+    ib_tpl_t lower_bound_tuple;
     if (!m_prebuilt->index->is_clustered()) {
-      tuple = ib_sec_search_tuple_create(m_read_cursor);
+      lower_bound_tuple = ib_sec_search_tuple_create(m_read_cursor);
     } else {
-      tuple = ib_clust_search_tuple_create(m_read_cursor);
+      lower_bound_tuple = ib_clust_search_tuple_create(m_read_cursor);
     }
-    if (tuple == nullptr) {
+    if (lower_bound_tuple == nullptr) {
       return false;
     }
+    ut_ad(m_lower_bound->get_num_cols() >=
+          dtuple_get_n_fields(ib_tuple_to_dtuple(lower_bound_tuple)));
 
     allocate_buffers(m_lower_bound.value(), lower_bound.value(),
-                     ib_tuple_to_dtuple(tuple), m_lower_bound_data);
+                     ib_tuple_to_dtuple(lower_bound_tuple), m_lower_bound_data);
 
     unsigned char tuple_row_id_data[DATA_ROW_ID_LEN];
     if (prebuilt->index->is_clustered() &&
         prebuilt->clust_index_was_generated) {
-      auto *row_id_field = dtuple_get_nth_field(ib_tuple_to_dtuple(tuple), 0);
+      auto *row_id_field =
+          dtuple_get_nth_field(ib_tuple_to_dtuple(lower_bound_tuple), 0);
       mach_write_to_6(tuple_row_id_data,
                       m_lower_bound->get_column(0, 0).m_int_data);
       dfield_set_data(row_id_field, tuple_row_id_data, DATA_ROW_ID_LEN);
     } else {
-      fill_tuple_up_to_n_cols(ib_tuple_to_dtuple(tuple), prebuilt,
-                              m_lower_bound.value(), 0,
-                              dtuple_get_n_fields(ib_tuple_to_dtuple(tuple)),
-                              last_row_id, tuple_row_id_data, list_subtrees, 0,
-                              false, nullptr, gcols_flushed, false);
+      fill_tuple_up_to_n_cols(
+          ib_tuple_to_dtuple(lower_bound_tuple), prebuilt,
+          m_lower_bound.value(), 0,
+          dtuple_get_n_fields(ib_tuple_to_dtuple(lower_bound_tuple)),
+          last_row_id, tuple_row_id_data, list_subtrees, 0, false, nullptr,
+          gcols_flushed, false);
     }
 
-    ib_cursor_moveto(m_read_cursor, tuple, IB_CUR_GE, 0);
-    ib_tuple_delete(tuple);
+    ib_cursor_moveto(m_read_cursor, lower_bound_tuple, IB_CUR_GE, 0);
+    ib_tuple_delete(lower_bound_tuple);
   }
 
   if (m_upper_bound.has_value()) {
+    /* The upper-bound tuple is retained for every read from the cursor. */
     if (prebuilt->index->is_clustered()) {
       m_cmp_tuple = ib_clust_search_tuple_create(m_read_cursor);
     } else {
@@ -1460,8 +1523,15 @@ bool Loader::Table_reader::init(const std::string &schema,
     if (m_cmp_tuple == nullptr) {
       return false;
     }
+    ut_ad(m_upper_bound->get_num_cols() >=
+          dtuple_get_n_fields(ib_tuple_to_dtuple(m_cmp_tuple)));
     allocate_buffers(m_upper_bound.value(), upper_bound.value(),
                      ib_tuple_to_dtuple(m_cmp_tuple), m_upper_bound_data);
+    /* Keep the upper-bound comparison consistent with ib_cursor_moveto(),
+    which uses every field in the search tuple. */
+    const auto n_bound_fields =
+        dtuple_get_n_fields(ib_tuple_to_dtuple(m_cmp_tuple));
+    dtuple_set_n_fields_cmp(ib_tuple_to_dtuple(m_cmp_tuple), n_bound_fields);
     if (prebuilt->index->is_clustered() &&
         prebuilt->clust_index_was_generated) {
       auto *row_id_field =
@@ -1472,10 +1542,8 @@ bool Loader::Table_reader::init(const std::string &schema,
     } else {
       fill_tuple_up_to_n_cols(
           ib_tuple_to_dtuple(m_cmp_tuple), prebuilt, m_upper_bound.value(), 0,
-          std::min(dtuple_get_n_fields(ib_tuple_to_dtuple(m_cmp_tuple)),
-                   m_upper_bound->get_num_cols()),
-          last_row_id, m_cmp_tuple_row_id_data, list_subtrees, 0, false,
-          nullptr, gcols_flushed, false);
+          n_bound_fields, last_row_id, m_cmp_tuple_row_id_data, list_subtrees,
+          0, false, nullptr, gcols_flushed, false);
     }
   }
 
