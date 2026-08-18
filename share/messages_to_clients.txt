@@ -11058,6 +11058,9 @@ ER_DA_CANNOT_REPLICATE_WITHOUT_BINLOG
 ER_REPLICA_IDENTITY_CONFLICT
   eng "A dump thread for replica UUID '%s' or server ID %u already exists under a different authenticated account."
 
+ER_BULK_READER_PATH_IS_DIRECTORY
+  eng "Bulk Reader: Path is a directory, expected a file: %s"
+
 #
 #  End of "9.7 cal-ver compatibility lineage (starts from 26.7)" error messages (server-to-client).
 #
