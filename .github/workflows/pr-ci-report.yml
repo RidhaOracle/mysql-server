@@ -35,6 +35,7 @@ jobs:
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         with:
           github-token: ${{ github.token }}
+          retries: 3
           script: |
             core.setOutput('ready', 'false');
 
@@ -272,6 +273,7 @@ jobs:
           SOURCE_WORKFLOW_NAME: ${{ needs.resolve.outputs.workflow_name }}
         with:
           github-token: ${{ github.token }}
+          retries: 3
           script: |
             const sourceRepository = context.payload.repository;
             const expectedRepository = `${context.repo.owner}/${context.repo.repo}`;
