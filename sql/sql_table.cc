@@ -14999,13 +14999,27 @@ bool prepare_fields_and_keys(THD *thd, const dd::Table *src_table, TABLE *table,
       const Create_field *cfield;
       field_it.rewind();
       while ((cfield = field_it++)) {
+        bool matches_key_part = false;
         if (cfield->change) {
           if (!my_strcasecmp(system_charset_info, key_part_name,
                              cfield->change))
-            break;
+            matches_key_part = true;
         } else if (!my_strcasecmp(system_charset_info, key_part_name,
                                   cfield->field_name))
-          break;
+          matches_key_part = true;
+
+        if (!matches_key_part) continue;
+
+        /*
+          A user column can have the same name as the hidden column backing
+          a functional index. Keep searching until we find the hidden
+          Create_field that corresponds to the existing functional key part.
+        */
+        if (key_part->field->is_field_for_functional_index() &&
+            !is_field_for_functional_index(cfield))
+          continue;
+
+        break;
       }
       if (!cfield) {
         /*
@@ -15066,8 +15080,10 @@ bool prepare_fields_and_keys(THD *thd, const dd::Table *src_table, TABLE *table,
                      ? ORDER_NOT_RELEVANT
                      : ORDER_ASC);
       if (key_part->field->is_field_for_functional_index()) {
+        assert(cfield->gcol_info != nullptr);
+        assert(cfield->gcol_info->expr_item != nullptr);
         key_parts.push_back(new (thd->mem_root) Key_part_spec(
-            cfield->field_name, key_part->field->gcol_info->expr_item, order));
+            cfield->field_name, cfield->gcol_info->expr_item, order));
       } else {
         key_parts.push_back(new (thd->mem_root) Key_part_spec(
             to_lex_cstring(cfield->field_name), key_part_length, order));
