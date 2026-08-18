@@ -108,7 +108,15 @@ jobs:
           MTR_SUITES: ${{ matrix.suites }}
           MTR_RUN_UNIT_TESTS: ${{ matrix.run_unit_tests }}
         run: |
-          args=(--parallel=auto "--suite=${MTR_SUITES}")
+          args=(
+            --parallel=auto
+            --force
+            --report-unstable-tests
+            --retry=3
+            --retry-failure=2
+            --max-test-fail=3
+            "--suite=${MTR_SUITES}"
+          )
           if [[ "${MTR_RUN_UNIT_TESTS}" == "true" ]]; then
             args+=(--unit-tests)
           fi
@@ -119,5 +127,7 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: mtr-logs-${{ matrix.shard }}-${{ github.run_id }}-${{ github.run_attempt }}
-          path: source/build/mysql-test/var/log/
+          path: |
+            source/build/mysql-test/var/log/
+            source/build/mysql-test/var/ctest.log
           retention-days: 5
