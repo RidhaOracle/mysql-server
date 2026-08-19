@@ -5289,14 +5289,6 @@ bool test_if_cheaper_ordering(const JOIN_TAB *tab, ORDER_with_src *order,
     assert(refkey_rows_estimate >= 1.0);
   }
 
-  Opt_trace_context *const trace = &table->in_use->opt_trace;
-  const Opt_trace_object trace_wrapper(trace);
-  Opt_trace_object trace_cheaper(trace, "test_if_cheaper_ordering");
-  trace_cheaper.add("read_cost", read_time)
-      .add("fanout", fanout)
-      .add("refkey_rows_estimate", refkey_rows_estimate);
-  Opt_trace_array trace_indexes(trace, "indexes");
-
   for (nr = 0; nr < table->s->keys; nr++) {
     int direction = 0;
     uint used_key_parts;
@@ -5305,12 +5297,9 @@ bool test_if_cheaper_ordering(const JOIN_TAB *tab, ORDER_with_src *order,
     if (usable_keys.is_set(nr) &&
         (direction = test_if_order_by_key(order, table, nr, &used_key_parts,
                                           &skip_quick))) {
-      Opt_trace_object trace_idx(trace);
-      trace_idx.add_utf8("index", table->key_info[nr].name);
       const bool is_covering = table->covering_keys.is_set(nr) ||
                                (nr == table->s->primary_key &&
                                 table->file->primary_key_is_clustered());
-      trace_idx.add("is_covering", is_covering);
       // Don't allow backward scans on indexes with mixed ASC/DESC key parts
       if (skip_quick) table->quick_keys.clear_bit(nr);
 
@@ -5407,9 +5396,6 @@ bool test_if_cheaper_ordering(const JOIN_TAB *tab, ORDER_with_src *order,
             min<double>(table->file->page_read_cost(nr, rec_per_key),
                         table_scan_time.total_cost());
 
-        trace_idx.add("select_limit", (ulonglong)select_limit)
-            .add("index_scan_cost", index_scan_time);
-
         /*
           Switch to index that gives order if its scan time is smaller than
           read_time of current chosen access method. In addition, if the
@@ -5428,11 +5414,8 @@ bool test_if_cheaper_ordering(const JOIN_TAB *tab, ORDER_with_src *order,
                   : HA_POS_ERROR;
 
           if ((is_best_covering && !is_covering) ||
-              (is_covering && refkey_select_limit < select_limit)) {
-            trace_idx.add("best_so_far", false)
-                .add_alnum("cause", "covering_index_better");
+              (is_covering && refkey_select_limit < select_limit))
             continue;
-          }
           if (table->quick_keys.is_set(nr))
             quick_records = table->quick_rows[nr];
           if (best_key < 0 ||
@@ -5451,27 +5434,10 @@ bool test_if_cheaper_ordering(const JOIN_TAB *tab, ORDER_with_src *order,
             is_best_covering = is_covering;
             best_key_direction = direction;
             best_select_limit = select_limit;
-            trace_idx.add("rows", (ulonglong)quick_records)
-                .add("best_so_far", true);
-          } else {
-            trace_idx.add("rows", (ulonglong)quick_records)
-                .add("best_so_far", false)
-                .add_alnum("cause", "not_better_than_chosen");
           }
-        } else {
-          trace_idx.add("best_so_far", false).add_alnum("cause", "cost");
         }
-      } else {
-        trace_idx.add("best_so_far", false)
-            .add_alnum("cause", "no_limit_and_not_covering");
       }
     }
-  }
-  trace_indexes.end();
-  if (best_key >= 0) {
-    trace_cheaper.add_utf8("selected_index", table->key_info[best_key].name);
-  } else {
-    trace_cheaper.add_null("selected_index");
   }
 
   if (best_key < 0 || best_key == ref_key) return false;
