@@ -98,6 +98,7 @@ Checks:
   -modernize-macro-to-enum,
   -modernize-raw-string-literal,
   -modernize-use-designated-initializers,
+  -modernize-use-ranges,
   -modernize-use-trailing-return-type,
   -modernize-use-using,
   llvm-*,
