@@ -296,6 +296,8 @@ EXPLAIN
     -> Select #2 (subquery in condition; dependent)
         -> Single-row covering index lookup on t1 using PRIMARY (a = <cache>(t2.a))  (rows=1)
 
+Warnings:
+Note	1003	/* select#1 */ select /*+ NO_SEMIJOIN(@`select#2`) */ `test`.`t2`.`a` AS `a` from `test`.`t2` where <in_optimizer>(`test`.`t2`.`a`,<exists>(/* select#2 */ select `test`.`t1`.`a` from `test`.`t1` where true))
 # Large outer table: materialize is the right choice. Verify that the
 # top Filter cost now includes the one-time materialization build cost
 # (>=100 for a 400-row inner table; was <10 before the fix).
@@ -311,6 +313,8 @@ EXPLAIN
                     -> Materialize with deduplication  (rows=400)
                         -> Covering index scan on t1 using PRIMARY  (rows=400)
 
+Warnings:
+Note	1003	/* select#1 */ select /*+ NO_SEMIJOIN(@`select#2`) */ `test`.`t3`.`a` AS `a` from `test`.`t3` where <in_optimizer>(`test`.`t3`.`a`,`test`.`t3`.`a` in ( <materialize> (/* select#2 */ select `test`.`t1`.`a` from `test`.`t1` where true ), <primary_index_lookup>(`test`.`t3`.`a` in <temporary table> on <auto_distinct_key> where ((`test`.`t3`.`a` = `<materialized_subquery>`.`a`)))))
 EXPLAIN FORMAT=JSON INTO @var
 SELECT * FROM t3 WHERE t3.a IN (SELECT /*+ NO_SEMIJOIN() */ a FROM t1);
 SELECT JSON_EXTRACT(@var, '$.query_plan.estimated_total_cost') >= 100

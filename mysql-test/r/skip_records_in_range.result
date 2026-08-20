@@ -694,6 +694,8 @@ EXPLAIN
 -> Filter: (((t1.c1 = 1) and (t1.c2 is null)) or ((t1.c2 = 1) and (t1.c1 = 1)) or ((t1.c2 = 2) and (t1.c1 = 1)))  (rows=102)
     -> Covering index range scan on t1 using k12 over (c1 = 1 AND c2 = NULL) OR (c1 = 1 AND c2 = 1) OR (c1 = 1 AND c2 = 2)  (rows=102)
 
+Warnings:
+Note	1003	/* select#1 */ select `test`.`t1`.`c1` AS `c1`,`test`.`t1`.`c2` AS `c2` from `test`.`t1` where (((`test`.`t1`.`c1` = 1) and (`test`.`t1`.`c2` is null)) or ((`test`.`t1`.`c2` = 1) and (`test`.`t1`.`c1` = 1)) or ((`test`.`t1`.`c2` = 2) and (`test`.`t1`.`c1` = 1)))
 EXPLAIN FORMAT=TREE SELECT c1, c2 FROM t1
 WHERE (c1 IS NULL AND c2 = 1)
 OR (c1 = 1 AND c2 = 1)
@@ -702,6 +704,8 @@ EXPLAIN
 -> Filter: (((t1.c2 = 1) and (t1.c1 is null)) or ((t1.c2 = 1) and (t1.c1 = 1)) or ((t1.c2 = 2) and (t1.c1 = 1)))  (rows=82)
     -> Covering index range scan on t1 using k12 over (c1 = NULL AND c2 = 1) OR (c1 = 1 AND c2 = 1) OR (c1 = 1 AND c2 = 2)  (rows=82)
 
+Warnings:
+Note	1003	/* select#1 */ select `test`.`t1`.`c1` AS `c1`,`test`.`t1`.`c2` AS `c2` from `test`.`t1` where (((`test`.`t1`.`c2` = 1) and (`test`.`t1`.`c1` is null)) or ((`test`.`t1`.`c2` = 1) and (`test`.`t1`.`c1` = 1)) or ((`test`.`t1`.`c2` = 2) and (`test`.`t1`.`c1` = 1)))
 DROP TABLE t1;
 # Prefix of a unique key
 CREATE TABLE t2 (c1 INT, c2 INT, c3 INT,
@@ -717,5 +721,7 @@ EXPLAIN
 -> Filter: (((t2.c1 = 1) and (t2.c2 is null)) or ((t2.c2 = 1) and (t2.c1 = 1)) or ((t2.c2 = 2) and (t2.c1 = 1)))  (rows=52)
     -> Covering index range scan on t2 using u123 over (c1 = 1 AND c2 = NULL) OR (c1 = 1 AND c2 = 1) OR (c1 = 1 AND c2 = 2)  (rows=52)
 
+Warnings:
+Note	1003	/* select#1 */ select `test`.`t2`.`c1` AS `c1`,`test`.`t2`.`c2` AS `c2`,`test`.`t2`.`c3` AS `c3` from `test`.`t2` where (((`test`.`t2`.`c1` = 1) and (`test`.`t2`.`c2` is null)) or ((`test`.`t2`.`c2` = 1) and (`test`.`t2`.`c1` = 1)) or ((`test`.`t2`.`c2` = 2) and (`test`.`t2`.`c1` = 1)))
 DROP TABLE t2;
 SET SESSION eq_range_index_dive_limit=@save_eq_range_index_dive_limit;
