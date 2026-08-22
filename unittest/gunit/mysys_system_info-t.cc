@@ -162,6 +162,7 @@ struct Throw_on_copy_assignment {
   Throw_on_copy_assignment &operator=(Throw_on_copy_assignment &&) = default;
 };
 
+#if defined(__linux__) || defined(__APPLE__)
 [[nodiscard]] std::string linux_thread_stat_fixture(
     char state = 'S', std::string_view name = "worker",
     const std::vector<std::pair<size_t, std::string>> &fields = {}) {
@@ -249,6 +250,7 @@ class Linux_storage_fixture {
 
   std::filesystem::path m_root;
 };
+#endif
 
 TEST(MysysSystemInfo, AvailableCapabilityContainsValue) {
   auto result = System_result<std::string>::success("available");
