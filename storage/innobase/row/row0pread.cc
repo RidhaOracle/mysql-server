@@ -1515,7 +1515,12 @@ dberr_t Parallel_reader::spawn(size_t n_threads) noexcept {
 }
 
 dberr_t Parallel_reader::run() {
-  return m_n_threads <= 1 ? run_sync() : run(m_n_threads);
+  /*
+  A single worker must still run on a separate thread.  In particular,
+  Parallel_reader_adapter clients can require worker-local thread state;
+  Rapid's load callback expects current_thd to be unset when it is invoked.
+  */
+  return m_n_threads == 0 ? run_sync() : run(m_n_threads);
 }
 
 dberr_t Parallel_reader::run_sync() { return run(0); }
