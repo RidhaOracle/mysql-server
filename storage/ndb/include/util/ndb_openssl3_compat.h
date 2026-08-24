@@ -42,6 +42,34 @@
 #define X509_REQ_VERSION_1 0
 #endif
 
+/* OpenSSL 3 made these X509_NAME arguments const. */
+static inline X509_NAME *ndb_x509_name_dup(const X509_NAME *name) {
+#if OPENSSL_VERSION_NUMBER < 0x30000000L
+  return X509_NAME_dup(const_cast<X509_NAME *>(name));
+#else
+  return X509_NAME_dup(name);
+#endif
+}
+
+static inline int ndb_x509_name_get_index_by_nid(const X509_NAME *name, int nid,
+                                                 int lastpos) {
+#if OPENSSL_VERSION_NUMBER < 0x30000000L
+  return X509_NAME_get_index_by_NID(const_cast<X509_NAME *>(name), nid,
+                                    lastpos);
+#else
+  return X509_NAME_get_index_by_NID(name, nid, lastpos);
+#endif
+}
+
+static inline const X509_NAME_ENTRY *ndb_x509_name_get_entry(
+    const X509_NAME *name, int loc) {
+#if OPENSSL_VERSION_NUMBER < 0x30000000L
+  return X509_NAME_get_entry(const_cast<X509_NAME *>(name), loc);
+#else
+  return X509_NAME_get_entry(name, loc);
+#endif
+}
+
 #if OPENSSL_VERSION_NUMBER < 0x30000000L
 
 EVP_PKEY *EVP_RSA_gen(unsigned int bits);

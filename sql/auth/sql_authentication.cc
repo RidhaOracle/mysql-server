@@ -2519,7 +2519,8 @@ static bool acl_check_ssl(THD *thd, const ACL_USER *acl_user) {
       if (!(cert = SSL_get_peer_certificate(ssl))) return true;
       /* If X509 issuer is specified, we check it... */
       if (acl_user->x509_issuer) {
-        char *ptr = X509_NAME_oneline(X509_get_issuer_name(cert), nullptr, 0);
+        char *ptr = X509_NAME_oneline(
+            const_cast<X509_NAME *>(X509_get_issuer_name(cert)), nullptr, 0);
         DBUG_PRINT("info", ("comparing issuers: '%s' and '%s'",
                             acl_user->x509_issuer, ptr));
         if (strcmp(acl_user->x509_issuer, ptr)) {
@@ -2533,7 +2534,8 @@ static bool acl_check_ssl(THD *thd, const ACL_USER *acl_user) {
       }
       /* X509 subject is specified, we check it .. */
       if (acl_user->x509_subject) {
-        char *ptr = X509_NAME_oneline(X509_get_subject_name(cert), nullptr, 0);
+        char *ptr = X509_NAME_oneline(
+            const_cast<X509_NAME *>(X509_get_subject_name(cert)), nullptr, 0);
         DBUG_PRINT("info", ("comparing subjects: '%s' and '%s'",
                             acl_user->x509_subject, ptr));
         if (strcmp(acl_user->x509_subject, ptr)) {
@@ -5363,7 +5365,7 @@ class X509_gen {
     if (!X509_set_pubkey(x509, pkey)) goto err;
 
     /** Set CN value in subject */
-    name = X509_get_subject_name(x509);
+    name = X509_NAME_new();
     if (!name) goto err;
 
     if (!X509_NAME_add_entry_by_txt(name, "CN", MBSTRING_ASC,
@@ -5371,10 +5373,19 @@ class X509_gen {
                                     0))
       goto err;
 
+    if (!X509_set_subject_name(x509, name)) goto err;
+
     /** Set Issuer */
-    if (!X509_set_issuer_name(
-            x509, self_sign ? name : X509_get_subject_name(ca_x509)))
-      goto err;
+    {
+      const X509_NAME *issuer_name =
+          self_sign ? name : X509_get_subject_name(ca_x509);
+      if (!issuer_name) goto err;
+      if (!X509_set_issuer_name(x509, const_cast<X509_NAME *>(issuer_name)))
+        goto err;
+    }
+
+    X509_NAME_free(name);
+    name = nullptr;
 
     /** Add X509v3 extensions */
     X509V3_set_ctx(&v3ctx, self_sign ? x509 : ca_x509, x509, nullptr, nullptr,
@@ -5394,6 +5405,7 @@ class X509_gen {
 
     return x509;
   err:
+    if (name) X509_NAME_free(name);
     if (x509) X509_free(x509);
     return nullptr;
   }

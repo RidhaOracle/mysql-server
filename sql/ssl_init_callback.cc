@@ -622,8 +622,10 @@ static bool warn_self_signed_ca_certs(const char *ssl_ca,
       return false;
     }
 
-    issuer = X509_NAME_oneline(X509_get_issuer_name(ca_cert), nullptr, 0);
-    subject = X509_NAME_oneline(X509_get_subject_name(ca_cert), nullptr, 0);
+    issuer = X509_NAME_oneline(
+        const_cast<X509_NAME *>(X509_get_issuer_name(ca_cert)), nullptr, 0);
+    subject = X509_NAME_oneline(
+        const_cast<X509_NAME *>(X509_get_subject_name(ca_cert)), nullptr, 0);
 
     /* Suppressing warning which is not relevant during initialization */
     if (!strcmp(issuer, subject) &&

@@ -177,7 +177,7 @@ bool sanitize_tls_kex_list(const char *tls_kex, bool force_pqc,
 }
 
 /**
-  Set EC curve details
+  Set TLS supported group details
 
   @param [in] ctx  SSL Context
   @param force_pqc Force Post-Quantum Crypto KEX algorithms
@@ -293,11 +293,16 @@ bool sanitize_tls_kex_list(const char *tls_kex, bool force_pqc,
 #else /* OPENSSL_VERSION_NUMBER >= 0x30500000L */
   if (force_pqc) return true;
 
+  /*
+    SSL_CTX_set1_groups() configures all supported TLS groups, not only EC
+    curves. Include FFDHE groups so DHE cipher suites remain negotiable, but
+    fall back to EC-only groups for OpenSSL builds that reject FFDHE NIDs.
+  */
   int groups[] = {
 #ifdef NID_X25519
       NID_X25519,
 #endif
-      NID_secp384r1, NID_X9_62_prime256v1, NID_secp521r1};
+      NID_X9_62_prime256v1, NID_secp384r1, NID_secp521r1};
   int group_size = sizeof(groups) / sizeof(int);
   if (SSL_CTX_set1_groups(ctx, groups, group_size) == 0) return true;
 #endif /* OPENSSL_VERSION_NUMBER >= 0x30500000L */

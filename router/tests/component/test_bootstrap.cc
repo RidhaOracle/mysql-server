@@ -4672,7 +4672,7 @@ TEST_F(MRSBootstrapTest, DisableRest) {
       << router_console_output;
 }
 
-std::string get_x509_name(X509_NAME *name) {
+static std::string get_x509_name(const X509_NAME *name) {
   char buffer[256];
   X509_NAME_oneline(name, buffer, sizeof(buffer));
   return std::string(buffer);

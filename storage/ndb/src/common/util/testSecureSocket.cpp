@@ -209,9 +209,12 @@ TlsService::TlsService(bool sink) : m_sink(sink) {
   X509_set_pubkey(tls_cert, tls_key);
 
   /* Set the names */
-  X509_NAME *name = X509_get_subject_name(tls_cert);
+  X509_NAME *name = X509_NAME_new();
+  assert(name);
   X509_NAME_add_entry_by_txt(name, "CN", MBSTRING_ASC,
                              (const unsigned char *)common_name, -1, -1, 0);
+  X509_set_subject_name(tls_cert, name);
+  X509_NAME_free(name);
   X509_set_issuer_name(tls_cert, X509_get_subject_name(tls_cert));
 
   /* Set the expiration date */
