@@ -2629,6 +2629,61 @@ err:
 static uint get_dump_flags() { return stop_never ? 0 : BINLOG_DUMP_NON_BLOCK; }
 
 /**
+  Checks whether a rotate event file name can be used for raw output.
+
+  Raw mode uses rotate events to choose the next output file. Accept only a
+  plain log file name with the same length as the rotate event metadata.
+
+  @param rev Rotate event containing the next log file name.
+
+  @retval true  The rotate event contains a valid raw log file name.
+  @retval false The file name is missing or not suitable for raw output.
+*/
+static bool is_raw_log_file_name_valid(const Rotate_log_event &rev) {
+  const char *log_file_name = rev.new_log_ident;
+
+  if (log_file_name == nullptr || rev.ident_len == 0) {
+    return false;
+  }
+  const size_t log_file_name_length = strlen(log_file_name);
+  if (log_file_name_length != rev.ident_len ||
+      dirname_length(log_file_name) != 0 || !strcmp(log_file_name, ".") ||
+      !strcmp(log_file_name, FN_PARENTDIR)) {
+    return false;
+  }
+
+  return true;
+}
+
+/**
+  Constructs the local file name used for raw output from a rotate event.
+
+  @param[out] to     Destination buffer.
+  @param[in] to_size Destination buffer size.
+  @param[in] prefix  Optional raw output prefix.
+  @param[in] rev     Rotate event containing the next log file name.
+
+  @retval false File name was constructed successfully.
+  @retval true  File name validation or formatting failed.
+*/
+static bool make_raw_log_file_name(char *to, size_t to_size, const char *prefix,
+                                   const Rotate_log_event &rev) {
+  if (!is_raw_log_file_name_valid(rev)) {
+    error("Invalid log file name in rotate event.");
+    return true;
+  }
+
+  const int length = snprintf(
+      to, to_size, "%s%s", prefix == nullptr ? "" : prefix, rev.new_log_ident);
+  if (length < 0 || static_cast<size_t>(length) >= to_size) {
+    error("Could not construct log file name from rotate event.");
+    return true;
+  }
+
+  return false;
+}
+
+/**
   Callback function for mysql_binlog_open().
 
   Sets gtid data in the command packet.
@@ -2825,11 +2880,9 @@ static Exit_status dump_remote_log_entries(PRINT_EVENT_INFO *print_event_info,
           soon.
         */
         if (raw_mode) {
-          if (output_file != nullptr) {
-            snprintf(log_file_name, sizeof(log_file_name), "%s%s", output_file,
-                     rev->new_log_ident);
-          } else {
-            my_stpcpy(log_file_name, rev->new_log_ident);
+          if (make_raw_log_file_name(log_file_name, sizeof(log_file_name),
+                                     output_file, *rev)) {
+            return ERROR_STOP;
           }
         }
 
