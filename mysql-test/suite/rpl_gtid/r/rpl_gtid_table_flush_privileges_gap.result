@@ -8,6 +8,7 @@ CALL mtr.add_suppression("You need to use --log-bin to make --binlog-format work
 CALL mtr.add_suppression("The transaction owned GTID is already");
 CALL mtr.add_suppression("Recovery from source pos");
 CALL mtr.add_suppression("Recovery from master pos");
+CALL mtr.add_suppression("Relay log recovery on channel with GTID_ONLY=1*");
 # Adding debug point 'rpl_gtid_table_sync_flush_privileges_gtid_end_transaction' to @@GLOBAL.debug
 include/rpl/start_replica.inc
 [connection master1]
