@@ -21,6 +21,7 @@
 --source include/have_debug_sync.inc
 --source include/have_binlog_format_row.inc
 
+RESET MASTER;
 CREATE TABLE t1 (a INT);
 
 --connect(con1,localhost,root,,)

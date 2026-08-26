@@ -20,6 +20,7 @@
 --let $option_value = 0
 --source include/only_with_option.inc
 
+RESET MASTER;
 CREATE TABLE t1 (a INT);
 
 --connect(con1,localhost,root,,)

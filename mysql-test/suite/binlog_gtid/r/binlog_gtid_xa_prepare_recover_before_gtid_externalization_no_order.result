@@ -1,3 +1,4 @@
+RESET MASTER;
 include/assert.inc [binlog_order_commits is disabled]
 CREATE TABLE t1 (a INT);
 SET @@SESSION.xa_detach_on_prepare = ON;

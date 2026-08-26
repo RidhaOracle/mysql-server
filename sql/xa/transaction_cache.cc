@@ -128,6 +128,21 @@ void xa::Transaction_cache::remove(Transaction_ctx *transaction) {
   }
 }
 
+void xa::Transaction_cache::mark_prepared_visible_for_xa_recover(
+    Transaction_ctx *transaction) {
+  auto &instance = xa::Transaction_cache::instance();
+  MUTEX_LOCK(mutex_guard, &instance.m_LOCK_transaction_cache);
+  const auto key = to_string(*transaction->xid_state()->get_xid());
+  const auto it = instance.m_transaction_cache.find(key);
+  // Missing entry is a no-op: there is no cached XID whose XA RECOVER
+  // visibility can be changed. The pointer check avoids changing visibility of
+  // a different transaction if the same XID value was reused.
+  if (it != instance.m_transaction_cache.end() &&
+      it->second.transaction().get() == transaction) {
+    it->second.mark_prepared_visible_for_xa_recover();
+  }
+}
+
 void xa::Transaction_cache::mark_finalized_for_recover(
     Transaction_ctx *transaction) {
   auto &instance = xa::Transaction_cache::instance();
@@ -151,9 +166,12 @@ bool xa::Transaction_cache::insert(XID *xid, Transaction_ctx *transaction) {
     std::shared_ptr<Transaction_ctx> ptr{transaction,
                                          Transaction_context_deleter{}};
     const auto key = to_string(*xid);
-    res =
-        !instance.m_transaction_cache.emplace(key, Cache_entry{std::move(ptr)})
-             .second;
+    // XA START reserves the XID immediately, but XA RECOVER must not list it
+    // until XA PREPARE reaches the recover-visible point.
+    res = !instance.m_transaction_cache
+               .emplace(key, Cache_entry{std::move(ptr),
+                                         Xa_recover_visibility::Hidden})
+               .second;
   }
   if (res) {
     my_error(ER_XAER_DUPID, MYF(0));
@@ -190,14 +208,16 @@ std::shared_ptr<Transaction_ctx> xa::Transaction_cache::find(
   return transaction;
 }
 
-xa::Transaction_cache::list
-xa::Transaction_cache::get_transactions_visible_to_xa_recover() {
+std::vector<XID> xa::Transaction_cache::get_xids_visible_to_xa_recover() {
   auto &instance = xa::Transaction_cache::instance();
-  list to_return;
+  std::vector<XID> to_return;
   MUTEX_LOCK(mutex_guard, &instance.m_LOCK_transaction_cache);
+  to_return.reserve(instance.m_transaction_cache.size());
+  // Attached contexts may be reset after detach. Snapshot their XIDs while
+  // detach is serialized by the cache mutex.
   for (const auto &entry : instance.m_transaction_cache) {
     if (entry.second.is_visible_to_xa_recover())
-      to_return.push_back(entry.second.transaction());
+      to_return.push_back(*entry.second.transaction()->xid_state()->get_xid());
   }
   return to_return;
 }
@@ -241,7 +261,10 @@ bool xa::Transaction_cache::create_and_insert_new_transaction(
   std::shared_ptr<Transaction_ctx> transaction_ptr{
       transaction.get(), Transaction_context_deleter{}};
   transaction.release();
+  // Recovered or detached XA transactions are already prepared from
+  // XA RECOVER's perspective, so insert them as visible.
   return !instance.m_transaction_cache
-              .emplace(key, Cache_entry{std::move(transaction_ptr)})
+              .emplace(key, Cache_entry{std::move(transaction_ptr),
+                                        Xa_recover_visibility::Visible})
               .second;
 }

@@ -52,7 +52,12 @@ namespace {
   @return 0 if the transaction was successfully prepared, > 0 otherwise.
  */
 int process_xa_prepare(THD *thd);
-/// Mark an XA transaction as prepared before the prepare GTID is externalized.
+/// Mark an XA transaction visible through SQL XA RECOVER before the prepare
+/// GTID is externalized.
+///
+/// @param thd The THD session object holding the XA transaction.
+void mark_xa_prepared_visible_for_xa_recover(THD *thd);
+/// Mark an XA transaction as prepared.
 ///
 /// @param thd The THD session object holding the XA transaction.
 void mark_xa_prepared(THD *thd);
@@ -233,7 +238,7 @@ int process_xa_prepare(THD *thd) {
     if (tc_log != nullptr || need_clear_owned_gtid) {
       thd->register_action_before_gtid_state_update(
           [thd](bool is_commit) -> void {
-            if (is_commit) mark_xa_prepared(thd);
+            if (is_commit) mark_xa_prepared_visible_for_xa_recover(thd);
           });
     }
 
@@ -254,20 +259,29 @@ int process_xa_prepare(THD *thd) {
                     thd, /* all */ true)) != 0)
       return error;
 
-    assert(
-        thd->get_transaction()->xid_state()->has_state(XID_STATE::XA_IDLE) ||
-        thd->get_transaction()->xid_state()->has_state(XID_STATE::XA_PREPARED));
+    assert(thd->get_transaction()->xid_state()->has_state(XID_STATE::XA_IDLE));
   }
 
   return error;
 }
 
+void mark_xa_prepared_visible_for_xa_recover(THD *thd) {
+  DBUG_TRACE;
+  auto trn_ctx = thd->get_transaction();
+  assert(trn_ctx->xid_state()->has_state(XID_STATE::XA_IDLE));
+  xa::Transaction_cache::mark_prepared_visible_for_xa_recover(trn_ctx);
+}
+
 void mark_xa_prepared(THD *thd) {
   DBUG_TRACE;
-  auto xid_state = thd->get_transaction()->xid_state();
+  auto trn_ctx = thd->get_transaction();
+  auto xid_state = trn_ctx->xid_state();
   if (xid_state->has_state(XID_STATE::XA_PREPARED)) return;
 
   assert(xid_state->has_state(XID_STATE::XA_IDLE));
+  // Some XA PREPARE paths do not make the XID visible before this point.
+  // Repeat the visibility update here; the operation is idempotent.
+  xa::Transaction_cache::mark_prepared_visible_for_xa_recover(trn_ctx);
   xid_state->set_state(XID_STATE::XA_PREPARED);
   MYSQL_SET_TRANSACTION_XA_STATE(thd->m_transaction_psi,
                                  (int)xid_state->get_state());

@@ -1,4 +1,5 @@
 include/only_with_option.inc [GLOBAL.log_bin = 0]
+RESET MASTER;
 CREATE TABLE t1 (a INT);
 SET @@SESSION.xa_detach_on_prepare = ON;
 SET GTID_NEXT = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa:1';
