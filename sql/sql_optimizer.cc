@@ -2478,10 +2478,10 @@ static bool test_if_skip_sort_order(JOIN_TAB *tab, ORDER_with_src &order,
     // 3. Optimizer has chosen to do table scan currently.
     if (thd->optimizer_switch_flag(OPTIMIZER_SWITCH_PREFER_ORDERING_INDEX) ||
         is_force_index || ref_key == -1)
-      test_if_cheaper_ordering(tab, &order, table, usable_keys, ref_key_hint,
-                               select_limit, &best_key, &best_key_direction,
-                               &select_limit, &best_key_parts,
-                               &saved_best_key_parts, &best_read_time);
+      test_if_cheaper_ordering(
+          thd, tab, &order, table, usable_keys, ref_key_hint, select_limit,
+          &best_key, &best_key_direction, &select_limit, &best_key_parts,
+          &saved_best_key_parts, &best_read_time);
 
     // Try backward scan for previously found key
     if (best_key < 0 && order_direction < 0) goto check_reverse_order;
@@ -10104,9 +10104,12 @@ static bool make_join_query_block(JOIN *join, Item *cond) {
                   usable_keys.intersect(tab->table()->keys_in_use_for_order_by);
 
                 // Do a cost based search on the indexes that give sort order.
-                test_if_cheaper_ordering(
-                    tab, &join->order, tab->table(), usable_keys, -1,
-                    select_limit, &best_key, &read_direction, &select_limit);
+                {
+                  const Opt_trace_array trace_recheck_steps(trace, "steps");
+                  test_if_cheaper_ordering(
+                      thd, tab, &join->order, tab->table(), usable_keys, -1,
+                      select_limit, &best_key, &read_direction, &select_limit);
+                }
                 if (best_key < 0)
                   recheck_reason = DONT_RECHECK;  // No usable keys
                 else {
