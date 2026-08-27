@@ -61,6 +61,7 @@ c char(1) character set latin1 collate latin1_danish_ci
 );
 insert into t1 values ('A','B','C');
 insert into t1 values ('a','c','c');
+ANALYZE TABLE t1;
 --error ER_CANT_AGGREGATE_2COLLATIONS
 select * from t1 where a in (b);
 --error ER_CANT_AGGREGATE_3COLLATIONS
@@ -284,6 +285,7 @@ INSERT INTO t3 VALUES (1),(2),(3),(4);
 CREATE TABLE t4 (a int PRIMARY KEY,b int);
 INSERT INTO t4 VALUES (1,1),(2,2),(1000,1000),(1001,1001),(1002,1002),
        (1003,1003),(1004,1004);
+ANALYZE TABLE t1,t2,t3,t4;
 
 EXPLAIN SELECT STRAIGHT_JOIN * FROM t3 
   JOIN t1 ON t3.a=t1.a 
