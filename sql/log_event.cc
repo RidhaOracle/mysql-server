@@ -84,7 +84,6 @@
 #include "sql/raii/thread_stage_guard.h"  // NAMED_THD_STAGE_GUARD
 #include "sql/rpl_handler.h"              // RUN_HOOK
 #include "sql/rpl_tblmap.h"
-#include "sql/sql_show_processlist.h"  // pfs_processlist_enabled
 #include "sql/system_variables.h"
 #include "sql/tc_log.h"
 #include "sql/xa/sql_cmd_xa.h"  // Sql_cmd_xa_*
@@ -5084,8 +5083,7 @@ end:
   /* Mark the statement completed. */
   MYSQL_END_STATEMENT(thd->m_statement_psi, thd->get_stmt_da());
 
-  /* Maintain compatibility with the legacy processlist. */
-  if (pfs_processlist_enabled) thd->reset_query_for_display();
+  thd->reset_query_for_display();
 
   thd->reset_rewritten_query();
   thd->m_statement_psi = nullptr;
