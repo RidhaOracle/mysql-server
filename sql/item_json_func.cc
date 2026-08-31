@@ -216,7 +216,6 @@ enum_json_diff_status apply_json_diffs(Field_json *field,
           DBUG_EXECUTE_IF("rpl_row_jsondiff_binarydiff", {
             const char act[] =
                 "now SIGNAL signal.rpl_row_jsondiff_binarydiff_created";
-            assert(opt_debug_sync_timeout > 0);
             assert(!debug_sync_set_action(current_thd, STRING_WITH_LEN(act)));
           };);
           continue;

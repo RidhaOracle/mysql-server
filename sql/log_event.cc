@@ -2761,7 +2761,6 @@ Slave_worker *Log_event::get_slave_worker(Relay_log_info *rli) {
         const char act[] =
             "now SIGNAL signal.rpl_ps_tables_process_before "
             "WAIT_FOR signal.rpl_ps_tables_process_finish";
-        assert(opt_debug_sync_timeout > 0);
         assert(!debug_sync_set_action(current_thd, STRING_WITH_LEN(act)));
       };);
       rli->finished_processing();
@@ -2769,7 +2768,6 @@ Slave_worker *Log_event::get_slave_worker(Relay_log_info *rli) {
         const char act[] =
             "now SIGNAL signal.rpl_ps_tables_process_after_finish "
             "WAIT_FOR signal.rpl_ps_tables_process_continue";
-        assert(opt_debug_sync_timeout > 0);
         assert(!debug_sync_set_action(current_thd, STRING_WITH_LEN(act)));
       };);
     }
@@ -3024,7 +3022,6 @@ int Log_event::apply_event(Relay_log_info *rli) {
           const char act[] =
               "now SIGNAL signal.rpl_ps_tables_apply_before "
               "WAIT_FOR signal.rpl_ps_tables_apply_finish";
-          assert(opt_debug_sync_timeout > 0);
           assert(!debug_sync_set_action(current_thd, STRING_WITH_LEN(act)));
         };);
         rli->finished_processing();
@@ -3033,7 +3030,6 @@ int Log_event::apply_event(Relay_log_info *rli) {
           const char act[] =
               "now SIGNAL signal.rpl_ps_tables_apply_after_finish "
               "WAIT_FOR signal.rpl_ps_tables_apply_continue";
-          assert(opt_debug_sync_timeout > 0);
           assert(!debug_sync_set_action(current_thd, STRING_WITH_LEN(act)));
         };);
       }
@@ -8787,7 +8783,6 @@ void Rows_log_event::do_post_row_operations(Relay_log_info const *rli,
     const char act[] =
         "now SIGNAL signal.rpl_row_apply_progress_updated "
         "WAIT_FOR signal.rpl_row_apply_process_next_row";
-    assert(opt_debug_sync_timeout > 0);
     assert(!debug_sync_set_action(thd, STRING_WITH_LEN(act)));
   };);
 #endif /* HAVE_PSI_STAGE_INTERFACE */
@@ -9672,7 +9667,6 @@ int Rows_log_event::do_apply_event(Relay_log_info const *rli) {
         const char act[] =
             "now SIGNAL signal.waiting_on_event_execution "
             "WAIT_FOR signal.can_continue_execution";
-        assert(opt_debug_sync_timeout > 0);
         assert(!debug_sync_set_action(current_thd, STRING_WITH_LEN(act)));
       }
     };);
@@ -13913,7 +13907,6 @@ Transaction_context_log_event::Transaction_context_log_event(
             "now wait_for "
             "signal.resume_after_set_snapshot_version_on_transaction_context_"
             "log_event";
-        assert(opt_debug_sync_timeout > 0);
         assert(!debug_sync_set_action(current_thd, STRING_WITH_LEN(act)));
       };);
 

@@ -1512,7 +1512,6 @@ int MYSQL_BIN_LOG::gtid_end_transaction(THD *thd) {
             const char wait_for_test[] = "now WAIT_FOR gtid_flush_arm";
             const char wait_to_continue[] =
                 "now SIGNAL gtid_flush_hit WAIT_FOR gtid_flush_go";
-            assert(opt_debug_sync_timeout > 0);
             assert(!debug_sync_set_action(thd, STRING_WITH_LEN(wait_for_test)));
             assert(
                 !debug_sync_set_action(thd, STRING_WITH_LEN(wait_to_continue)));
