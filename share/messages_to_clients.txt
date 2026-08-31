@@ -11061,6 +11061,12 @@ ER_REPLICA_IDENTITY_CONFLICT
 ER_BULK_READER_PATH_IS_DIRECTORY
   eng "Bulk Reader: Path is a directory, expected a file: %s"
 
+ER_JDV_COLUMN_TAG_NOT_SUPPORTED_FOR_SUBQUERY
+  eng "Column tags are supported only for column projections at JSON path '%s'."
+
+ER_JDV_UPDATE_COLUMN_TAG_NOT_SUPPORTED_FOR_PK
+  eng "The UPDATE column tag is not supported for a primary key projection at JSON path '%s'."
+
 #
 #  End of "9.7 cal-ver compatibility lineage (starts from 26.7)" error messages (server-to-client).
 #
