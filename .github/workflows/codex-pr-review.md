@@ -12,7 +12,7 @@ permissions:
   pull-requests: read
 checkout: false
 engine: codex
-model: gpt-5.6-sol?effort=high
+model: gpt-5.6-sol
 timeout-minutes: 30
 concurrency:
   group: codex-pr-review-${{ github.event.pull_request.number || github.event.issue.number || fromJSON(github.event.inputs.aw_context || github.event.client_payload.aw_context || '{}').item_number || github.run_id }}
