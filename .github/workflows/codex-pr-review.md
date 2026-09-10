@@ -12,7 +12,7 @@ on:
   permissions:
     actions: read
   steps:
-    # v0.88.2's user-rate-limit schema omits pull_request_target. Invoke the
+    # The user-rate-limit schema omits pull_request_target. Invoke the
     # pinned helper explicitly so automatic and requested reviews share a quota.
     - name: Check review rate limit
       id: review_rate_limit
