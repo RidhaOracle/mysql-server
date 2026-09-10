@@ -7,8 +7,7 @@ on:
     types: [opened, synchronize, reopened, ready_for_review]
   slash_command:
     name: codex
-    strategy: centralized
-    events: [pull_request, pull_request_comment]
+    events: [pull_request_comment]
   permissions:
     actions: read
   steps:
@@ -21,7 +20,7 @@ on:
       env:
         GH_AW_RATE_LIMIT_MAX: "3"
         GH_AW_RATE_LIMIT_WINDOW: "20"
-        GH_AW_RATE_LIMIT_EVENTS: "pull_request_target,repository_dispatch,workflow_dispatch"
+        GH_AW_RATE_LIMIT_EVENTS: "pull_request_target,issue_comment"
         GH_AW_RATE_LIMIT_IGNORED_ROLES: "admin,maintain,write"
       with:
         github-token: ${{ secrets.GITHUB_TOKEN }}
@@ -50,7 +49,7 @@ engine:
 model: gpt-6-astra
 timeout-minutes: 30
 concurrency:
-  group: codex-pr-review-${{ github.event.pull_request.number || github.event.issue.number || fromJSON(github.event.inputs.aw_context || github.event.client_payload.aw_context || '{}').item_number || github.run_id }}
+  group: codex-pr-review-${{ (github.event_name != 'issue_comment' || (github.event.issue.pull_request && (github.event.comment.body == '/codex' || startsWith(github.event.comment.body, '/codex ') || startsWith(github.event.comment.body, '/codex\n')))) && (github.event.pull_request.number || github.event.issue.number) || github.run_id }}
   cancel-in-progress: true
 safe-outputs:
   add-comment:
