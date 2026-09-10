@@ -46,11 +46,14 @@ engine:
   id: codex
   version: "0.154.0"
   args: ['-c', 'model_reasoning_effort="high"']
+  concurrency:
+    group: codex-pr-review-agent-${{ github.event.pull_request.number || github.event.issue.number || github.run_id }}
+    cancel-in-progress: true
 model: gpt-6-astra
 timeout-minutes: 30
 concurrency:
-  group: codex-pr-review-${{ (github.event_name != 'issue_comment' || (github.event.issue.pull_request && (github.event.comment.body == '/codex' || startsWith(github.event.comment.body, '/codex ') || startsWith(github.event.comment.body, '/codex\n')))) && (github.event.pull_request.number || github.event.issue.number) || github.run_id }}
-  cancel-in-progress: true
+  group: codex-pr-review-run-${{ github.run_id }}
+  cancel-in-progress: false
 safe-outputs:
   add-comment:
     # At most one top-level PR conversation comment per run.
