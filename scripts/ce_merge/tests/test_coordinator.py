@@ -212,6 +212,21 @@ class AtomicTests(unittest.TestCase):
         self.coordinator.advance(self.op())
         self.assertEqual(self.op()["state"], "complete")
 
+    def test_same_repository_pr_publishes_entire_chain(self):
+        self.api.pulls[1]["head"]["repo"]["full_name"] = POLICY["repository"]
+        self.test_entire_chain_published_with_receipt_and_squash()
+
+    def test_missing_source_repository_blocks_publication(self):
+        self.api.pulls[1]["head"]["repo"] = None
+        self.coordinator.advance(self.op())
+        self.assertEqual(self.op()["state"], "blocked")
+        self.assertIn("PR source repository is unavailable", self.op()["data"]["reason"])
+        self.unchanged()
+
+    def test_same_repository_pr_still_requires_oca_review_and_authorization(self):
+        self.api.pulls[1]["head"]["repo"]["full_name"] = POLICY["repository"]
+        self.test_oca_review_and_actor_gate_before_preparation()
+
     def test_missing_generated_review_changes_no_branch(self):
         self.api.missing_review = {2}
         self.coordinator.advance(self.op())
@@ -534,6 +549,16 @@ class PolicyTests(unittest.TestCase):
         self.assertEqual(rules["CE merge quality"]["bypass_actors"], [])
         self.assertEqual(rules["CE merge executor"]["bypass_actors"][0]["bypass_mode"], "always")
         self.assertEqual(rules["CE immutable tags"]["bypass_actors"], [])
+
+    def test_branch_controls_cover_targets_without_restricting_development_branches(self):
+        policy = dict(POLICY, release_branches=["release/1"])
+        for rule in rulesets(policy):
+            if rule["target"] == "branch":
+                with self.subTest(rule=rule["name"]):
+                    self.assertEqual(rule["conditions"]["ref_name"], {
+                        "include": ["refs/heads/lts", "refs/heads/trunk", "refs/heads/release/1"],
+                        "exclude": [],
+                    })
 
     def test_signed_webhooks(self):
         body, secret = b"payload", "secret"

@@ -44,8 +44,7 @@ class Coordinator:
         require(pr["base"]["repo"]["full_name"] == self.policy["repository"], "Wrong PR repository")
         require(pr["base"]["ref"] in self.policy["branches"] + self.policy.get("release_branches", []),
                 "Target branch is not configured")
-        require(pr["head"].get("repo") and pr["head"]["repo"]["full_name"] != self.policy["repository"],
-                "Development must use a fork")
+        require(pr["head"].get("repo"), "PR source repository is unavailable")
         sha(pr["base"]["sha"])
         sha(pr["head"]["sha"])
 

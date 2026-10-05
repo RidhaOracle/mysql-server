@@ -99,7 +99,7 @@ def rulesets(policy):
 
     return [
         rule("CE merge executor", [{"type": "update", "parameters": {
-            "update_allows_fetch_and_merge": False}}], app, include=["~ALL"]),
+            "update_allows_fetch_and_merge": False}}], app),
         # The App verifies the linked PRs before a single atomic push. Native
         # PR-only merging cannot publish multiple branch refs in one transaction.
         rule("CE reviewed changes", [{"type": "pull_request", "parameters": {
@@ -113,7 +113,7 @@ def rulesets(policy):
                                            for name in ("CE / public-ci", "CE / policy")]}},
             {"type": "non_fast_forward"}, {"type": "deletion"}]),
         rule("CE branch lifecycle", [{"type": "creation"}, {"type": "deletion"},
-                                     {"type": "non_fast_forward"}], include=["~ALL"]),
+                                     {"type": "non_fast_forward"}]),
         rule("CE immutable tags", [{"type": "update", "parameters": {
             "update_allows_fetch_and_merge": False}}, {"type": "deletion"}],
              target="tag", include=["~ALL"]),

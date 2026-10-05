@@ -12,7 +12,9 @@ an administrator's inventory and non-production rehearsal.
 The PR's GitHub **base** dropdown selects the starting branch. `Upmerge-Till`
 selects the last branch that needs the content, not the original PR target.
 For example, if the deployed chain is `8.4 → 9.7 → trunk`, a fix needed in all
-three starts with a personal-fork PR whose base is `8.4`. The contributor does
+three starts with a PR whose base is `8.4`. The source branch can be in a personal
+fork or, for contributors with push access, in the CE repository. Both follow
+the same OCA, review, content, CI, and authorization gates. The contributor does
 not first merge into `trunk`. These version names are illustrative only.
 
 1. Contributor opens the original PR against the oldest applicable branch.
@@ -103,12 +105,18 @@ are not tamperproof against the service/filesystem administrator.
 
 | Control | Enforcement |
 | --- | --- |
-| CE updates | Only the merge App may update existing branch refs |
+| CE updates | Only the merge App may update configured CE target branch refs |
 | PR review | Required PR, code owners, one independent approval, stale-review dismissal, last-push approval, resolved threads |
 | App exception | The App bypasses the native PR-only update rule solely to publish the reviewed batch via Git; its code enforces the PR review checks |
 | Required checks | `CE / public-ci` and `CE / policy`, bound to this App, with **no bypass** |
-| History/lifecycle | No force updates, deletion, or routine upstream branch creation; no linear-history rule |
+| History/lifecycle | No force updates, deletion, or routine creation of configured CE target branches; no linear-history rule |
 | Tags | Immutable; only the merge App creates receipts, separate release App creates release tags |
+
+Branch rules cover the configured development-chain and release targets. Other
+branches in the CE repository can be created and updated according to normal
+repository permissions and any additional organization rules. The bot still uses
+its separate controlled fork for staging; security promotion also retains that
+controlled-fork requirement.
 
 An App direct push is therefore part of this design. A requirement that even the
 App may only use GitHub's single-PR merge endpoint would conflict with atomic
@@ -405,11 +413,12 @@ Local tests exercise real disposable Git repositories plus a simulated GitHub AP
 They do not establish that production GitHub rulesets, reviews, credentials, or
 MySQL builds are configured correctly. Demonstrate these in non-production GitHub:
 
-- Original fork PR plus all generated upmerges are reviewed; all CE refs publish
+- Original PRs from both forks and same-repository branches, plus all generated
+  upmerges, are reviewed; all CE refs publish
   together and preserve each lower branch's ancestry in its successors.
 - Missing OCA, stale approval/head, unauthorized action, unresolved threads,
   failed/skipped CI, forbidden commit history, and policy drift block publication.
-- Humans cannot push/merge; App pushes missing either trusted check fail; valid
+- Humans cannot push/merge into configured CE targets; App pushes missing either trusted check fail; valid
   atomic App publication succeeds; force pushes and tag changes are rejected.
 - Reject one target or the receipt and observe no requested ref changes. Competing
   publishers cannot replace snapshots. An unsupported atomic server fails closed.

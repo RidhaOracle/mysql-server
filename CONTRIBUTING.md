@@ -65,7 +65,8 @@ scripts/ci/mtr.sh --suite=innodb     # pass MTR args straight through
 
 ## 6. Open the pull request
 
-Push your branch from a personal fork and select the oldest applicable supported
+Push your branch to a personal fork or, if you have push access, to this repository.
+Both use the same contribution checks. Select the oldest applicable supported
 branch as the PR **base**. The prototype currently configures only `trunk`; at
 cutover the published CE branch policy lists any supported LTS targets. A fix
 needed in an LTS and Innovation starts at that LTS. The
