@@ -92,7 +92,7 @@ class Coordinator:
                     all(j["conclusion"] == "success" for j in jobs), "Incomplete public CI jobs")
             for job in jobs:
                 required = ["Verify candidate", "Build"] if job["name"].startswith("build") else (
-                    ["Verify candidate", "Build", "Run MTR"] if job["name"].startswith("mtr") else
+                    ["Verify candidate", "Verify MTR suites", "Build", "Run MTR"] if job["name"].startswith("mtr") else
                     ["Verify candidate", "Check formatting"])
                 if job["name"] == "mtr (services)":
                     required.append("Run unit tests")
@@ -479,7 +479,7 @@ class Coordinator:
             step = data["steps"][data["conflict_index"]]
             summary += (f'\nResolve `{step["branch"]}` by merging lower candidate `{step["input_head"]}` '
                         f'with target `{step["base_sha"]}` in a personal fork. Open a resolution PR against '
-                        f'`{step["branch"]}`. After OCA and independent review, the merge captain runs '
+                        f'`{step["branch"]}`. After OCA and maintainer review, the merge captain runs '
                         f'`repair-upmerge {op["id"]} --pr NUMBER`. Every candidate still needs CI before publication.')
         fingerprint = hashlib.sha256(summary.encode()).hexdigest()
         if self.store.setting(key) == fingerprint:

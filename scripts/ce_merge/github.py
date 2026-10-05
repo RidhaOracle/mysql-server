@@ -111,15 +111,13 @@ class GitHub:
         for login, review in latest.items():
             if review["state"] not in ("APPROVED", "CHANGES_REQUESTED"):
                 continue
-            if login.lower() == pr["user"]["login"].lower():
-                continue
             access = self.repo("/collaborators/" + urllib.parse.quote(login, safe="") + "/permission")
             # GitHub's legacy permission maps Maintain to Write; use the actual role.
             if access.get("role_name") not in ("maintain", "admin"):
                 continue
             require(review["state"] != "CHANGES_REQUESTED", "A repository maintainer has requested changes")
             approved |= review["commit_id"] == pr["head"]["sha"]
-        require(approved, "Independent current-head approval from a repository maintainer (Maintain or Admin) is missing")
+        require(approved, "Current-head approval from a repository maintainer (Maintain or Admin) is missing")
 
     def oca(self, pr):
         label = self.policy["oca_label"]

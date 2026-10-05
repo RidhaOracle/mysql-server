@@ -114,7 +114,7 @@ class CITests(unittest.TestCase):
                      "mtr (replication)", "mtr (services)", "format"):
             steps = ["Verify candidate"] + (["Check formatting"] if name == "format" else ["Build"])
             if name.startswith("mtr"):
-                steps.append("Run MTR")
+                steps.extend(["Verify MTR suites", "Run MTR"])
             if name == "mtr (services)":
                 steps.append("Run unit tests")
             self.jobs.append({"name": name, "conclusion": "success", "steps": [
@@ -141,6 +141,16 @@ class CITests(unittest.TestCase):
 
     def test_missing_job_rejected(self):
         self.jobs.pop()
+        with self.assertRaises(Blocked):
+            self.coordinator.ci(self.pr, self.merge, ["sql/a.cc"])
+
+    def test_missing_or_skipped_suite_validation_rejected(self):
+        job = next(job for job in self.jobs if job["name"] == "mtr (services)")
+        step = next(step for step in job["steps"] if step["name"] == "Verify MTR suites")
+        step["conclusion"] = "skipped"
+        with self.assertRaises(Blocked):
+            self.coordinator.ci(self.pr, self.merge, ["sql/a.cc"])
+        job["steps"].remove(step)
         with self.assertRaises(Blocked):
             self.coordinator.ci(self.pr, self.merge, ["sql/a.cc"])
 

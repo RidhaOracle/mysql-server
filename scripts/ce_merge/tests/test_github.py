@@ -33,7 +33,7 @@ class ReviewTests(unittest.TestCase):
             raise AssertionError(payload["query"])
         return {"data": {"repository": {"pullRequest": value}}}
 
-    def test_current_independent_maintainer_review_passes_without_codeowners(self):
+    def test_current_maintainer_review_passes_without_codeowners(self):
         self.api.reviewed(self.pr)
         self.api.oca(self.pr)
 
@@ -42,13 +42,21 @@ class ReviewTests(unittest.TestCase):
         with self.assertRaises(Blocked):
             self.api.reviewed(self.pr)
 
-    def test_stale_self_and_dismissed_approvals_rejected(self):
+    def test_stale_and_dismissed_approvals_rejected(self):
         valid = copy.deepcopy(self.reviews)
-        for update in ({"commit_id": "c" * 40}, {"user": {"login": "CONTRIBUTOR"}}, {"state": "DISMISSED"}):
+        for update in ({"commit_id": "c" * 40}, {"state": "DISMISSED"}):
             self.reviews = copy.deepcopy(valid)
             self.reviews[0].update(update)
             with self.subTest(update=update), self.assertRaises(Blocked):
                 self.api.reviewed(self.pr)
+
+    def test_bot_does_not_filter_author_reviews(self):
+        # Synthetic evidence: GitHub itself prevents author APPROVE reviews.
+        self.reviews[0]["user"]["login"] = self.pr["user"]["login"]
+        self.api.reviewed(self.pr)
+        self.role = "write"
+        with self.assertRaises(Blocked):
+            self.api.reviewed(self.pr)
 
     def test_latest_change_request_revokes_approval(self):
         self.reviews.append(dict(self.reviews[0], state="CHANGES_REQUESTED"))

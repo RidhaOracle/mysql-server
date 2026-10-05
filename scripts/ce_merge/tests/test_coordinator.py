@@ -89,7 +89,7 @@ class FakeGitHub:
 
     def reviewed(self, pr):
         if not self.approved or pr["number"] in self.missing_review:
-            raise Blocked("Missing current independent review")
+            raise Blocked("Missing current maintainer review")
 
     def oca(self, pr):
         if not self.oca_ok:

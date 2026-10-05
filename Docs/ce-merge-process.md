@@ -18,7 +18,7 @@ the same OCA, review, content, CI, and authorization gates. The contributor does
 not first merge into `trunk`. These version names are illustrative only.
 
 1. Contributor opens the original PR against the oldest applicable branch.
-2. Trusted OCA verification, public CI, resolved conversations, and independent
+2. Trusted OCA verification, public CI, resolved conversations, and
    current-head approval from a reviewer with the repository Maintain or Admin
    role make it eligible. CODEOWNERS is not an integration gate.
 3. An authorized maintainer clicks **Integrate** on the App's `CE / policy` check.
@@ -107,7 +107,7 @@ are not tamperproof against the service/filesystem administrator.
 | Control | Enforcement |
 | --- | --- |
 | CE updates | Only the merge App may update configured CE target branch refs |
-| PR review | Required PR, one independent Maintain/Admin approval enforced by the App, stale-review dismissal, last-push approval, resolved threads |
+| PR review | Required PR, one Maintain/Admin approval enforced by the App, stale-review dismissal, last-push approval, resolved threads |
 | App exception | The App bypasses the native PR-only update rule solely to publish the reviewed batch via Git; its code enforces the PR review checks |
 | Required checks | `CE / public-ci` and `CE / policy`, bound to this App, with **no bypass** |
 | History/lifecycle | No force updates, deletion, or routine creation of configured CE target branches; no linear-history rule |
@@ -131,6 +131,16 @@ diff. Populate the actual EE/Cloud/private path denylist during inventory; the
 checked-in `internal` and `internal-sec` entries are only the starting policy.
 Human review remains necessary for confidential content not identifiable by paths.
 Security work must remain private until authorized release, including forks/logs.
+
+Every MTR shard checks that its configured suites exist in the candidate's public
+source before installing the toolchain or building. CE validation uses the same
+public suite lists as the ordinary MTR workflow. Missing suites fail explicitly;
+no missing suite is silently skipped.
+
+The bot does not exclude a review because its author also authored the PR. GitHub
+itself prevents authors from submitting an Approve review on their own PR; removing
+the bot's redundant check does not enable that native action or add a bot approval
+action. Existing native review protections still apply.
 
 ## Install and cut over
 
@@ -224,7 +234,7 @@ against the conflicting target. The check lists the exact lower candidate and
 base SHAs. In your own fork, fetch that bot branch, start a resolution branch from
 the recorded target base, merge the lower candidate, resolve conflicts, and commit.
 Open a resolution PR against that target. Do not squash away either parent.
-After OCA and independent current-head review, the merge captain runs:
+After OCA and current-head maintainer review, the merge captain runs:
 
 ```sh
 python3 -m scripts.ce_merge repair-upmerge OPERATION_ID --pr RESOLUTION_PR
