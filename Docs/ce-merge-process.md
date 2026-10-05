@@ -19,7 +19,8 @@ not first merge into `trunk`. These version names are illustrative only.
 
 1. Contributor opens the original PR against the oldest applicable branch.
 2. Trusted OCA verification, public CI, resolved conversations, and independent
-   current-head code-owner approval make it eligible.
+   current-head approval from a reviewer with the repository Maintain or Admin
+   role make it eligible. CODEOWNERS is not an integration gate.
 3. An authorized maintainer clicks **Integrate** on the App's `CE / policy` check.
    Authorization binds the PR head, target, and body. The label is advisory.
 4. The App snapshots the chain and prepares the original squash commit and every
@@ -106,7 +107,7 @@ are not tamperproof against the service/filesystem administrator.
 | Control | Enforcement |
 | --- | --- |
 | CE updates | Only the merge App may update configured CE target branch refs |
-| PR review | Required PR, code owners, one independent approval, stale-review dismissal, last-push approval, resolved threads |
+| PR review | Required PR, one independent Maintain/Admin approval enforced by the App, stale-review dismissal, last-push approval, resolved threads |
 | App exception | The App bypasses the native PR-only update rule solely to publish the reviewed batch via Git; its code enforces the PR review checks |
 | Required checks | `CE / public-ci` and `CE / policy`, bound to this App, with **no bypass** |
 | History/lifecycle | No force updates, deletion, or routine creation of configured CE target branches; no linear-history rule |
@@ -137,7 +138,7 @@ Prerequisites: Python 3.10+, Git 2.38+ with `merge-tree --write-tree`, OpenSSL,
 persistent local disk, outbound GitHub HTTPS, and TLS webhook ingress. The Python
 service has no third-party dependencies. Never run contributor code on this host.
 
-1. Inventory the production branch chain and code ownership. Keep existing public
+1. Inventory the production branch chain and repository maintainer roles. Keep existing public
    history and reconcile lower-to-higher ancestry through reviewed baseline work.
    Initialize SEC from CE and reconcile EE's CE baseline without replacing its
    tree. Routine sync refuses unrelated histories and does not resolve conflicts
@@ -150,8 +151,10 @@ service has no third-party dependencies. Never run contributor code on this host
 3. Copy `.github/ce-merge-policy.json` to `/etc/mysql-ce-merge/policy.json`. Set real
    repository/fork names, ordered branches (Innovation last), release branches,
    maintainers, App/installation IDs, and public-content policy. Keep `strategy`
-   set to `forward`. Resolve placeholder CODEOWNERS on every target; a fallback
-   `*` rule and no ownerless overrides are required.
+   set to `forward`. Assign reviewers the repository Maintain or Admin role;
+   ordinary Write access does not qualify. Approval does not require membership
+   in the configured `maintainers` allowlist, which controls integration requests
+   and trusted OCA verification. CODEOWNERS may still be used for review routing.
 4. Publish trusted automation and pin `ci_ref` to a protected deployment ref and
    `ci_revision` to its exact SHA. The workflow must exist on the default branch
    for dispatch. Verify the build/test scripts against every supported branch.

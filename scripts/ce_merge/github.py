@@ -91,23 +91,7 @@ class GitHub:
                 "admin", "maintain", "write")
 
     def reviewed(self, pr):
-        contents = self.repo("/contents/.github/CODEOWNERS?ref=" + pr["base"]["sha"])
-        require(contents.get("encoding") == "base64" and contents.get("size", 0) < 3_000_000,
-                "Readable CODEOWNERS is required on every target branch")
-        owners = base64.b64decode(contents["content"]).decode()
-        entries = [line.split("#", 1)[0].split() for line in owners.splitlines()
-                   if line.split("#", 1)[0].strip()]
-        require(any(row[0] == "*" and len(row) > 1 for row in entries) and
-                all(len(row) > 1 for row in entries), "CODEOWNERS must cover every path without ownerless overrides")
-        require(not self.repo("/codeowners/errors?ref=" + pr["base"]["sha"])["errors"],
-                "CODEOWNERS contains invalid rules or owners")
         owner, name = self.policy["repository"].split("/")
-        response = self.request("POST", "/graphql", {
-            "query": "query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){pullRequest(number:$number){reviewDecision}}}",
-            "variables": {"owner": owner, "name": name, "number": pr["number"]}})
-        require(not response.get("errors"), "Review policy unavailable")
-        require(response["data"]["repository"]["pullRequest"]["reviewDecision"] == "APPROVED",
-                "Required code-owner review is missing")
         cursor = None
         while True:
             threads = self.request("POST", "/graphql", {
@@ -123,11 +107,19 @@ class GitHub:
         for review in self.pages(f'/pulls/{pr["number"]}/reviews'):
             if review["state"] in ("APPROVED", "CHANGES_REQUESTED", "DISMISSED"):
                 latest[review["user"]["login"]] = review
-        require(any(r["state"] == "APPROVED" and r["commit_id"] == pr["head"]["sha"]
-                    and login != pr["user"]["login"] and self.repo(
-                        "/collaborators/" + urllib.parse.quote(login, safe="") + "/permission"
-                    )["permission"] in ("admin", "maintain", "write")
-                    for login, r in latest.items()), "Independent current-head approval is missing")
+        approved = False
+        for login, review in latest.items():
+            if review["state"] not in ("APPROVED", "CHANGES_REQUESTED"):
+                continue
+            if login.lower() == pr["user"]["login"].lower():
+                continue
+            access = self.repo("/collaborators/" + urllib.parse.quote(login, safe="") + "/permission")
+            # GitHub's legacy permission maps Maintain to Write; use the actual role.
+            if access.get("role_name") not in ("maintain", "admin"):
+                continue
+            require(review["state"] != "CHANGES_REQUESTED", "A repository maintainer has requested changes")
+            approved |= review["commit_id"] == pr["head"]["sha"]
+        require(approved, "Independent current-head approval from a repository maintainer (Maintain or Admin) is missing")
 
     def oca(self, pr):
         label = self.policy["oca_label"]

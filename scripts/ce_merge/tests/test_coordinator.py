@@ -549,6 +549,9 @@ class PolicyTests(unittest.TestCase):
         self.assertEqual(rules["CE merge quality"]["bypass_actors"], [])
         self.assertEqual(rules["CE merge executor"]["bypass_actors"][0]["bypass_mode"], "always")
         self.assertEqual(rules["CE immutable tags"]["bypass_actors"], [])
+        review = rules["CE reviewed changes"]["rules"][0]["parameters"]
+        self.assertFalse(review["require_code_owner_review"])
+        self.assertEqual(review["required_approving_review_count"], 1)
 
     def test_branch_controls_cover_targets_without_restricting_development_branches(self):
         policy = dict(POLICY, release_branches=["release/1"])
