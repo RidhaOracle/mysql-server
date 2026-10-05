@@ -2,7 +2,6 @@
 name: MTR
 on:
   pull_request:
-    branches: [trunk]
     paths-ignore: ["Docs/**", "**/*.md"]
 
 permissions: {}

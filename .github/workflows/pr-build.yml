@@ -2,7 +2,6 @@
 name: PR Build
 on:
   pull_request:
-    branches: [trunk]
     paths-ignore: ["Docs/**", "**/*.md"]
 
 permissions: {}

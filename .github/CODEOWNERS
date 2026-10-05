@@ -10,3 +10,6 @@
 /.github/dependabot.yml @seemasundara @gopshank
 /.github/workflows/** @seemasundara @gopshank
 /scripts/ci/** @seemasundara @gopshank
+/scripts/ce_merge/** @seemasundara @gopshank
+/.github/ce-merge-*.json @seemasundara @gopshank
+/Docs/ce-merge-process.md @seemasundara @gopshank

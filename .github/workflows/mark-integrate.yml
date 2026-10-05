@@ -15,6 +15,9 @@ concurrency:
 
 jobs:
   integrate:
+    # The App owns advisory labeling after cutover. This variable is set by the
+    # deployment administrator together with coordinator activation.
+    if: ${{ vars.CE_MERGE_MODE != 'active' }}
     runs-on: ubuntu-24.04
     permissions:
       pull-requests: write
