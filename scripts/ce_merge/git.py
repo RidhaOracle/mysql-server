@@ -2,9 +2,12 @@
 """Inspect public Git objects without checking out or executing contributor code."""
 import base64
 import json
+import logging
 import os
+import signal
 import subprocess
 import tempfile
+import time
 from pathlib import Path
 
 from .policy import Blocked, check_content, require, sha
@@ -40,6 +43,16 @@ class PublicGraph:
             self.temp.cleanup()
 
     def run(self, *args, input=None, token=None, author=None):
+        fetching = args[0] == "fetch"
+        timeout = 600
+        if fetching:
+            try:
+                timeout = int(os.environ.get("CE_GIT_FETCH_TIMEOUT", "3600"))
+            except ValueError:
+                raise Blocked("CE_GIT_FETCH_TIMEOUT must be a positive integer in seconds") from None
+            require(timeout > 0, "CE_GIT_FETCH_TIMEOUT must be a positive integer in seconds")
+            logging.info("Public Git fetch started (timeout: %s seconds)", timeout)
+        started = time.monotonic()
         env = dict(os.environ, GIT_CONFIG_NOSYSTEM="1", GIT_CONFIG_GLOBAL=os.devnull,
                    GIT_TERMINAL_PROMPT="0", GIT_AUTHOR_NAME="CE Merge Coordinator",
                    GIT_AUTHOR_EMAIL="ce-merge@localhost", GIT_COMMITTER_NAME="CE Merge Coordinator",
@@ -50,14 +63,35 @@ class PublicGraph:
             credentials = base64.b64encode(("x-access-token:" + token).encode()).decode()
             env.update(GIT_CONFIG_COUNT="1", GIT_CONFIG_KEY_0="http.https://github.com/.extraheader",
                        GIT_CONFIG_VALUE_0="AUTHORIZATION: basic " + credentials)
-        result = subprocess.run(["git", "-c", "core.hooksPath=/dev/null", *args], cwd=self.path,
-                                env=env, input=input, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                                timeout=600)
-        if result.returncode:
-            if args[0] == "merge-tree" and result.returncode == 1:
+        # Terminate helpers as well as Git on timeout/interruption. Otherwise
+        # inherited pipes can keep communicate() waiting past the deadline.
+        with subprocess.Popen(["git", "-c", "core.hooksPath=/dev/null", *args], cwd=self.path,
+                              env=env, stdin=subprocess.PIPE if input is not None else None,
+                              stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                              start_new_session=True) as process:
+            try:
+                stdout, _ = process.communicate(input, timeout=timeout)
+            except BaseException as error:
+                try:
+                    os.killpg(process.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+                process.communicate()
+                if fetching and isinstance(error, subprocess.TimeoutExpired):
+                    message = (f"Public Git fetch timed out after {timeout} seconds; "
+                               "check connectivity or increase CE_GIT_FETCH_TIMEOUT")
+                    logging.warning(message)
+                    raise Blocked(message) from None
+                raise
+        if process.returncode:
+            if args[0] == "merge-tree" and process.returncode == 1:
                 raise MergeConflict("Content conflict requires a reviewed resolution")
+            if fetching:
+                logging.warning("Public Git fetch failed (exit code: %s)", process.returncode)
             raise Blocked("Git validation failed; inspect the operation privately")
-        return result.stdout.decode("utf-8", errors="strict").strip()
+        if fetching:
+            logging.info("Public Git fetch completed in %.1f seconds", time.monotonic() - started)
+        return stdout.decode("utf-8", errors="strict").strip()
 
     def fetch(self, refs):
         self.run("fetch", "--no-tags", self.remote, *refs)

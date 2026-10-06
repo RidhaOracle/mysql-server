@@ -179,6 +179,12 @@ service has no third-party dependencies. Never run contributor code on this host
    An unset or empty value uses the default. Do not share a cache across separate
    coordinator state directories or repositories. The packaged service explicitly
    uses `/var/lib/mysql-ce-merge/public.git`.
+   Fetches allow 3,600 seconds by default. Set `CE_GIT_FETCH_TIMEOUT` to a positive
+   number of seconds for a slower initial download. Other Git commands retain
+   their 600-second timeout. Fetch start, completion, and timeout are logged;
+   a timeout or interruption terminates Git and its helper processes. Only
+   completed fetches provide reusable packs; an interrupted initial download
+   may need to restart even when a cache is configured.
 6. Generate ruleset payloads and apply them as an administrator in rehearsal.
    Provision branches before enabling lifecycle protection. Validate existing
    bypasses and native checks; create the advisory `Integrate` label. Shadow mode
