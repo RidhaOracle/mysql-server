@@ -4,7 +4,7 @@ Option A is implemented: start at the oldest applicable supported branch and
 propagate toward Innovation. **All affected CE branch refs and an integration
 receipt publish in one `git push --atomic`. There is no SQLite database.**
 The checked-in configuration is **shadow mode**, with only `trunk` configured;
-production LTS names, ownership, App IDs, and trusted CI revision still require
+production LTS names, ownership, App IDs, and trusted CI ref still require
 an administrator's inventory and non-production rehearsal.
 
 ## What the contributor and bot do
@@ -165,9 +165,11 @@ service has no third-party dependencies. Never run contributor code on this host
    ordinary Write access does not qualify. Approval does not require membership
    in the configured `maintainers` allowlist, which controls integration requests
    and trusted OCA verification. CODEOWNERS may still be used for review routing.
-4. Publish trusted automation and pin `ci_ref` to a protected deployment ref and
-   `ci_revision` to its exact SHA. The workflow must exist on the default branch
-   for dispatch. Verify the build/test scripts against every supported branch.
+4. Publish trusted automation and set `ci_ref` to a protected branch or tag, such
+   as `trunk`. The App resolves it to a commit and records that revision before
+   each dispatch; there is no manually maintained `ci_revision` setting. Legacy
+   copies of that setting are ignored. The workflow must exist on the default
+   branch for dispatch. Verify the build/test scripts against every supported branch.
 5. Supply `CE_APP_PRIVATE_KEY` (PEM path) and `CE_WEBHOOK_SECRET` (32+ random
    characters) outside the checkout. Optional `CE_GIT_CACHE` points to a dedicated
    private directory containing only public CE Git objects.
@@ -196,12 +198,23 @@ identity checks protect authorization. Duplicate deliveries reuse the operation.
 ### CI contract
 
 `CE Merge Validation` runs the exact staged commit on disposable hosted runners,
-using trusted scripts from the pinned workflow revision. Candidate checkout has
+using trusted scripts from the automatically resolved workflow revision. Candidate checkout has
 read-only credentials that are not persisted, no repository secrets, and no shared
 cache. Every job verifies the candidate SHA and its complete parent list before
 running code. The coordinator accepts only its App's workflow dispatch at the
-pinned SHA, with all seven required jobs and their required steps successful:
+recorded SHA, with all seven required jobs and their required steps successful:
 GCC/Clang builds, four MTR shards, unit tests, and formatting.
+
+Only `ci_ref` is configured. The recorded revision also appears in the run name
+and the `workflow_revision` dispatch input. Every job verifies that the workflow
+actually runs at that revision before executing candidate code. If the ref moves,
+the next poll records its new SHA and dispatches a fresh request, without waiting
+for the old revision's dispatch throttle. A run caught by a ref movement cannot
+satisfy the new request. Normal PR/base/candidate changes also require fresh CI.
+Request records survive restarts and lost dispatch responses. `rerun-ci` accepts
+only recorded App runs at the current resolved ref; after a ref change, let normal
+polling dispatch the replacement run. Deploy this workflow update together with
+the coordinator because its dispatch inputs and run-name format have changed.
 
 Only `Docs/**`, `README`, `README.md`, and `CONTRIBUTING.md` qualify for an explicit
 documentation-only build exemption. Missing, skipped, foreign, or stale runs do
@@ -441,7 +454,7 @@ reported status says `PR edits this workflow; result is not trusted`. The report
 change itself takes effect only after it reaches the trusted default branch.
 Review bootstrap workflow changes and their run logs explicitly; rerunning an
 unchanged PR does not remove this restriction. CE validation remains a separate
-operator-pinned workflow and still requires deployment and configuration.
+workflow at the configured trusted ref and still requires deployment and configuration.
 
 Local tests exercise real disposable Git repositories plus a simulated GitHub API.
 They do not establish that production GitHub rulesets, reviews, credentials, or

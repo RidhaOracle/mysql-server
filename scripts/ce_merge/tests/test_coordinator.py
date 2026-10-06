@@ -14,7 +14,7 @@ from scripts.ce_merge.coordinator import Coordinator
 from scripts.ce_merge.git import PublicGraph
 from scripts.ce_merge.github import authorization_identity
 from scripts.ce_merge.journal import Journal
-from scripts.ce_merge.policy import Blocked, check_content, documentation_only, matches, rulesets, upmerge_till
+from scripts.ce_merge.policy import Blocked, check_content, documentation_only, load, matches, rulesets, upmerge_till
 
 
 POLICY = {
@@ -554,6 +554,18 @@ class AtomicTests(unittest.TestCase):
 
 
 class PolicyTests(unittest.TestCase):
+    def test_ci_ref_replaces_manual_revision_in_old_and_new_configurations(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "policy.json"
+            for extra in ({}, {"ci_revision": "CONFIGURE_TRUSTED_DEPLOYMENT_SHA"}):
+                path.write_text(json.dumps(dict(POLICY, ci_ref="trunk", **extra)))
+                policy = load(path)
+                self.assertEqual(policy["ci_ref"], "trunk")
+                self.assertNotIn("ci_revision", policy)
+            for ref in (None, "", "../trunk"):
+                path.write_text(json.dumps(dict(POLICY, ci_ref=ref)))
+                with self.subTest(ref=ref), self.assertRaises(Blocked):
+                    load(path)
     def test_malformed_or_backward_metadata_fails_closed(self):
         for body in ("Upmerge-Till:\nUpmerge-Reason: example", "Upmerge-Till: trunk\nUpmerge-Till: trunk",
                      "Backport-To: lts", "Upmerge-Till: lts\nUpmerge-Reason: \nNext section"):

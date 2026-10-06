@@ -1,6 +1,8 @@
 # Copyright (c) 2026, Oracle and/or its affiliates.
 from pathlib import Path
+import os
 import subprocess
+import sys
 import tempfile
 import unittest
 
@@ -101,11 +103,12 @@ class CITests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
-        self.policy = dict(POLICY, ci_revision="d" * 40, ci_ref="trusted", app_slug="merge")
+        self.policy = dict(POLICY, ci_ref="trusted", app_slug="merge")
+        self.revision = "d" * 40
         self.store = Journal(Path(self.temp.name) / "ci-journal")
         self.pr = {"number": 1, "base": {"sha": "a" * 40}, "head": {"sha": "b" * 40}}
         self.merge = "c" * 40
-        self.run = {"display_title": "ce:1:" + "a" * 40 + ":" + "b" * 40 + ":" + "c" * 40,
+        self.run = {"display_title": "ce:1:" + "a" * 40 + ":" + "b" * 40 + ":" + "c" * 40 + ":" + self.revision,
                     "path": ".github/workflows/ce-merge-validation.yml", "actor": {"login": "merge[bot]"},
                     "head_sha": "d" * 40, "event": "workflow_dispatch",
                     "id": 1, "run_attempt": 1, "status": "completed", "conclusion": "success"}
@@ -122,17 +125,112 @@ class CITests(unittest.TestCase):
         case = self
 
         class API:
+            def revision(self, ref):
+                case.assertEqual(ref, case.policy["ci_ref"])
+                return case.revision
+
             def pages(self, path, key):
                 return [case.run] if "workflows/" in path else case.jobs
 
-            def repo(self, *args):
+            def repo(self, path, method="GET", data=None):
+                if method == "GET":
+                    return case.run
                 case.dispatched = True
+                case.dispatch = data
 
         self.dispatched = False
         self.coordinator = Coordinator(self.policy, self.store, API())
+        # Establish the durable request just as the first eligibility poll would.
+        self.coordinator.ci(self.pr, self.merge, ["sql/a.cc"])
+        self.dispatched = False
 
     def test_complete_trusted_ci_passes(self):
         self.assertTrue(self.coordinator.ci(self.pr, self.merge, ["sql/a.cc"])[0])
+
+    def test_request_records_resolved_revision_and_survives_restart(self):
+        request = self.store.setting(self.coordinator.ci_request_key(self.run["display_title"]))
+        self.assertEqual(request["ref"], "trusted")
+        self.assertEqual(request["revision"], self.revision)
+        self.assertEqual(self.dispatch["inputs"]["workflow_revision"], self.revision)
+        self.coordinator.store = Journal(self.store.path)
+        self.assertTrue(self.coordinator.ci(self.pr, self.merge, ["sql/a.cc"])[0])
+        self.assertFalse(self.dispatched)
+
+    def test_unrecorded_run_does_not_satisfy_ci(self):
+        self.coordinator.store = Journal(self.store.path / "fresh")
+        self.assertFalse(self.coordinator.ci(self.pr, self.merge, ["sql/a.cc"])[0])
+        self.assertTrue(self.dispatched)
+
+    def test_moving_ref_redispatches_without_old_revision_throttle(self):
+        self.revision = "e" * 40
+        self.assertFalse(self.coordinator.ci(self.pr, self.merge, ["sql/a.cc"])[0])
+        self.assertTrue(self.dispatched)
+        self.assertEqual(self.dispatch["inputs"]["workflow_revision"], self.revision)
+        self.dispatched = False
+        # A dispatch race can run new workflow code with the OLD request title.
+        self.run["head_sha"] = self.revision
+        self.assertFalse(self.coordinator.ci(self.pr, self.merge, ["sql/a.cc"])[0])
+        self.run["display_title"] = self.run["display_title"].rsplit(":", 1)[0] + ":" + self.revision
+        self.assertTrue(self.coordinator.ci(self.pr, self.merge, ["sql/a.cc"])[0])
+
+    def test_same_revision_dispatch_is_throttled(self):
+        self.run["display_title"] = "unrelated"
+        self.assertFalse(self.coordinator.ci(self.pr, self.merge, ["sql/a.cc"])[0])
+        self.assertFalse(self.dispatched)
+
+    def test_invalid_resolved_revision_fails_closed(self):
+        self.revision = "not-a-sha"
+        with self.assertRaises(Blocked):
+            self.coordinator.ci(self.pr, self.merge, ["sql/a.cc"])
+        self.assertFalse(self.dispatched)
+
+    def test_rerun_requires_recorded_current_revision_and_app_identity(self):
+        self.coordinator.rerun_ci(1, "operator")
+        self.assertTrue(self.dispatched)
+        self.dispatched = False
+        self.revision = "e" * 40
+        with self.assertRaises(Blocked):
+            self.coordinator.rerun_ci(1, "operator")
+        self.revision = "d" * 40
+        self.run["actor"]["login"] = "contributor"
+        with self.assertRaises(Blocked):
+            self.coordinator.rerun_ci(1, "operator")
+        self.assertFalse(self.dispatched)
+
+    def test_dispatch_race_stops_candidate_verification_before_git(self):
+        script = Path(__file__).resolve().parents[1] / "verify_candidate.py"
+        result = subprocess.run([sys.executable, str(script)], cwd=self.temp.name,
+                                env=dict(os.environ, EXPECTED_WORKFLOW="d" * 40, ACTUAL_WORKFLOW="e" * 40),
+                                capture_output=True, text=True)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("Trusted CI ref moved", result.stderr)
+
+    def test_workflow_and_candidate_verifier_accepts_exact_identities(self):
+        import json
+        repo = Repo(Path(self.temp.name) / "candidate")
+        head = repo.commit("fix.cc", "int fix;\n")
+        script = Path(__file__).resolve().parents[1] / "verify_candidate.py"
+        result = subprocess.run([sys.executable, str(script)], cwd=repo.path,
+                                env=dict(os.environ, EXPECTED_WORKFLOW=self.revision, ACTUAL_WORKFLOW=self.revision,
+                                         EXPECTED_BASE=repo.base, EXPECTED_MERGE=head,
+                                         EXPECTED_PARENTS=json.dumps([repo.base])),
+                                capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_lost_dispatch_response_retains_revision_for_reconciliation(self):
+        self.revision = "e" * 40
+        repo = self.coordinator.github.repo
+        def disconnected(*args):
+            raise TimeoutError("lost response")
+        self.coordinator.github.repo = disconnected
+        with self.assertRaises(TimeoutError):
+            self.coordinator.ci(self.pr, self.merge, ["sql/a.cc"])
+        self.coordinator.github.repo = repo
+        self.coordinator.store = Journal(self.store.path)
+        self.run["display_title"] = self.run["display_title"].rsplit(":", 1)[0] + ":" + self.revision
+        self.run["head_sha"] = self.revision
+        self.assertTrue(self.coordinator.ci(self.pr, self.merge, ["sql/a.cc"])[0])
+        self.assertFalse(self.dispatched)
 
     def test_skipped_required_step_rejected(self):
         self.jobs[0]["steps"][1]["conclusion"] = "skipped"

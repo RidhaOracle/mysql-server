@@ -12,7 +12,6 @@
   "release_app_id": 0,
   "app_slug": "ridhaoracle-ce-upmerge-test",
   "ci_ref": "trunk",
-  "ci_revision": "CONFIGURE_TRUSTED_DEPLOYMENT_SHA",
   "oca_label": "OCA Verified",
   "forbidden_paths": ["internal", "internal-sec"],
   "forbidden_metadata_patterns": [],

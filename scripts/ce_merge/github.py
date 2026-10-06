@@ -85,6 +85,10 @@ class GitHub:
     def branch(self, branch):
         return self.repo("/branches/" + urllib.parse.quote(branch, safe=""))["commit"]["sha"]
 
+    def revision(self, ref):
+        """Resolve the configured branch or tag to a commit, including annotated tags."""
+        return self.repo("/commits/" + urllib.parse.quote(ref, safe=""))["sha"]
+
     def can_integrate(self, login):
         return login in self.policy["maintainers"] and self.repo(
             "/collaborators/" + urllib.parse.quote(login, safe="") + "/permission")["permission"] in (

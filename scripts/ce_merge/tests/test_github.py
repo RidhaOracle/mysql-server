@@ -37,6 +37,15 @@ class ReviewTests(unittest.TestCase):
         self.api.reviewed(self.pr)
         self.api.oca(self.pr)
 
+    def test_trusted_ref_resolution_supports_branch_or_tag_names(self):
+        calls = []
+        def resolve(path):
+            calls.append(path)
+            return {"sha": "d" * 40}
+        self.api.repo = resolve
+        self.assertEqual(self.api.revision("ci/release-v1"), "d" * 40)
+        self.assertEqual(calls, ["/commits/ci%2Frelease-v1"])
+
     def test_resolved_threads_required(self):
         self.resolved = False
         with self.assertRaises(Blocked):

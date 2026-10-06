@@ -11,6 +11,9 @@ def git(*args):
 
 
 if __name__ == "__main__":
+    if (not re.fullmatch(r"[0-9a-f]{40}", os.environ["EXPECTED_WORKFLOW"]) or
+            os.environ["ACTUAL_WORKFLOW"] != os.environ["EXPECTED_WORKFLOW"]):
+        raise SystemExit("Trusted CI ref moved during dispatch; wait for coordinator redispatch")
     for name in ("EXPECTED_BASE", "EXPECTED_MERGE"):
         if not re.fullmatch(r"[0-9a-f]{40}", os.environ[name]):
             raise SystemExit("Invalid candidate identity")

@@ -184,12 +184,7 @@ def main():
                     store.set_setting(f'published:{op["pr"]}', None, operator)
             coordinator.report(op)
         elif args.command == "rerun-ci":
-            run = github.repo(f'/actions/runs/{args.run_id}')
-            require(run["path"] == ".github/workflows/ce-merge-validation.yml" and
-                    run["head_sha"] == policy["ci_revision"] and run["status"] == "completed",
-                    "Only pinned, completed coordinator CI can be rerun")
-            github.repo(f'/actions/runs/{args.run_id}/rerun', "POST", {})
-            store.audit(None, "ci-rerun", {"run": args.run_id, "operator": operator})
+            coordinator.rerun_ci(args.run_id, operator)
         elif args.command == "hold":
             require(not store.uncertain(), "Reconcile uncertain publication before changing holds")
             require(not args.release_tag or args.target, "Release holds must declare all target branches")

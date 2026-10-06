@@ -66,19 +66,38 @@ class Coordinator:
         paths, commits = graph.inspect(pr["base"]["sha"], pr["head"]["sha"])
         return merge, paths, commits
 
+    def ci_request_key(self, identity):
+        return "ci-request:" + hashlib.sha256(identity.encode()).hexdigest()
+
+    def matches_ci_run(self, run, request):
+        return (run.get("display_title") == request["identity"] and
+                run.get("head_sha") == request["revision"] and run.get("event") == "workflow_dispatch" and
+                run.get("path") == ".github/workflows/ce-merge-validation.yml" and
+                run.get("actor", {}).get("login") == self.policy["app_slug"] + "[bot]" and
+                run.get("triggering_actor", run.get("actor", {})).get("login") == self.policy["app_slug"] + "[bot]")
+
+    def rerun_ci(self, run_id, operator):
+        run = self.github.repo(f'/actions/runs/{run_id}')
+        request = self.store.setting(self.ci_request_key(run.get("display_title", "")))
+        require(request and request["ref"] == self.policy["ci_ref"] and
+                request["revision"] == sha(self.github.revision(self.policy["ci_ref"])) and
+                self.matches_ci_run(run, request) and run["status"] == "completed",
+                "Only recorded, completed coordinator CI at the current trusted ref can be rerun")
+        self.github.repo(f'/actions/runs/{run_id}/rerun', "POST", {})
+        self.store.audit(None, "ci-rerun", {"run": run_id, "revision": request["revision"], "operator": operator})
+
     def ci(self, pr, merge, paths, parents=None, staged=False):
         if documentation_only(paths):
             return True, "Builds not applicable: documentation-only allowlist"
-        sha(self.policy["ci_revision"])
-        key = f'ce:{pr["number"]}:{pr["base"]["sha"]}:{pr["head"]["sha"]}:{merge}'
+        revision = sha(self.github.revision(self.policy["ci_ref"]))
+        key = f'ce:{pr["number"]}:{pr["base"]["sha"]}:{pr["head"]["sha"]}:{merge}:{revision}'
+        request_key = self.ci_request_key(key)
+        request = self.store.setting(request_key)
+        recorded = request and request["ref"] == self.policy["ci_ref"] and request["revision"] == revision
         workflow = "ce-merge-validation.yml"
         runs = self.github.pages(f"/actions/workflows/{workflow}/runs?event=workflow_dispatch&head_sha=" +
-                                 self.policy["ci_revision"], "workflow_runs")
-        matching = [r for r in runs if r["display_title"] == key and
-                    r.get("head_sha") == self.policy["ci_revision"] and r.get("event") == "workflow_dispatch" and
-                    r["path"] == ".github/workflows/" + workflow and
-                    r["actor"]["login"] == self.policy["app_slug"] + "[bot]" and
-                    r.get("triggering_actor", r["actor"])["login"] == self.policy["app_slug"] + "[bot]"]
+                                 revision, "workflow_runs") if recorded else []
+        matching = [r for r in runs if self.matches_ci_run(r, request)]
         if matching:
             run = max(matching, key=lambda r: (r["id"], r["run_attempt"]))
             if run["status"] != "completed":
@@ -99,15 +118,18 @@ class Coordinator:
                 steps = {s["name"]: s["conclusion"] for s in job["steps"]}
                 require(all(steps.get(name) == "success" for name in required), "Required CI step did not pass")
             return True, "Public CI passed for the current base, head, and merge candidate"
-        sent_key = "ci:" + hashlib.sha256(key.encode()).hexdigest()
-        if time.time() - self.store.setting(sent_key, 0) > 300:
+        if not recorded or time.time() - request["sent_at"] > 300:
+            # Persist the expected revision before the network write; a lost response
+            # can be reconciled with the run identity after a process restart.
+            self.store.set_setting(request_key, {"identity": key, "ref": self.policy["ci_ref"],
+                                                "revision": revision, "sent_at": time.time()}, "coordinator")
             self.github.repo(f"/actions/workflows/{workflow}/dispatches", "POST", {
                 "ref": self.policy["ci_ref"], "inputs": {
                     "pr_number": str(pr["number"]), "base_sha": pr["base"]["sha"],
                     "head_sha": pr["head"]["sha"], "merge_sha": merge,
+                    "workflow_revision": revision,
                     "parents_json": json.dumps(parents or [pr["base"]["sha"], pr["head"]["sha"]]),
                     "candidate_repository": self.policy["bot_fork" if staged else "repository"]}})
-            self.store.set_setting(sent_key, time.time(), "coordinator")
         return False, "Waiting for trusted public CI"
 
     def publish(self, pr, ci_ok, summary, eligible=False):
