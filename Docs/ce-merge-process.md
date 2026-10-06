@@ -171,8 +171,14 @@ service has no third-party dependencies. Never run contributor code on this host
    copies of that setting are ignored. The workflow must exist on the default
    branch for dispatch. Verify the build/test scripts against every supported branch.
 5. Supply `CE_APP_PRIVATE_KEY` (PEM path) and `CE_WEBHOOK_SECRET` (32+ random
-   characters) outside the checkout. Optional `CE_GIT_CACHE` points to a dedicated
-   private directory containing only public CE Git objects.
+   characters) outside the checkout. The CLI defaults to a persistent public Git
+   cache at `<state-dir>/public.git` and logs its location when starting `serve`
+   or `once`. The first fetch may take several minutes; later evaluations reuse
+   the downloaded objects. Set `CE_GIT_CACHE` to override this with an absolute
+   path to a dedicated private directory containing only public CE Git objects.
+   An unset or empty value uses the default. Do not share a cache across separate
+   coordinator state directories or repositories. The packaged service explicitly
+   uses `/var/lib/mysql-ce-merge/public.git`.
 6. Generate ruleset payloads and apply them as an administrator in rehearsal.
    Provision branches before enabling lifecycle protection. Validate existing
    bypasses and native checks; create the advisory `Integrate` label. Shadow mode

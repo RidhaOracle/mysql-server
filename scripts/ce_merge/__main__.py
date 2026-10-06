@@ -129,6 +129,7 @@ def main():
     for name in ("register-promotion", "publish-promotion"):
         commands.add_parser(name).add_argument("manifest")
     args = parser.parse_args()
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     policy = load(args.policy)
     if args.command == "rulesets":
         print(json.dumps({"repository": {"allow_merge_commit": True, "allow_squash_merge": True,
@@ -136,6 +137,11 @@ def main():
                           "rulesets": rulesets(policy)}, indent=2))
         return
     store, github = Journal(args.state_dir), GitHub(policy)
+    if not os.environ.get("CE_GIT_CACHE"):
+        os.environ["CE_GIT_CACHE"] = str(store.path / "public.git")
+    if args.command in ("serve", "once"):
+        logging.info("Public Git cache: %s; initial fetch may take several minutes",
+                     os.environ["CE_GIT_CACHE"])
     coordinator = Coordinator(policy, store, github)
     operator = str(os.getuid())
     if args.command == "serve":
