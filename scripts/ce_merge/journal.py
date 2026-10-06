@@ -92,7 +92,34 @@ class Journal:
             require(len(manifests) == 1,
                     "Multiple legacy promotions for target; register the approved replacement manifest")
             active[base] = manifests[0]
-        return list(active.values())
+        # Retirement tombstones suppress the legacy fallback without deleting history.
+        return [m for m in active.values() if not m.get("retired")]
+
+    def check_release_mutation(self, release_tag):
+        require(not self.uncertain(), "Reconcile uncertain CE publication before changing a promotion")
+        for op in self.operations():
+            if op["state"] == "aborted":
+                continue
+            root = self.setting(f'promotion:{op["pr"]}')
+            evidence = [root] + [s.get("promotion") for s in op["data"]["steps"]]
+            require(not any(m and m["release_tag"] == release_tag for m in evidence),
+                    "Abort unpublished release operations before replacing a promotion; completed releases cannot be replaced")
+
+    def retire_promotion(self, release_tag, target, reason, operator):
+        """Caller holds the worker mutex; retain a tombstone and all PR manifests."""
+        require(reason.strip(), "Promotion retirement requires a reason")
+        self.check_release_mutation(release_tag)
+        hold = self.setting("hold")
+        require(hold and hold.get("release_tag") == release_tag and target not in hold.get("targets", []),
+                "Remove the target from the matching release hold before retirement")
+        identity = {"release_tag": release_tag, "base": target}
+        key = self.promotion_key(identity)
+        selected = self.setting(key)
+        require(selected or any(m["release_tag"] == release_tag and m["base"] == target
+                                for m in self.settings("promotion:")), "Promotion target is not registered")
+        if selected and selected.get("retired"):
+            return
+        self.set_setting(key, dict(identity, retired=True, reason=reason), operator)
 
     def check_promotion_replacement(self, manifest):
         registered = self.setting(f'promotion:{manifest["pr"]}') if manifest.get("pr") else None
@@ -102,14 +129,7 @@ class Journal:
         active = self.setting(self.promotion_key(manifest))
         if active == dict(manifest, pr=manifest.get("pr", (active or {}).get("pr"))):
             return  # Exact replay does not change the approved batch.
-        require(not self.uncertain(), "Reconcile uncertain CE publication before replacing a promotion")
-        for op in self.operations():
-            if op["state"] == "aborted":
-                continue
-            root = self.setting(f'promotion:{op["pr"]}')
-            evidence = [root] + [s.get("promotion") for s in op["data"]["steps"]]
-            require(not any(m and m["release_tag"] == manifest["release_tag"] for m in evidence),
-                    "Abort unpublished release operations before replacing a promotion; completed releases cannot be replaced")
+        self.check_release_mutation(manifest["release_tag"])
 
     def activate_promotion(self, manifest, operator):
         """Caller holds the worker mutex. The active snapshot is the commit point."""

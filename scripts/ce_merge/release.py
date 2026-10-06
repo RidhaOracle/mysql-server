@@ -16,6 +16,21 @@ def public_release(github, manifest):
             release["tag_name"] == manifest["release_tag"], "Corresponding release is not public")
 
 
+def validate_source(graph, manifest, head, commits):
+    """Validate the approved CE source for both imported PRs and bundle publication."""
+    require(manifest.get("expected_tree"), "Promotion requires a validated expected_tree")
+    expected_tree = sha(manifest["expected_tree"])
+    require(head == sha(manifest["head"]), "Promotion head differs from manifest")
+    require(manifest["commits"] and len(set(manifest["commits"])) == len(manifest["commits"]) and
+            set(commits) == set(manifest["commits"]), "Promotion ancestry differs from approved SC set")
+    previous = sha(manifest["base_sha"])
+    for commit in manifest["commits"]:
+        require(graph.parents(sha(commit)) == [previous], "Promotion contains unapproved ancestry")
+        previous = commit
+    require(previous == head, "Promotion head differs from approved SC list")
+    require(graph.tree(head) == expected_tree, "Promotion differs from validated source tree")
+
+
 def publish(policy, store, github, manifest):
     require(policy["mode"] == "active", "Shadow mode cannot publish security code")
     public_release(github, manifest)  # Before any public write, including a fork ref.
@@ -39,13 +54,7 @@ def publish(policy, store, github, manifest):
         graph.run("fetch", "--no-tags", manifest["bundle"], manifest["bundle_ref"])
         require(graph.run("rev-parse", "FETCH_HEAD") == head, "Bundle head differs from manifest")
         _, commits = graph.inspect(base, head)
-        require(set(commits) == set(manifest["commits"]), "Bundle includes unapproved commits")
-        previous = base
-        for commit in manifest["commits"]:
-            require(graph.parents(sha(commit)) == [previous], "Bundle has private or unapproved ancestry")
-            previous = commit
-        require(previous == head and graph.tree(head) == sha(manifest["expected_tree"]),
-                "Bundle differs from validated source")
+        validate_source(graph, manifest, head, commits)
         # Token exists only in the child environment, never in argv, Git config, or logs.
         credentials = base64.b64encode(("x-access-token:" + github.token(fork=True)).encode()).decode()
         env = dict(os.environ, GIT_CONFIG_COUNT="1", GIT_CONFIG_KEY_0="http.https://github.com/.extraheader",

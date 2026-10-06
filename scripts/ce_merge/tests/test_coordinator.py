@@ -17,6 +17,7 @@ from scripts.ce_merge.git import PublicGraph
 from scripts.ce_merge.github import authorization_identity
 from scripts.ce_merge.journal import Journal
 from scripts.ce_merge.policy import Blocked, check_content, documentation_only, load, matches, rulesets, upmerge_till
+from scripts.ce_merge.release import publish as publish_promotion
 
 
 POLICY = {
@@ -224,7 +225,8 @@ class AtomicTests(unittest.TestCase):
         self.api.request = lambda *args: {"draft": False, "published_at": "2026-10-01",
                                          "tag_name": "release-1"}
         manifest = {"pr": 1, "release_tag": "release-1", "release_id": 1, "base": "lts",
-                    "base_sha": self.repo.base, "head": self.head, "commits": [self.head]}
+                    "base_sha": self.repo.base, "head": self.head, "commits": [self.head],
+                    "expected_tree": self.repo.git("rev-parse", self.head + "^{tree}")}
         self.store.set_setting("hold", {"release_tag": "release-1", "targets": ["lts"]}, "operator")
         self.store.activate_promotion(manifest, "operator")
         self.ci_ok = False
@@ -235,7 +237,8 @@ class AtomicTests(unittest.TestCase):
         replacement = self.repo.commit("replacement.cc", "int replacement;\n")
         self.repo.git("push", str(self.remote), "HEAD:refs/pull/3/head")
         self.api.add_pull(3, replacement, "lts", POLICY["bot_fork"])
-        updated = dict(manifest, pr=3, head=replacement, commits=[self.head, replacement])
+        updated = dict(manifest, pr=3, head=replacement, commits=[self.head, replacement],
+                       expected_tree=self.repo.git("rev-parse", replacement + "^{tree}"))
         self.store.activate_promotion(updated, "operator")
         self.assertEqual(self.store.setting("promotion:1"), manifest)
         self.assertEqual(self.store.active_promotions("release-1"), [updated])
@@ -256,18 +259,143 @@ class AtomicTests(unittest.TestCase):
             self.store.activate_promotion(dict(manifest, pr=3), "operator")
         self.assertEqual(self.store.active_promotions("release-1"), [manifest])
 
-    def prepared_promotion(self):
+    def prepared_promotion(self, include_release=False):
+        self.store.save(self.op(), "aborted", "setup-before-registration")
         self.coordinator.policy = dict(POLICY, branches=["lts"], release_branches=["trunk"])
         self.api.pulls[1]["head"]["repo"]["full_name"] = POLICY["bot_fork"]
         self.api.request = lambda *args: {"draft": False, "published_at": "2026-10-01",
                                          "tag_name": "release-1"}
         self.store.set_setting("hold", {"release_tag": "release-1", "targets": ["lts"]}, "operator")
         self.store.activate_promotion({"pr": 1, "release_tag": "release-1", "release_id": 1,
-            "base": "lts", "base_sha": self.repo.base, "head": self.head, "commits": [self.head]}, "operator")
+            "base": "lts", "base_sha": self.repo.base, "head": self.head, "commits": [self.head],
+            "expected_tree": self.repo.git("rev-parse", self.head + "^{tree}")}, "operator")
+        if include_release:
+            self.store.set_setting("hold", {"release_tag": "release-1", "targets": ["lts", "trunk"]}, "operator")
+            self.api.add_pull(4, self.head, "trunk", POLICY["bot_fork"])
+            self.remote_git("update-ref", "refs/pull/4/head", self.head)
+            self.store.activate_promotion(dict(self.store.setting("promotion:1"), pr=4, base="trunk"), "operator")
+        self.operation = self.store.request(124, self.api.pull(1), "owner")
         self.ci_ok = False
         self.coordinator.advance(self.op())
         self.assertEqual(self.op()["state"], "prepared")
         self.ci_ok = True
+
+    def promotion_command(self, *args):
+        argv = ["ce-merge", "--state-dir", str(self.store.path), *args]
+        with patch("sys.argv", argv), patch.dict(os.environ), \
+                patch("scripts.ce_merge.__main__.load", return_value=self.coordinator.policy), \
+                patch("scripts.ce_merge.__main__.GitHub", return_value=self.api), \
+                patch("scripts.ce_merge.__main__.Coordinator", return_value=self.coordinator):
+            main()
+
+    def test_shrinking_registered_promotion_retires_target_and_publishes_replacement(self):
+        self.prepared_promotion(include_release=True)
+        self.assertEqual(len(self.op()["data"]["steps"]), 2)
+        retired_manifest = self.store.setting("promotion:4")
+        self.store.save(self.op(), "aborted", "operator-aborted")
+        self.promotion_command("hold", "--reason", "Reduced scope", "--release-tag", "release-1", "--target", "lts")
+        self.promotion_command("retire-promotion", "--release-tag", "release-1", "--target", "trunk",
+                               "--reason", "Release branch excluded by release owner")
+        self.coordinator.store = Journal(self.store.path)
+        self.assertEqual(self.coordinator.store.active_promotions("release-1"), [self.store.setting("promotion:1")])
+        self.assertEqual(self.store.setting("promotion:4"), retired_manifest)
+        with self.assertRaisesRegex(Blocked, "superseded"):
+            self.coordinator.promotion(self.api.pull(4))
+        self.operation = self.store.request(456, self.api.pull(1), "owner")
+        self.coordinator.advance(self.op())
+        self.assertEqual(self.op()["state"], "complete")
+        self.assertEqual([s["branch"] for s in self.op()["data"]["steps"]], ["lts"])
+        self.assertEqual(self.api.branch("lts"), self.op()["data"]["steps"][0]["after"])
+        self.assertEqual(self.api.branch("trunk"), self.repo.base)
+
+    def registration_manifest(self):
+        self.coordinator.policy = dict(POLICY, branches=["lts"])
+        self.api.pulls[1]["head"]["repo"]["full_name"] = POLICY["bot_fork"]
+        repo = self.api.repo
+        self.api.repo = lambda path, *a, **kw: ({"draft": False, "published_at": "2026-10-01", "tag_name": "release-1"}
+                                               if path == "/releases/1" else repo(path, *a, **kw))
+        self.api.request = lambda *a: self.api.repo("/releases/1")
+        self.store.set_setting("hold", {"release_tag": "release-1", "targets": ["lts"]}, "operator")
+        return {"pr": 1, "release_tag": "release-1", "release_id": 1, "base": "lts",
+                "base_sha": self.repo.base, "head": self.head, "commits": [self.head],
+                "expected_tree": self.repo.git("rev-parse", self.head + "^{tree}"),
+                "security_approval": "security", "release_approval": "release", "validation_record": "validated"}
+
+    def test_registration_rejects_missing_invalid_or_mismatched_tree(self):
+        manifest = self.registration_manifest()
+        path = self.root / "manifest.json"
+        for expected in (None, "not-a-tree-sha", self.repo.git("rev-parse", self.repo.base + "^{tree}")):
+            invalid = dict(manifest, expected_tree=expected)
+            if expected is None:
+                invalid.pop("expected_tree")
+            path.write_text(json.dumps(invalid))
+            with self.subTest(expected=expected), self.assertRaises(Blocked):
+                self.promotion_command("register-promotion", str(path))
+            self.assertIsNone(self.store.setting("promotion:1"))
+            self.assertEqual(self.store.active_promotions("release-1"), [])
+            self.unchanged()
+
+    def test_registration_accepts_validated_tree_and_publishes(self):
+        manifest = self.registration_manifest()
+        path = self.root / "manifest.json"
+        path.write_text(json.dumps(manifest))
+        self.promotion_command("register-promotion", str(path))
+        self.assertEqual(self.store.active_promotions("release-1"), [manifest])
+        self.coordinator.advance(self.op())
+        self.assertEqual(self.op()["state"], "complete")
+
+    def test_preparation_rejects_legacy_manifest_with_wrong_tree(self):
+        manifest = self.registration_manifest()
+        manifest["expected_tree"] = self.repo.git("rev-parse", self.repo.base + "^{tree}")
+        self.store.activate_promotion(manifest, "legacy-registration")
+        self.coordinator.advance(self.op())
+        self.assertEqual(self.op()["state"], "blocked")
+        self.assertIn("validated source tree", self.op()["data"]["reason"])
+        self.unchanged()
+
+    def test_bundle_publication_rejects_wrong_tree_before_public_write(self):
+        manifest = self.registration_manifest()
+        ref = "refs/heads/ce-promotion-test"
+        self.repo.git("update-ref", ref, self.head)
+        bundle = self.root / "approved.bundle"
+        self.repo.git("bundle", "create", str(bundle), ref, "^" + self.repo.base)
+        manifest.update(bundle=str(bundle), bundle_ref=ref,
+                        expected_tree=self.repo.git("rev-parse", self.repo.base + "^{tree}"))
+        with patch("scripts.ce_merge.release.PublicGraph", self.graph), \
+                patch.object(self.api, "token", side_effect=AssertionError("Must not reach public write")), \
+                self.assertRaisesRegex(Blocked, "validated source tree"):
+            publish_promotion(self.coordinator.policy, self.store, self.api, manifest)
+        self.assertEqual(self.store.active_promotions("release-1"), [])
+        self.unchanged()
+
+    def test_legacy_prepared_promotion_revalidates_source_tree_on_advance_and_retry(self):
+        self.prepared_promotion()
+        for expected in (None, self.repo.git("rev-parse", self.repo.base + "^{tree}")):
+            manifest = self.store.setting("promotion:1")
+            if expected is None:
+                manifest.pop("expected_tree", None)
+            else:
+                manifest["expected_tree"] = expected
+            # Simulate a batch saved by an older service that did not check the tree.
+            self.store.set_setting("promotion:1", manifest, "legacy")
+            self.store.set_setting(self.store.promotion_key(manifest), manifest, "legacy")
+            op = self.op()
+            op["data"]["steps"][0]["promotion"] = manifest
+            self.store.save(op, "prepared", "legacy-prepared")
+            self.coordinator.advance(self.op())
+            self.assertEqual(self.op()["state"], "prepared")
+            self.assertIn("validated", self.op()["data"]["reason"])
+            self.assertFalse(self.op()["data"]["intent"])
+            self.unchanged()
+        op = self.op()
+        with self.graph(self.coordinator.policy) as graph:
+            graph.restore_candidates(op["data"]["steps"], self.coordinator.bundle(op))
+            op["data"]["receipt"] = graph.receipt(op["id"], op["data"]["steps"], "owner")
+        op["data"]["intent"] = True
+        self.store.save(op, "uncertain", "legacy-intent")
+        with self.assertRaisesRegex(Blocked, "validated source tree"):
+            self.coordinator.retry(self.op())
+        self.unchanged()
 
     def test_changed_hold_targets_after_preparation_cannot_publish(self):
         self.prepared_promotion()

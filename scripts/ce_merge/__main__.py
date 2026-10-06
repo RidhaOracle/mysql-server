@@ -128,6 +128,10 @@ def main():
     commands.add_parser("rerun-ci").add_argument("run_id", type=int)
     for name in ("register-promotion", "publish-promotion"):
         commands.add_parser(name).add_argument("manifest")
+    retire = commands.add_parser("retire-promotion")
+    retire.add_argument("--release-tag", required=True)
+    retire.add_argument("--target", required=True)
+    retire.add_argument("--reason", required=True)
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     policy = load(args.policy)
@@ -218,6 +222,8 @@ def main():
         elif args.command == "publish-promotion":
             from .release import publish
             print(publish(policy, store, github, json.loads(Path(args.manifest).read_text())))
+        elif args.command == "retire-promotion":
+            store.retire_promotion(args.release_tag, args.target, args.reason, operator)
         elif args.command == "register-promotion":
             value = json.loads(Path(args.manifest).read_text())
             require(value["security_approval"] and value["release_approval"] and value["validation_record"] and
@@ -236,6 +242,10 @@ def main():
             hold = store.setting("hold")
             require(hold and hold.get("release_tag") == value["release_tag"] and value["base"] in hold["targets"],
                     "Promotion target is outside the declared release batch")
+            with coordinator.graph(policy) as graph:
+                graph.fetch(["refs/heads/" + value["base"], f'refs/pull/{pr["number"]}/head', value["base_sha"]])
+                _, commits = graph.inspect(value["base_sha"], pr["head"]["sha"])
+                coordinator.check_promotion(graph, pr, value, commits)
             store.activate_promotion(dict(value, pr=pr["number"]), operator)
 
 

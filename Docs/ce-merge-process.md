@@ -409,6 +409,19 @@ Closing a PR alone does not change the selected manifest. Reauthorize the batch
 from its active oldest-target PR after replacement. Uncertain publication must be
 reconciled first, and a completed release cannot be replaced.
 
+When removing a target, abort all unpublished operations for the release, change
+the hold to the revised target list, and explicitly retire each removed target:
+
+```sh
+python3 -m scripts.ce_merge retire-promotion --release-tag PRODUCT_RELEASE_TAG --target REMOVED_BRANCH --reason 'Release owner approved reduced scope'
+```
+
+Retirement preserves the PR manifests and audit history. A persistent retirement
+record prevents old manifests from reappearing after restart; the retired PR cannot
+enter a batch. Retirement is rejected while release operations are non-aborted,
+publication is uncertain, or the target remains in the hold. Register any required
+replacement manifests, then authorize a new batch from the oldest active target.
+
 For journals created before active-manifest tracking, an unambiguous manifest per
 target remains usable. If a target already has several historical entries, register
 the approved replacement explicitly; the coordinator will not guess which one wins.
@@ -445,6 +458,11 @@ checks actual release evidence before the first public write, verifies the compl
 ancestry and tree, and pushes only the approved head. It registers the resulting
 PR against its exact head. `register-promotion` supports an already-created,
 authorized PR using the same manifest plus `pr`, with the same release gate.
+Both paths require `expected_tree` and verify that the approved head's tree matches
+it, along with the approved commit list and ancestry. The coordinator repeats this
+validation when evaluating, preparing, publishing, or retrying a promotion; CI cannot substitute for
+validated release-source equivalence. Legacy manifests missing `expected_tree`
+must be replaced with an approved manifest before proceeding.
 
 After promotion, the release pipeline validates the final CE source and uses its
 separate release App to create the annotated public source tag at the recorded

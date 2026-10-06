@@ -6,6 +6,7 @@ import time
 
 from .git import MergeConflict, PublicGraph
 from .policy import Blocked, documentation_only, matches, require, rulesets, sha, upmerge_till
+from .release import validate_source
 
 
 class Coordinator:
@@ -183,13 +184,7 @@ class Coordinator:
     def check_promotion(self, graph, pr, manifest, commits):
         require(pr["head"]["repo"]["full_name"] == self.policy["bot_fork"],
                 "Promotion must use the controlled public fork")
-        require(set(commits) == set(manifest["commits"]), "Promotion ancestry differs from approved SC set")
-        # Linear CE-parented picks only: no private merge parent can become reachable.
-        previous = manifest["base_sha"]
-        for commit in manifest["commits"]:
-            require(graph.parents(commit) == [previous], "Promotion contains unapproved ancestry")
-            previous = commit
-        require(previous == pr["head"]["sha"], "Promotion head differs from manifest")
+        validate_source(graph, manifest, pr["head"]["sha"], commits)
         require(graph.ancestor(manifest["base_sha"], pr["base"]["sha"]), "Promotion base is unrelated")
 
     def source(self, pr, op=None):
@@ -373,7 +368,7 @@ class Coordinator:
             data["steps"] = steps
             self.store.save(op, "prepared", "reviewed-resolution-accepted")
 
-    def verify_step(self, step):
+    def verify_step(self, step, graph):
         pr = self.github.pull(step["pr"])
         self.basic(pr)
         require(pr["head"]["sha"] == step["review_head"] and pr["base"]["ref"] == step["branch"] and
@@ -387,6 +382,8 @@ class Coordinator:
             require(source["head"]["sha"] == step["source_head"] and
                     (source.get("body") or "") == step["source_body"] and
                     self.source(source) == step["promotion"], "Promotion approval changed after preparation")
+            _, commits = graph.inspect(step["promotion"]["base_sha"], source["head"]["sha"])
+            self.check_promotion(graph, source, step["promotion"], commits)
         return pr
 
     def advance(self, op):
@@ -419,7 +416,7 @@ class Coordinator:
                     if not ok:
                         waiting.append(message)
                     try:
-                        self.verify_step(step)
+                        self.verify_step(step, graph)
                         self.github.check(pr, "CE / policy", "success", "Prepared batch; publication awaits every target",
                                           candidate=step["after"])
                     except Blocked as error:
@@ -434,7 +431,7 @@ class Coordinator:
                 self.deployment()
                 self.source(self.github.pull(op["pr"]), op)
                 for step in data["steps"]:
-                    pr = self.verify_step(step)
+                    pr = self.verify_step(step, graph)
                     paths, _ = graph.inspect(step["base_sha"], step["after"])
                     require(self.ci(pr, step["after"], paths, parents=step["parents"], staged=True)[0],
                             "Candidate CI changed before publication")
@@ -475,13 +472,11 @@ class Coordinator:
         self.deployment()
         self.check_prepared_policy(op)
         self.source(self.github.pull(op["pr"]), op)
-        for step in op["data"]["steps"]:
-            self.verify_step(step)
         with self.graph(self.policy) as graph:
             graph.restore_candidates(op["data"]["steps"], self.bundle(op))
             # Recheck exact candidate CI, including reruns/revocations.
             for step in op["data"]["steps"]:
-                pr = self.github.pull(step["pr"])
+                pr = self.verify_step(step, graph)
                 paths, _ = graph.inspect(step["base_sha"], step["after"])
                 require(self.ci(pr, step["after"], paths, parents=step["parents"], staged=True)[0],
                         "Candidate CI is pending")

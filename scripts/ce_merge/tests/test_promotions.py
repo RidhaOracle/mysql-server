@@ -96,6 +96,59 @@ class PromotionJournalTests(unittest.TestCase):
         self.store.activate_promotion(self.new, "operator")
         self.assertEqual(self.store.active_promotions("release-1"), [self.new])
 
+    def test_retirement_preserves_history_and_suppresses_legacy_fallback_after_restart(self):
+        self.store.activate_promotion(self.old, "operator")
+        self.store.set_setting("hold", {"release_tag": "release-1", "targets": ["trunk"]}, "operator")
+        self.store.retire_promotion("release-1", "lts", "No longer targeted", "operator")
+        store = Journal(self.store.path)
+        self.assertEqual(store.active_promotions("release-1"), [])
+        self.assertEqual(store.setting("promotion:1"), self.old)
+        events = [json.loads(line) for line in (store.path / "audit.jsonl").read_text().splitlines()]
+        self.assertTrue(any(event["data"]["value"] == self.old for event in events))
+        self.assertTrue(any(event["data"]["value"].get("retired") for event in events))
+        before = (store.path / "audit.jsonl").read_bytes()
+        store.retire_promotion("release-1", "lts", "No longer targeted", "operator")
+        self.assertEqual((store.path / "audit.jsonl").read_bytes(), before)
+        store.activate_promotion(self.new, "operator")
+        self.assertEqual(store.active_promotions("release-1"), [self.new])
+
+    def test_retirement_handles_legacy_manifests_without_reactivating_them(self):
+        for manifest in (self.old, self.new):
+            self.store.set_setting(f'promotion:{manifest["pr"]}', manifest, "legacy")
+        self.store.set_setting("hold", {"release_tag": "release-1", "targets": ["trunk"]}, "operator")
+        self.store.retire_promotion("release-1", "lts", "Scope reduced", "operator")
+        self.assertEqual(Journal(self.store.path).active_promotions("release-1"), [])
+
+    def test_retirement_requires_matching_revised_hold_and_reason(self):
+        self.store.activate_promotion(self.old, "operator")
+        for hold in (None, {"release_tag": "other", "targets": []},
+                     {"release_tag": "release-1", "targets": ["lts"]}):
+            self.store.set_setting("hold", hold, "operator")
+            with self.subTest(hold=hold), self.assertRaises(Blocked):
+                self.store.retire_promotion("release-1", "lts", "Scope reduced", "operator")
+        self.store.set_setting("hold", {"release_tag": "release-1", "targets": ["trunk"]}, "operator")
+        with self.assertRaises(Blocked):
+            self.store.retire_promotion("release-1", "lts", " ", "operator")
+        with self.assertRaises(Blocked):
+            self.store.retire_promotion("release-1", "unknown", "Scope reduced", "operator")
+        self.assertEqual(self.store.active_promotions("release-1"), [self.old])
+
+    def test_retirement_requires_aborted_operations_and_rejects_completed_release(self):
+        self.store.activate_promotion(self.old, "operator")
+        self.store.set_setting("hold", {"release_tag": "release-1", "targets": ["trunk"]}, "operator")
+        pr = {"number": 1, "head": {"sha": self.old["head"]}, "base": {"ref": "lts"}}
+        self.store.request(1, pr, "owner")
+        op = self.store.operations()[0]
+        for state in ("queued", "prepared", "conflict", "blocked", "publishing", "uncertain", "complete"):
+            op["data"]["intent"] = state in ("publishing", "uncertain", "complete")
+            self.store.save(op, state, "test-state")
+            with self.subTest(state=state), self.assertRaises(Blocked):
+                self.store.retire_promotion("release-1", "lts", "Scope reduced", "operator")
+        op["data"]["intent"] = False
+        self.store.save(op, "aborted", "test-abort")
+        self.store.retire_promotion("release-1", "lts", "Scope reduced", "operator")
+        self.assertEqual(self.store.active_promotions("release-1"), [])
+
 
 if __name__ == "__main__":
     unittest.main()
