@@ -3,10 +3,12 @@ import copy
 import hashlib
 import hmac
 import json
+import os
 from pathlib import Path
 import subprocess
 import tempfile
 import unittest
+from unittest.mock import patch
 from concurrent.futures import ThreadPoolExecutor
 
 from scripts.ce_merge.__main__ import authorize, signed
@@ -415,6 +417,56 @@ class AtomicTests(unittest.TestCase):
         upper = op["data"]["steps"][1]["after"]
         self.remote_git("merge-base", "--is-ancestor", lower, upper)
         self.remote_git("merge-base", "--is-ancestor", head, upper)
+
+    def test_middle_resolution_rebuilds_three_branch_chain_without_cache(self):
+        with patch.dict(os.environ):
+            os.environ.pop("CE_GIT_CACHE", None)
+            self.coordinator.policy = dict(POLICY, branches=["lts", "trunk", "innovation"])
+            self.repo.git("checkout", "trunk")
+            middle = self.repo.commit("fix.cc", "conflicting change\n")
+            self.repo.git("checkout", "-b", "innovation")
+            newest = self.repo.commit("newer-only.cc", "int newer_only;\n")
+            self.repo.git("push", str(self.remote), "trunk:trunk", "innovation:innovation")
+            self.coordinator.advance(self.op())
+            op = self.op()
+            self.assertEqual(op["state"], "conflict")
+            self.assertEqual(op["data"]["conflict_index"], 1)
+            lower = op["data"]["steps"][0]["after"]
+            resolution = self.resolution(lower, middle)
+
+            # A fresh repair graph has the prepared lower candidate and resolution,
+            # but neither contains the newest branch's distinct commit.
+            with self.graph(self.coordinator.policy) as graph:
+                self.assertIsNotNone(graph.temp)
+                graph.restore_candidates(self.coordinator.prepared_steps(op), self.coordinator.bundle(op))
+                graph.fetch(["refs/pull/3/head"])
+                with self.assertRaises(Blocked):
+                    graph.run("cat-file", "-e", newest)
+
+            self.coordinator.repair(self.op(), 3)
+            repaired = self.op()
+            self.assertEqual(repaired["state"], "prepared")
+            self.assertNotIn("conflict_index", repaired["data"])
+            self.assertEqual(len(self.coordinator.prepared_steps(repaired)), 3)
+            for branch, before in (("lts", self.repo.base), ("trunk", middle), ("innovation", newest)):
+                self.assertEqual(self.api.branch(branch), before)
+            self.assertEqual(self.remote_git("tag", "--list", "ce-integration/*"), "")
+
+            # Discard in-memory operation state and restore the rebuilt bundle.
+            self.coordinator.store = Journal(self.root / "journal")
+            self.coordinator.advance(self.op())
+            completed = self.op()
+            self.assertEqual(completed["state"], "complete")
+            steps = completed["data"]["steps"]
+            for step in steps:
+                self.assertEqual(self.api.branch(step["branch"]), step["after"])
+            for older, newer in zip(steps, steps[1:]):
+                self.remote_git("merge-base", "--is-ancestor", older["after"], newer["after"])
+            self.remote_git("merge-base", "--is-ancestor", resolution, steps[-1]["after"])
+            self.assertEqual(self.remote_git("show", steps[-1]["after"] + ":newer-only.cc"), "int newer_only;")
+            self.assertEqual(self.remote_git("show", steps[-1]["after"] + ":fix.cc"), "int fix;")
+            self.assertEqual(self.remote_git("rev-parse", completed["data"]["receipt"]["ref"]),
+                             completed["data"]["receipt"]["sha"])
 
     def test_resolution_without_review_or_lower_ancestry_is_rejected(self):
         lower, tip = self.conflict()

@@ -326,7 +326,10 @@ class Coordinator:
                 "Resolution PR must target the conflicting branch at the recorded base")
         with self.graph(self.policy) as graph:
             graph.restore_candidates(self.prepared_steps(op), self.bundle(op))
-            graph.fetch([f'refs/pull/{number}/head'])
+            # The saved bundle covers only prepared steps. A fresh graph also
+            # needs the recorded bases of the conflicting and later targets.
+            graph.fetch([f'refs/pull/{number}/head'] +
+                        [s["base_sha"] for s in data["steps"][index:]])
             heads = graph.remote_refs(["refs/heads/" + s["branch"] for s in data["steps"]])
             require(all(heads.get("refs/heads/" + s["branch"]) == s["base_sha"] for s in data["steps"]),
                     "A target moved; abort and authorize a new batch")
