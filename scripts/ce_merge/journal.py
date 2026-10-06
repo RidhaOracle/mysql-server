@@ -76,6 +76,52 @@ class Journal:
         self.write(self.setting_path(key), {"key": key, "value": value})
         self.audit(None, "setting:" + key, {"operator": operator, "value": value})
 
+    def promotion_key(self, manifest):
+        identity = json.dumps([manifest["release_tag"], manifest["base"]])
+        return "promotion-active:" + hashlib.sha256(identity.encode()).hexdigest()
+
+    def active_promotions(self, release_tag):
+        active = {m["base"]: m for m in self.settings("promotion-active:")
+                  if m["release_tag"] == release_tag}
+        # Read old journals without guessing which of several legacy PRs is current.
+        legacy = {}
+        for manifest in self.settings("promotion:"):
+            if manifest["release_tag"] == release_tag and manifest["base"] not in active:
+                legacy.setdefault(manifest["base"], []).append(manifest)
+        for base, manifests in legacy.items():
+            require(len(manifests) == 1,
+                    "Multiple legacy promotions for target; register the approved replacement manifest")
+            active[base] = manifests[0]
+        return list(active.values())
+
+    def check_promotion_replacement(self, manifest):
+        registered = self.setting(f'promotion:{manifest["pr"]}') if manifest.get("pr") else None
+        require(not registered or (registered["release_tag"], registered["base"]) ==
+                (manifest["release_tag"], manifest["base"]),
+                "A promotion PR cannot be reassigned to another release or target")
+        active = self.setting(self.promotion_key(manifest))
+        if active == dict(manifest, pr=manifest.get("pr", (active or {}).get("pr"))):
+            return  # Exact replay does not change the approved batch.
+        require(not self.uncertain(), "Reconcile uncertain CE publication before replacing a promotion")
+        for op in self.operations():
+            if op["state"] == "aborted":
+                continue
+            root = self.setting(f'promotion:{op["pr"]}')
+            evidence = [root] + [s.get("promotion") for s in op["data"]["steps"]]
+            require(not any(m and m["release_tag"] == manifest["release_tag"] for m in evidence),
+                    "Abort unpublished release operations before replacing a promotion; completed releases cannot be replaced")
+
+    def activate_promotion(self, manifest, operator):
+        """Caller holds the worker mutex. The active snapshot is the commit point."""
+        self.check_promotion_replacement(manifest)
+        key = self.promotion_key(manifest)
+        if self.setting(key) == manifest and self.setting(f'promotion:{manifest["pr"]}') == manifest:
+            return
+        # Keep previous PR entries and setting audit events. Write history before
+        # switching the release/target snapshot, preserving an existing active selection.
+        self.set_setting(f'promotion:{manifest["pr"]}', manifest, operator)
+        self.set_setting(key, manifest, operator)
+
     def request(self, check_id, pr, actor):
         operation = hashlib.sha256(str(check_id).encode()).hexdigest()[:32]
         with self.lock("requests.lock"):

@@ -25,6 +25,7 @@ jobs:
       pr_number: ${{ steps.resolve.outputs.pr_number }}
       head_sha: ${{ steps.resolve.outputs.head_sha }}
       classification: ${{ steps.resolve.outputs.classification }}
+      untrusted_reason: ${{ steps.resolve.outputs.untrusted_reason }}
       run_attempt: ${{ steps.resolve.outputs.run_attempt }}
       run_id: ${{ steps.resolve.outputs.run_id }}
       workflow_key: ${{ steps.resolve.outputs.workflow_key }}
@@ -160,9 +161,10 @@ jobs:
               pull_number: pullNumber,
               per_page: 100,
             });
-            const workflowChanged = files.length >= 3000 || files.some((file) => (
+            const workflowEdited = files.some((file) => (
               file.filename === config.path || file.previous_filename === config.path
             ));
+            const workflowChanged = files.length >= 3000 || workflowEdited;
 
             let result = 'error';
             if (run.conclusion === 'action_required') {
@@ -237,11 +239,15 @@ jobs:
             }
 
             if (workflowChanged) {
-              core.warning('The pull request changes its source workflow; reporting an untrusted result.');
+              core.warning(workflowEdited
+                ? 'The pull request changes its source workflow; reporting an untrusted result.'
+                : 'The pull request file list is incomplete; workflow trust cannot be verified.');
             }
             core.setOutput('pr_number', String(pullNumber));
             core.setOutput('head_sha', headSha);
             core.setOutput('classification', result);
+            core.setOutput('untrusted_reason', workflowEdited ? 'workflow_changed'
+              : files.length >= 3000 ? 'incomplete_file_list' : '');
             core.setOutput('run_attempt', String(runAttempt));
             core.setOutput('run_id', String(runId));
             core.setOutput('workflow_key', config.key);
@@ -268,6 +274,7 @@ jobs:
           SOURCE_HEAD_SHA: ${{ needs.resolve.outputs.head_sha }}
           SOURCE_PR_NUMBER: ${{ needs.resolve.outputs.pr_number }}
           SOURCE_RESULT: ${{ needs.resolve.outputs.classification }}
+          SOURCE_UNTRUSTED_REASON: ${{ needs.resolve.outputs.untrusted_reason }}
           SOURCE_RUN_ATTEMPT: ${{ needs.resolve.outputs.run_attempt }}
           SOURCE_RUN_ID: ${{ needs.resolve.outputs.run_id }}
           SOURCE_WORKFLOW_KEY: ${{ needs.resolve.outputs.workflow_key }}
@@ -455,7 +462,10 @@ jobs:
               sha: headSha,
               state: result,
               context: workflowName,
-              description: config.descriptions[result],
+              description: (result === 'error' && {
+                workflow_changed: 'PR edits this workflow; result is not trusted',
+                incomplete_file_list: 'Incomplete PR file list; workflow trust cannot be verified',
+              }[process.env.SOURCE_UNTRUSTED_REASON]) || config.descriptions[result],
               target_url: run.html_url,
             });
 

@@ -228,13 +228,14 @@ def main():
                 sha(commit)
             require(value["head"] == value["commits"][-1], "Invalid promotion head")
             pr = github.pull(int(value["pr"]))
+            coordinator.basic(pr)
             require(value["base"] == pr["base"]["ref"] and value["head"] == pr["head"]["sha"], "Manifest differs from PR")
             from .release import public_release
             public_release(github, value)
             hold = store.setting("hold")
             require(hold and hold.get("release_tag") == value["release_tag"] and value["base"] in hold["targets"],
                     "Promotion target is outside the declared release batch")
-            store.set_setting(f'promotion:{pr["number"]}', value, operator)
+            store.activate_promotion(dict(value, pr=pr["number"]), operator)
 
 
 if __name__ == "__main__":

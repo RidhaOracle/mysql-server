@@ -216,6 +216,44 @@ class AtomicTests(unittest.TestCase):
         self.api.pulls[1]["head"]["repo"]["full_name"] = POLICY["repository"]
         self.test_entire_chain_published_with_receipt_and_squash()
 
+    def test_replacement_promotion_excludes_closed_aborted_source_from_batch(self):
+        self.coordinator.policy = dict(POLICY, branches=["lts"])
+        self.api.pulls[1]["head"]["repo"]["full_name"] = POLICY["bot_fork"]
+        self.api.request = lambda *args: {"draft": False, "published_at": "2026-10-01",
+                                         "tag_name": "release-1"}
+        manifest = {"pr": 1, "release_tag": "release-1", "release_id": 1, "base": "lts",
+                    "base_sha": self.repo.base, "head": self.head, "commits": [self.head]}
+        self.store.set_setting("hold", {"release_tag": "release-1", "targets": ["lts"]}, "operator")
+        self.store.activate_promotion(manifest, "operator")
+        self.ci_ok = False
+        self.coordinator.advance(self.op())
+        self.assertEqual(self.op()["state"], "prepared")
+        self.store.save(self.op(), "aborted", "operator-aborted")
+        self.api.pulls[1]["state"] = "closed"
+        replacement = self.repo.commit("replacement.cc", "int replacement;\n")
+        self.repo.git("push", str(self.remote), "HEAD:refs/pull/3/head")
+        self.api.add_pull(3, replacement, "lts", POLICY["bot_fork"])
+        updated = dict(manifest, pr=3, head=replacement, commits=[self.head, replacement])
+        self.store.activate_promotion(updated, "operator")
+        self.assertEqual(self.store.setting("promotion:1"), manifest)
+        self.assertEqual(self.store.active_promotions("release-1"), [updated])
+        with self.assertRaisesRegex(Blocked, "superseded"):
+            self.coordinator.promotion(self.api.pull(1))
+        self.operation = self.store.request(456, self.api.pull(3), "owner")
+        self.ci_ok = True
+        self.coordinator.advance(self.op())
+        self.assertEqual(self.op()["state"], "complete")
+        self.assertEqual(len(self.op()["data"]["steps"]), 1)
+        self.assertEqual(self.op()["data"]["steps"][0]["source_pr"], 3)
+        self.assertEqual(self.api.branch("lts"), self.op()["data"]["steps"][0]["after"])
+
+    def test_superseded_promotion_cannot_resume_prepared_batch(self):
+        manifest = {"pr": 1, "release_tag": "release-1", "base": "lts", "head": self.head}
+        self.store.activate_promotion(manifest, "operator")
+        with self.assertRaisesRegex(Blocked, "Abort unpublished"):
+            self.store.activate_promotion(dict(manifest, pr=3), "operator")
+        self.assertEqual(self.store.active_promotions("release-1"), [manifest])
+
     def test_missing_source_repository_blocks_publication(self):
         self.api.pulls[1]["head"]["repo"] = None
         self.coordinator.advance(self.op())

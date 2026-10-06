@@ -28,6 +28,7 @@ def publish(policy, store, github, manifest):
     require(manifest["base"] in policy["branches"] + policy.get("release_branches", []), "Unconfigured promotion target")
     head, base = sha(manifest["head"]), sha(manifest["base_sha"])
     require(manifest["commits"] and len(set(manifest["commits"])) == len(manifest["commits"]), "Invalid SC list")
+    store.check_promotion_replacement(manifest)
     operation = hashlib.sha256((manifest["release_tag"] + manifest["base"] + head).encode()).hexdigest()
     branch = "promotion/" + operation
     with PublicGraph(policy) as graph:
@@ -64,6 +65,9 @@ def publish(policy, store, github, manifest):
         "head": owner + ":" + branch, "base": manifest["base"],
         "body": "Approved code-only promotion after public release. Independent review and CE validation are required."})
     manifest = dict(manifest, pr=pr["number"])
-    store.set_setting(f'promotion:{pr["number"]}', manifest, str(os.getuid()))
+    require(pr["state"] == "open" and not pr.get("draft") and
+            pr["base"]["ref"] == manifest["base"] and pr["head"]["sha"] == head,
+            "Promotion PR must be open, ready, and match the approved manifest")
+    store.activate_promotion(manifest, str(os.getuid()))
     store.audit(operation, "promotion-pr-created", {"pr": pr["number"], "head": head})
     return pr["number"]

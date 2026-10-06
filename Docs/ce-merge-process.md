@@ -376,6 +376,19 @@ their independently prepared SC tree supersedes lower content. The generated PR
 retains that tree and the lower candidate as an additional parent; review is
 mandatory. No target publishes until all manifests, reviews, and CI are complete.
 
+If validation or a conflict requires rebuilding a promotion, abort any unpublished
+operation for that release first, then run `publish-promotion` with the replacement
+manifest (or `register-promotion` for an existing open replacement PR). Registration
+selects one active manifest per release and target. Previous PR manifests and audit
+events remain recorded, but superseded PRs cannot authorize or enter a new batch.
+Closing a PR alone does not change the selected manifest. Reauthorize the batch
+from its active oldest-target PR after replacement. Uncertain publication must be
+reconciled first, and a completed release cannot be replaced.
+
+For journals created before active-manifest tracking, an unambiguous manifest per
+target remains usable. If a target already has several historical entries, register
+the approved replacement explicitly; the coordinator will not guess which one wins.
+
 Publication manifest fields:
 
 ```json
@@ -421,6 +434,14 @@ external integration points; their success must not be inferred from a PR merge.
 
 
 ## Acceptance before production activation
+
+The ordinary PR CI reporter intentionally withholds trusted status when a PR edits
+the workflow that produced a result. Builds and tests can succeed while their
+reported status says `PR edits this workflow; result is not trusted`. The reporter
+change itself takes effect only after it reaches the trusted default branch.
+Review bootstrap workflow changes and their run logs explicitly; rerunning an
+unchanged PR does not remove this restriction. CE validation remains a separate
+operator-pinned workflow and still requires deployment and configuration.
 
 Local tests exercise real disposable Git repositories plus a simulated GitHub API.
 They do not establish that production GitHub rulesets, reviews, credentials, or

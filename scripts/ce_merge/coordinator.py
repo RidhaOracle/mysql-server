@@ -127,6 +127,8 @@ class Coordinator:
     def promotion(self, pr):
         value = self.store.setting(f'promotion:{pr["number"]}')
         if value:
+            require(value in self.store.active_promotions(value["release_tag"]),
+                    "Promotion manifest has been superseded; use the active replacement PR")
             require(value["head"] == pr["head"]["sha"] and value["base"] == pr["base"]["ref"],
                     "Promotion manifest does not match PR")
             release = self.github.request("GET", "/repos/" + self.policy["repository"] +
@@ -194,7 +196,7 @@ class Coordinator:
             hold = self.store.setting("hold")
             require(hold and hold.get("release_tag") == promotion["release_tag"] and hold.get("targets"),
                     "Release requires a hold declaring every atomic promotion target")
-            manifests = [m for m in self.store.settings("promotion:") if m["release_tag"] == promotion["release_tag"]]
+            manifests = self.store.active_promotions(promotion["release_tag"])
             require(len(manifests) == len(hold["targets"]) and
                     {m["base"] for m in manifests} == set(hold["targets"]),
                     "Register exactly one approved promotion per declared target before integration")
