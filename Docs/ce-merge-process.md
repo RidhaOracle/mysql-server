@@ -394,6 +394,11 @@ per target. Higher development targets need an `ancestry_reason` explaining why
 their independently prepared SC tree supersedes lower content. The generated PR
 retains that tree and the lower candidate as an additional parent; review is
 mandatory. No target publishes until all manifests, reviews, and CI are complete.
+The prepared steps freeze the batch's target set. The coordinator revalidates that
+set against the release hold before advancing, immediately before publication,
+and on retries. Changing hold targets invalidates the prepared batch: abort the
+unpublished operation, register the manifests for the revised target set, and
+authorize a new batch. A hold reason change does not invalidate the batch.
 
 If validation or a conflict requires rebuilding a promotion, abort any unpublished
 operation for that release first, then run `publish-promotion` with the replacement

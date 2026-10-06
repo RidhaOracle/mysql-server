@@ -201,6 +201,14 @@ class Coordinator:
             require(self.github.can_integrate(op["data"]["actor"]), "Integration authorization revoked")
         promotion = self.promotion(pr)
         hold = self.store.setting("hold")
+        if promotion and op and op["data"]["steps"]:
+            # Prepared steps are the durable target snapshot, including for old
+            # journals. Recheck it on advance, before publication, and on retry.
+            steps = op["data"]["steps"]
+            require(hold and hold.get("release_tag") == promotion["release_tag"] and
+                    set(hold.get("targets", [])) == {s["branch"] for s in steps} and
+                    all(s.get("promotion", {}).get("release_tag") == promotion["release_tag"] for s in steps),
+                    "Promotion target set changed; abort unpublished batch and authorize a new batch")
         require(not hold or (promotion and hold.get("release_tag") == promotion["release_tag"]), "CE is on hold")
         if not promotion:
             require(pr["base"]["ref"] in self.policy["branches"], "Release targets require promotion")

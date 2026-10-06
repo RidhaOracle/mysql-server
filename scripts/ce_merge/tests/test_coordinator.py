@@ -11,7 +11,7 @@ import unittest
 from unittest.mock import patch
 from concurrent.futures import ThreadPoolExecutor
 
-from scripts.ce_merge.__main__ import authorize, signed
+from scripts.ce_merge.__main__ import authorize, main, signed
 from scripts.ce_merge.coordinator import Coordinator
 from scripts.ce_merge.git import PublicGraph
 from scripts.ce_merge.github import authorization_identity
@@ -255,6 +255,70 @@ class AtomicTests(unittest.TestCase):
         with self.assertRaisesRegex(Blocked, "Abort unpublished"):
             self.store.activate_promotion(dict(manifest, pr=3), "operator")
         self.assertEqual(self.store.active_promotions("release-1"), [manifest])
+
+    def prepared_promotion(self):
+        self.coordinator.policy = dict(POLICY, branches=["lts"], release_branches=["trunk"])
+        self.api.pulls[1]["head"]["repo"]["full_name"] = POLICY["bot_fork"]
+        self.api.request = lambda *args: {"draft": False, "published_at": "2026-10-01",
+                                         "tag_name": "release-1"}
+        self.store.set_setting("hold", {"release_tag": "release-1", "targets": ["lts"]}, "operator")
+        self.store.activate_promotion({"pr": 1, "release_tag": "release-1", "release_id": 1,
+            "base": "lts", "base_sha": self.repo.base, "head": self.head, "commits": [self.head]}, "operator")
+        self.ci_ok = False
+        self.coordinator.advance(self.op())
+        self.assertEqual(self.op()["state"], "prepared")
+        self.ci_ok = True
+
+    def test_changed_hold_targets_after_preparation_cannot_publish(self):
+        self.prepared_promotion()
+        argv = ["ce-merge", "--state-dir", str(self.store.path), "hold", "--reason", "Additional target",
+                "--release-tag", "release-1", "--target", "lts", "--target", "trunk"]
+        with patch("sys.argv", argv), patch.dict(os.environ), \
+                patch("scripts.ce_merge.__main__.load", return_value=self.coordinator.policy):
+            main()
+        # Reload from disk as a restarted service would; the old batch stays frozen.
+        self.coordinator.store = Journal(self.store.path)
+        self.coordinator.advance(self.op())
+        self.assertEqual(self.op()["state"], "blocked")
+        self.assertIn("Promotion target set changed", self.op()["data"]["reason"])
+        self.assertFalse(self.op()["data"]["intent"])
+        self.unchanged()
+
+    def test_hold_targets_rechecked_after_candidate_validation(self):
+        self.prepared_promotion()
+        def ci(*args, **kwargs):
+            self.store.set_setting("hold", {"release_tag": "release-1", "targets": ["lts", "trunk"]}, "operator")
+            return True, "validated"
+        self.coordinator.ci = ci
+        self.coordinator.advance(self.op())
+        self.assertEqual(self.op()["state"], "blocked")
+        self.assertIn("Promotion target set changed", self.op()["data"]["reason"])
+        self.assertFalse(self.op()["data"]["intent"])
+        self.unchanged()
+
+    def test_retry_rejects_promotion_hold_drift(self):
+        self.prepared_promotion()
+        op = self.op()
+        with self.graph(self.coordinator.policy) as graph:
+            graph.restore_candidates(op["data"]["steps"], self.coordinator.bundle(op))
+            op["data"]["receipt"] = graph.receipt(op["id"], op["data"]["steps"], "owner")
+        op["data"]["intent"] = True
+        self.store.save(op, "uncertain", "test-legacy-intent")
+        # Simulate drift retained by an older service; hold CLI rejects uncertain work.
+        for hold in ({"release_tag": "release-1", "targets": ["lts", "trunk"]},
+                     {"release_tag": "release-1", "targets": []}, None):
+            self.store.set_setting("hold", hold, "test-drift")
+            with self.subTest(hold=hold), self.assertRaisesRegex(Blocked, "Promotion target set changed"):
+                self.coordinator.retry(self.op())
+            self.assertEqual(self.op()["state"], "uncertain")
+            self.unchanged()
+
+    def test_same_promotion_targets_allow_hold_reason_update(self):
+        self.prepared_promotion()
+        self.store.set_setting("hold", {"release_tag": "release-1", "targets": ["lts"],
+                                        "reason": "Updated explanation"}, "operator")
+        self.coordinator.advance(self.op())
+        self.assertEqual(self.op()["state"], "complete")
 
     def test_missing_source_repository_blocks_publication(self):
         self.api.pulls[1]["head"]["repo"] = None
