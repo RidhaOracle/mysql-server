@@ -1,0 +1,19 @@
+{
+  "mode": "shadow",
+  "strategy": "forward",
+  "repository": "RidhaOracle/mysql-server",
+  "bot_fork": "mysql-upmerge-bot/mysql-server",
+  "branches": ["trunk"],
+  "release_branches": [],
+  "maintainers": ["seemasundara", "gopshank", "RidhaOracle"],
+  "app_id": 5197385,
+  "installation_id": 168144361,
+  "fork_installation_id": 0,
+  "release_app_id": 0,
+  "app_slug": "ridhaoracle-ce-upmerge-test",
+  "ci_ref": "trunk",
+  "oca_label": "OCA Verified",
+  "forbidden_paths": ["internal", "internal-sec"],
+  "forbidden_metadata_patterns": [],
+  "poll_seconds": 60
+}

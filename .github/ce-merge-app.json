@@ -1,0 +1,16 @@
+{
+  "name": "MySQL Upmerge Bot",
+  "url": "https://github.com/mysql/mysql-server",
+  "public": false,
+  "default_permissions": {
+    "metadata": "read",
+    "administration": "read",
+    "contents": "write",
+    "workflows": "write",
+    "pull_requests": "write",
+    "checks": "write",
+    "actions": "write",
+    "issues": "write"
+  },
+  "default_events": ["check_run", "pull_request", "pull_request_review", "workflow_run"]
+}

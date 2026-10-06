@@ -9,6 +9,21 @@
 
 ### Why is it needed?
 
+### LTS propagation
+
+<!-- In GitHub's base dropdown, select the OLDEST applicable supported branch.
+     Example: for a fix needed in 8.4 and trunk, base = 8.4 (if configured).
+     The bot opens PRs to carry the fix forward; all targets publish together
+     after every PR is reviewed and tested. Do not open against trunk for backporting.
+
+     Usually leave the fields below commented: propagation defaults to Innovation.
+     To stop CONTENT earlier, uncomment both lines, use an actual configured branch,
+     and explain why newer branches do not need the fix. Reviewed ancestry-only
+     merges still continue through Innovation. The fields do not select the PR base.
+Upmerge-Till: <last-branch-needing-content>
+Upmerge-Reason: <why-newer-branches-do-not-need-the-fix>
+-->
+
 ### How was it tested?
 
 - [ ] Added/updated MTR tests under `mysql-test/`

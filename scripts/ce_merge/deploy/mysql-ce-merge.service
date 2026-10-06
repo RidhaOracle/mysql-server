@@ -1,0 +1,25 @@
+# Install only after completing the rehearsal in Docs/ce-merge-process.md.
+[Unit]
+Description=MySQL CE public merge coordinator
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=mysql-ce-merge
+Group=mysql-ce-merge
+WorkingDirectory=/opt/mysql-ce-merge
+EnvironmentFile=/etc/mysql-ce-merge/credentials
+Environment=CE_GIT_CACHE=/var/lib/mysql-ce-merge/public.git
+ExecStart=/usr/bin/python3 -m scripts.ce_merge --policy /etc/mysql-ce-merge/policy.json --state-dir /var/lib/mysql-ce-merge/journal serve
+Restart=on-failure
+RestartSec=30
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/mysql-ce-merge
+
+[Install]
+WantedBy=multi-user.target

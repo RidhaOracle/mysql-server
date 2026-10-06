@@ -1,0 +1,19 @@
+# Copyright (c) 2026, Oracle and/or its affiliates.
+name: CE Coordinator Tests
+on:
+  pull_request:
+    paths:
+      - 'scripts/ce_merge/**'
+      - '.github/ce-merge-*.json'
+      - '.github/workflows/ce-merge-*.yml'
+permissions: {}
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - run: python3 -W error::ResourceWarning -m unittest discover -s scripts/ce_merge/tests -v

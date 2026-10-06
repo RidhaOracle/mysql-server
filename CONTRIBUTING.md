@@ -65,7 +65,11 @@ scripts/ci/mtr.sh --suite=innodb     # pass MTR args straight through
 
 ## 6. Open the pull request
 
-Push your branch and open a PR against `trunk`. The
+Push your branch to a personal fork or, if you have push access, to this repository.
+Both use the same contribution checks. Select the oldest applicable supported
+branch as the PR **base**. The prototype currently configures only `trunk`; at
+cutover the published CE branch policy lists any supported LTS targets. A fix
+needed in an LTS and Innovation starts at that LTS. The
 [pull request template](.github/PULL_REQUEST_TEMPLATE.md) prompts for the few
 things reviewers always need. On open, CI automatically:
 
@@ -75,6 +79,30 @@ things reviewers always need. On open, CI automatically:
 - auto-labels the affected area and assigns a reviewer.
 
 CI reports completion or actionable failures after the build and MTR run finish.
+
+## CE merge-process rollout
+
+The CE merge coordinator is introduced in shadow mode. After a repository's
+administrator completes its cutover, an authorized maintainer requests integration
+using the **Integrate** check action. The GitHub App prepares the original squash
+and forward upmerge PRs after OCA verification and public CI. All affected CE branches publish together only
+after every candidate has passed review and CI. Approval must come from someone with the repository Write, Maintain, or Admin role,
+on the current PR head. CODEOWNERS membership is not required. Unresolved review conversations
+and outstanding change requests from reviewers with those roles still block integration.
+The `Integrate` label is informational.
+
+For LTS fixes, target the oldest applicable supported branch. `Upmerge-Till:`
+defaults to the configured Innovation branch. An earlier content stop also requires
+`Upmerge-Reason:` and review; the bot preserves ancestry through the newer branches.
+Generated upmerge PRs require the same reviewer roles and CI. The original PR
+remains unintegrated until the whole batch is ready. `CE / operation` reports
+progress and the atomic integration receipt; the squash-integrated original PR
+is then closed. There is no automatic backport from `trunk`. Undisclosed security
+code and tests must remain private, including in forks and PR descriptions.
+
+See the [CE merge process and operator runbook](Docs/ce-merge-process.md) for
+configuration, diagrams, release handling, and recovery. Until cutover is complete,
+the repository's existing integration process remains in effect.
 
 ## What to expect from us (triage SLAs)
 
