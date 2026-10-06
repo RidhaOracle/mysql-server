@@ -1,6 +1,7 @@
 # Copyright (c) 2026, Oracle and/or its affiliates.
 """Inspect public Git objects without checking out or executing contributor code."""
 import base64
+import hashlib
 import json
 import logging
 import os
@@ -94,7 +95,16 @@ class PublicGraph:
         return stdout.decode("utf-8", errors="strict").strip()
 
     def fetch(self, refs):
-        self.run("fetch", "--no-tags", self.remote, *refs)
+        # FETCH_HEAD alone is overwritten on the next fetch and is not a durable
+        # negotiation tip. Keep public source tips so Git can advertise cached
+        # ancestry after restart instead of downloading the same history again.
+        refspecs = [f'+{ref}:{self.cache_ref(ref)}' for ref in dict.fromkeys(refs)]
+        require(refspecs, "Public fetch requires at least one source ref")
+        self.run("fetch", "--atomic", "--no-tags", self.remote, *refspecs)
+
+    @staticmethod
+    def cache_ref(source):
+        return "refs/ce-cache/" + hashlib.sha256(source.encode()).hexdigest()
 
     def ancestor(self, lower, higher):
         try:

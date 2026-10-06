@@ -185,6 +185,12 @@ service has no third-party dependencies. Never run contributor code on this host
    a timeout or interruption terminates Git and its helper processes. Only
    completed fetches provide reusable packs; an interrupted initial download
    may need to restart even when a cache is configured.
+   Successful public fetches retain their source tips under local `refs/ce-cache/`
+   references so subsequent fetches can negotiate from cached history. These
+   references are never included in the explicit publication refspecs. An older
+   cache containing objects but no references may need a one-time reference to a
+   known public commit already in that cache, or one successful fetch with this
+   version, before incremental downloads take effect. Do not delete the cache.
 6. Generate ruleset payloads and apply them as an administrator in rehearsal.
    Provision branches before enabling lifecycle protection. Validate existing
    bypasses and native checks; create the advisory `Integrate` label. Shadow mode
