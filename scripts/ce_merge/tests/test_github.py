@@ -63,7 +63,7 @@ class ReviewTests(unittest.TestCase):
         # Synthetic evidence: GitHub itself prevents author APPROVE reviews.
         self.reviews[0]["user"]["login"] = self.pr["user"]["login"]
         self.api.reviewed(self.pr)
-        self.role = "write"
+        self.role = "read"
         with self.assertRaises(Blocked):
             self.api.reviewed(self.pr)
 
@@ -76,8 +76,14 @@ class ReviewTests(unittest.TestCase):
         self.role, self.permission = "admin", "admin"
         self.api.reviewed(self.pr)
 
-    def test_non_maintainer_or_missing_role_cannot_approve(self):
-        for role in ("write", "triage", "read", None):
+    def test_write_collaborator_review_passes_without_integration_permission(self):
+        self.role = "write"
+        self.api.policy["maintainers"] = ["someone-else"]
+        self.api.reviewed(self.pr)
+        self.assertFalse(self.api.can_integrate("owner"))
+
+    def test_read_only_or_missing_role_cannot_approve(self):
+        for role in ("triage", "read", "none", None):
             self.role = role
             with self.subTest(role=role), self.assertRaises(Blocked):
                 self.api.reviewed(self.pr)
@@ -88,12 +94,18 @@ class ReviewTests(unittest.TestCase):
 
     def test_current_role_is_rechecked(self):
         self.api.reviewed(self.pr)
-        self.role = "write"
+        self.role = "read"
         with self.assertRaises(Blocked):
             self.api.reviewed(self.pr)
 
     def test_another_maintainer_change_request_blocks_approval(self):
         self.reviews.append(dict(self.reviews[0], user={"login": "second-maintainer"}, state="CHANGES_REQUESTED"))
+        with self.assertRaisesRegex(Blocked, "requested changes"):
+            self.api.reviewed(self.pr)
+
+    def test_write_collaborator_change_request_blocks_approval(self):
+        self.role = "write"
+        self.reviews.append(dict(self.reviews[0], user={"login": "collaborator"}, state="CHANGES_REQUESTED"))
         with self.assertRaisesRegex(Blocked, "requested changes"):
             self.api.reviewed(self.pr)
 

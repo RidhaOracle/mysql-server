@@ -503,7 +503,7 @@ class Coordinator:
             step = data["steps"][data["conflict_index"]]
             summary += (f'\nResolve `{step["branch"]}` by merging lower candidate `{step["input_head"]}` '
                         f'with target `{step["base_sha"]}` in a personal fork. Open a resolution PR against '
-                        f'`{step["branch"]}`. After OCA and maintainer review, the merge captain runs '
+                        f'`{step["branch"]}`. After OCA and approval from a reviewer with Write, Maintain, or Admin access, the merge captain runs '
                         f'`repair-upmerge {op["id"]} --pr NUMBER`. Every candidate still needs CI before publication.')
         fingerprint = hashlib.sha256(summary.encode()).hexdigest()
         if self.store.setting(key) == fingerprint:

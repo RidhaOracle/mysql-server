@@ -86,15 +86,15 @@ The CE merge coordinator is introduced in shadow mode. After a repository's
 administrator completes its cutover, an authorized maintainer requests integration
 using the **Integrate** check action. The GitHub App prepares the original squash
 and forward upmerge PRs after OCA verification and public CI. All affected CE branches publish together only
-after every candidate has passed review and CI. Approval must come from someone with the repository Maintain or Admin role,
+after every candidate has passed review and CI. Approval must come from someone with the repository Write, Maintain, or Admin role,
 on the current PR head. CODEOWNERS membership is not required. Unresolved review conversations
-and outstanding maintainer change requests still block integration.
+and outstanding change requests from reviewers with those roles still block integration.
 The `Integrate` label is informational.
 
 For LTS fixes, target the oldest applicable supported branch. `Upmerge-Till:`
 defaults to the configured Innovation branch. An earlier content stop also requires
 `Upmerge-Reason:` and review; the bot preserves ancestry through the newer branches.
-Generated upmerge PRs still need maintainer review and CI. The original PR
+Generated upmerge PRs require the same reviewer roles and CI. The original PR
 remains unintegrated until the whole batch is ready. `CE / operation` reports
 progress and the atomic integration receipt; the squash-integrated original PR
 is then closed. There is no automatic backport from `trunk`. Undisclosed security
