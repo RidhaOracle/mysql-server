@@ -21,7 +21,7 @@ not first merge into `trunk`. These version names are illustrative only.
 2. Trusted OCA verification, public CI, resolved conversations, and
    current-head approval from a reviewer with the repository Write, Maintain, or Admin
    role (including collaborators on personal repositories) make it eligible. CODEOWNERS is not an integration gate.
-3. An authorized maintainer clicks **Integrate** on the App's `CE / policy` check.
+3. An authorized maintainer clicks **Integrate** on the App's `Merge check` check.
    Authorization binds the PR head, target, and body. The label is advisory.
 4. The App snapshots the chain and prepares the original squash commit and every
    forward merge commit. Nothing has merged into any CE target yet.
@@ -93,7 +93,7 @@ bot-fork staging, or separate SEC and EE repositories.
 
 A single service host uses a process-scoped `flock` to exclude concurrent workers.
 There is no durable merge-lock owner or timeout-based unlock. Local JSON manifests
-retain the authorized revision, prepared SHAs, fork PRs, CI dispatch identity, and
+retain the authorized revision, prepared SHAs, fork PRs, CI source revision, and
 publication intent; Git bundles preserve prepared objects across restarts. These
 are fsynced on persistent local disk, with append-only JSONL audit events. They
 are needed to resume the exact approved batch, not to simulate multi-branch
@@ -109,7 +109,7 @@ are not tamperproof against the service/filesystem administrator.
 | CE updates | Only the merge App may update configured CE target branch refs |
 | PR review | Required PR, one Write/Maintain/Admin approval enforced by the App, stale-review dismissal, last-push approval, resolved threads |
 | App exception | The App bypasses the native PR-only update rule solely to publish the reviewed batch via Git; its code enforces the PR review checks |
-| Required checks | `CE / public-ci` and `CE / policy`, bound to this App, with **no bypass** |
+| Required checks | `Merge check`, bound to this App, with **no bypass** |
 | History/lifecycle | No force updates, deletion, or routine creation of configured CE target branches; no linear-history rule |
 | Tags | Immutable; only the merge App creates receipts, separate release App creates release tags |
 
@@ -165,11 +165,10 @@ service has no third-party dependencies. Never run contributor code on this host
    Collaborators on personal repositories qualify with Write access. Approval does not require membership
    in the configured `maintainers` allowlist, which controls integration requests
    and trusted OCA verification. CODEOWNERS may still be used for review routing.
-4. Publish trusted automation and set `ci_ref` to a protected branch or tag, such
-   as `trunk`. The App resolves it to a commit and records that revision before
-   each dispatch; there is no manually maintained `ci_revision` setting. Legacy
-   copies of that setting are ignored. The workflow must exist on the default
-   branch for dispatch. Verify the build/test scripts against every supported branch.
+4. Install the existing PR Build, MTR, and Format Check workflows on each
+   configured branch. The coordinator reads their results; it never dispatches
+   CI. Verify the build/test scripts against every supported branch. Legacy
+   `ci_ref` and `ci_revision` settings are ignored and can be removed.
 5. Supply `CE_APP_PRIVATE_KEY` (PEM path) and `CE_WEBHOOK_SECRET` (32+ random
    characters) outside the checkout. The CLI defaults to a persistent public Git
    cache at `<state-dir>/public.git` and logs its location when starting `serve`
@@ -194,7 +193,7 @@ service has no third-party dependencies. Never run contributor code on this host
 6. Generate ruleset payloads and apply them as an administrator in rehearsal.
    Provision branches before enabling lifecycle protection. Validate existing
    bypasses and native checks; create the advisory `Integrate` label. Shadow mode
-   reports checks/dispatches CI but never authorizes, stages, or publishes merges.
+   reads existing PR CI and reports readiness but never authorizes, stages, or publishes merges.
 7. Complete the acceptance rehearsal below. Drain/reconcile Gerrit CE work,
    disable the old public import/export writer, activate the reviewed settings,
    set `mode: active`, and set repository variable `CE_MERGE_MODE=active` to retire
@@ -215,29 +214,39 @@ identity checks protect authorization. Duplicate deliveries reuse the operation.
 
 ### CI contract
 
-`CE Merge Validation` runs the exact staged commit on disposable hosted runners,
-using trusted scripts from the automatically resolved workflow revision. Candidate checkout has
-read-only credentials that are not persisted, no repository secrets, and no shared
-cache. Every job verifies the candidate SHA and its complete parent list before
-running code. The coordinator accepts only its App's workflow dispatch at the
-recorded SHA, with all seven required jobs and their required steps successful:
-GCC/Clang builds, four MTR shards, unit tests, and formatting.
+The App publishes one **Merge check**, which reports readiness and offers
+**Integrate** in active mode. It reads the existing PR Build, MTR, and applicable
+Format Check workflows; there is no CE Merge Validation workflow or App-triggered
+CI dispatch. Rerun failed jobs through GitHub Actions when needed.
 
-Only `ci_ref` is configured. The recorded revision also appears in the run name
-and the `workflow_revision` dispatch input. Every job verifies that the workflow
-actually runs at that revision before executing candidate code. If the ref moves,
-the next poll records its new SHA and dispatches a fresh request, without waiting
-for the old revision's dispatch throttle. A run caught by a ref movement cannot
-satisfy the new request. Normal PR/base/candidate changes also require fresh CI.
-Request records survive restarts and lost dispatch responses. `rerun-ci` accepts
-only recorded App runs at the current resolved ref; after a ref change, let normal
-polling dispatch the replacement run. Deploy this workflow update together with
-the coordinator because its dispatch inputs and run-name format have changed.
+Acceptance requires a successful current PR run from each required repository
+workflow and every required job/step, including both compiler builds, all four
+MTR shards, and services unit tests. Format Check is required for C/C++ and
+`.clang-format` changes. The App does not infer success from labels or accept its
+own summary as CI evidence. Changed CI workflow files require a reviewed bootstrap
+update before their results can be trusted.
+
+Each PR workflow records `pr:<number>:<base>:<head>:<merge>` in its run title.
+Existing older runs can be reused only when GitHub supplies a complete matching
+PR/base/head association and their merge-verification step passed. Empty fork
+metadata or stale evidence blocks integration; it never causes an App dispatch.
+Successful sibling jobs from earlier attempts of the same run can be reused when
+failed jobs are rerun. Newer pending/failed runs supersede old successes.
+
+For prepared squash/upmerge commits, the App checks the PR merge candidate's
+parents, the prepared commit's parents, and equality of their source trees before
+reusing that PR's results. The published SHA can differ because of squash or
+merge metadata; the validated source tree and target base must match. Generated
+upmerge PRs trigger the ordinary PR workflows, with their results and reviews
+checked again before atomic publication. This removes duplicate CI jobs while
+retaining candidate validation.
 
 Only `Docs/**`, `README`, `README.md`, and `CONTRIBUTING.md` qualify for an explicit
-documentation-only build exemption. Missing, skipped, foreign, or stale runs do
-not pass. Null merges still require review and CI. Trusted CI has no automatic
-quarantine; approve/rehearse any branch-specific test policy before cutover.
+documentation-only exemption. Other Markdown files are covered by PR CI. Missing,
+skipped, foreign, or stale evidence never passes. Active deployments must replace
+the two legacy required check contexts with **Merge check**, still bound to the
+App; the deployment verifier blocks until the rulesets match. Historical checks
+are left intact, but only the new check name can authorize integration.
 
 ## Conflict resolution and recovery
 
@@ -284,7 +293,6 @@ Use deployed `--policy` and `--state-dir` arguments before each subcommand:
 ```sh
 python3 -m scripts.ce_merge status
 python3 -m scripts.ce_merge audit
-python3 -m scripts.ce_merge rerun-ci RUN_ID
 python3 -m scripts.ce_merge resume OPERATION_ID
 python3 -m scripts.ce_merge abort OPERATION_ID
 python3 -m scripts.ce_merge reconcile OPERATION_ID
@@ -526,35 +534,20 @@ reconcile any publication intent. Preserve all already-published history.
 
 ## Temporary single-test MTR rehearsal
 
-The trusted `CE Merge Validation` workflow accepts optional input `mtr_test`,
-for example `main.1st`. Empty (the default) runs the existing full suite lists.
-To have the App request the shortcut, add `"ci_mtr_test": "main.1st"` to the
-separate rehearsal deployment policy and restart that coordinator. Do this only
-after this workflow version is available on its trusted `ci_ref`. The checked-in
-policy does not enable the shortcut, and existing running workflows are unchanged.
+Set repository Actions variable `CE_MTR_TEST=main.1st` to have the existing MTR
+workflow execute that real test in each shard. Set `"ci_mtr_test": "main.1st"`
+in the local App policy to explicitly accept that limited coverage, then restart
+the coordinator. The variable controls execution; the policy controls acceptance.
+Neither launches an additional workflow. Builds and unit tests still run.
 
-This executes the named test for real in each of the four MTR jobs. It accepts
-one exact `main.test_name`, verifies that file exists in the candidate before
-building, and propagates MTR failure. Compilation, both compiler builds, unit
-tests, candidate verification, and reviews still run. It reduces MTR test time,
-not build time. For the ordinary `MTR` pull-request workflow, set the repository Actions variable
-`CE_MTR_TEST=main.1st` as well. This workflow cannot read a local App policy.
-Its trusted checkout must already include `scripts/ce_merge/mtr_rehearsal.py`.
-New runs identify rehearsal in their titles and selected-test steps. The reporter
-publishes a separate `MTR rehearsal` status, clears full-suite labels, and leaves
-`MTR` pending with an explicit limited-coverage message. It never reports full
-MTR success from a rehearsal or a mixture of full and rehearsal shards.
-Existing runs retain their original workflow; cancel obsolete full-suite runs
-and trigger a fresh PR event after the workflow change reaches its branch.
+The selected test must exist in the candidate. Rehearsal failures remain failures.
+`Merge check` labels limited results as REHEARSAL. The regular CI reporter uses a
+separate `MTR rehearsal` status, leaves full `MTR` coverage pending, and clears
+full-suite labels. Mixed test selections or full/rehearsal shards cannot pass.
+The helper is taken from the trusted base checkout. Existing running workflows
+keep their old behavior; updating the policy cannot alter a running job.
 
-Run titles include `:mtr=main.1st`; MTR job summaries and CE check summaries mark
-these results as REHEARSAL. The selected test is part of the durable CI request
-identity: changing or removing it cannot reuse single-test results as full-suite
-evidence. Manual dispatches still do not count as App-authorized CI.
-
-After testing, delete the repository variable `CE_MTR_TEST`, remove `ci_mtr_test`
-from the rehearsal policy, and restart the
-coordinator, then run full validation for the candidate. Abort/rebuild any
-unpublished prepared batch before changing deployment policy; reconcile uncertain
-publication first. Revert the dedicated single-test-input PR to remove the
-shortcut entirely. Rehearsal results are not release qualification.
+After rehearsal, delete repository variable `CE_MTR_TEST`, remove `ci_mtr_test`
+from the local policy, restart, and obtain fresh full-suite PR CI. Reconcile any
+uncertain publication and abort/rebuild unpublished prepared batches before
+changing deployment policy. Rehearsal results do not qualify a release.

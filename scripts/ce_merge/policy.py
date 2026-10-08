@@ -22,7 +22,8 @@ def sha(value):
 
 def load(path):
     policy = json.loads(Path(path).read_text())
-    policy.pop("ci_revision", None)  # Old deployment copies need no manual SHA updates.
+    policy.pop("ci_revision", None)  # Ignore obsolete dispatch configuration.
+    policy.pop("ci_ref", None)
     require(policy["mode"] in ("shadow", "active"), "Invalid coordinator mode")
     require(policy.get("strategy") == "forward", "Only the forward integration strategy is supported")
     for key in ("repository", "bot_fork"):
@@ -38,10 +39,6 @@ def load(path):
     require(not set(branches) & set(policy.get("release_branches", [])),
             "Release and development branches overlap")
     require(policy["forbidden_paths"] and policy["maintainers"], "Missing merge policy")
-    ref = policy.get("ci_ref")
-    require(isinstance(ref, str) and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_./-]*", ref) and
-            ".." not in ref and "//" not in ref and not ref.endswith(("/", ".", ".lock")),
-            "Configure a trusted CI branch or tag in ci_ref")
     rehearsal_test(policy)
     if policy["mode"] == "active":
         require(all(policy[k] > 0 for k in ("app_id", "installation_id", "fork_installation_id", "release_app_id")),
@@ -123,7 +120,7 @@ def rulesets(policy):
             {"type": "required_status_checks", "parameters": {
                 "strict_required_status_checks_policy": False,
                 "required_status_checks": [{"context": name, "integration_id": policy["app_id"]}
-                                           for name in ("CE / public-ci", "CE / policy")]}},
+                                           for name in ("Merge check",)]}},
             {"type": "non_fast_forward"}, {"type": "deletion"}]),
         rule("CE branch lifecycle", [{"type": "creation"}, {"type": "deletion"},
                                      {"type": "non_fast_forward"}]),

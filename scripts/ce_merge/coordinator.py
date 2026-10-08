@@ -2,8 +2,8 @@
 """Single-writer public integration state machine."""
 import hashlib
 import json
-import time
 
+from .ci import existing_pr_ci
 from .git import MergeConflict, PublicGraph
 from .policy import Blocked, check_content, documentation_only, matches, require, rulesets, sha, upmerge_till, rehearsal_test
 from .release import validate_source
@@ -71,88 +71,30 @@ class Coordinator:
         check_content(paths, "", self.policy)
         return merge, paths, commits
 
-    def ci_request_key(self, identity):
-        return "ci-request:" + hashlib.sha256(identity.encode()).hexdigest()
-
-    def matches_ci_run(self, run, request):
-        return (run.get("display_title") == request["identity"] and
-                run.get("head_sha") == request["revision"] and run.get("event") == "workflow_dispatch" and
-                run.get("path") == ".github/workflows/ce-merge-validation.yml" and
-                run.get("actor", {}).get("login") == self.policy["app_slug"] + "[bot]" and
-                run.get("triggering_actor", run.get("actor", {})).get("login") == self.policy["app_slug"] + "[bot]")
-
-    def rerun_ci(self, run_id, operator):
-        run = self.github.repo(f'/actions/runs/{run_id}')
-        request = self.store.setting(self.ci_request_key(run.get("display_title", "")))
-        require(request and request["ref"] == self.policy["ci_ref"] and
-                request["revision"] == sha(self.github.revision(self.policy["ci_ref"])) and
-                request.get("mtr_test", "") == rehearsal_test(self.policy) and
-                self.matches_ci_run(run, request) and run["status"] == "completed",
-                "Only recorded, completed coordinator CI at the current trusted ref can be rerun")
-        self.github.repo(f'/actions/runs/{run_id}/rerun', "POST", {})
-        self.store.audit(None, "ci-rerun", {"run": run_id, "revision": request["revision"], "operator": operator})
-
-    def ci(self, pr, merge, paths, parents=None, staged=False):
+    def ci(self, pr, merge, paths, parents=None, staged=False, graph=None):
         if documentation_only(paths):
             return True, "Builds not applicable: documentation-only allowlist"
-        test = rehearsal_test(self.policy)
-        prefix = f"REHEARSAL ({test} only per MTR shard): " if test else ""
-        revision = sha(self.github.revision(self.policy["ci_ref"]))
-        key = f'ce:{pr["number"]}:{pr["base"]["sha"]}:{pr["head"]["sha"]}:{merge}:{revision}'
-        if test:
-            key += ":mtr=" + test
-        request_key = self.ci_request_key(key)
-        request = self.store.setting(request_key)
-        recorded = request and request["ref"] == self.policy["ci_ref"] and request["revision"] == revision
-        workflow = "ce-merge-validation.yml"
-        runs = self.github.pages(f"/actions/workflows/{workflow}/runs?event=workflow_dispatch&head_sha=" +
-                                 revision, "workflow_runs") if recorded else []
-        matching = [r for r in runs if self.matches_ci_run(r, request)]
-        if matching:
-            run = max(matching, key=lambda r: (r["id"], r["run_attempt"]))
-            if run["status"] != "completed":
-                return False, prefix + "Public CI is running"
-            if run["conclusion"] != "success":
-                raise Blocked(prefix + "Public CI failed; fix the PR or rerun through the coordinator")
-            jobs = self.github.pages(f'/actions/runs/{run["id"]}/attempts/{run["run_attempt"]}/jobs', "jobs")
-            expected = {"build (clang)", "build (gcc)", "mtr (replication)", "mtr (storage)",
-                        "mtr (core)", "mtr (services)", "format"}
-            require({j["name"] for j in jobs} == expected and
-                    all(j["conclusion"] == "success" for j in jobs), "Incomplete public CI jobs")
-            for job in jobs:
-                required = ["Verify candidate", "Build"] if job["name"].startswith("build") else (
-                    ["Verify candidate", "Verify MTR suites", "Build", "Run MTR"] if job["name"].startswith("mtr") else
-                    ["Verify candidate", "Check formatting"])
-                if job["name"] == "mtr (services)":
-                    required.append("Run unit tests")
-                steps = {s["name"]: s["conclusion"] for s in job["steps"]}
-                require(all(steps.get(name) == "success" for name in required), "Required CI step did not pass")
-            return True, prefix + "Public CI passed for the current base, head, and merge candidate"
-        if not recorded or time.time() - request["sent_at"] > 300:
-            # Persist the expected revision before the network write; a lost response
-            # can be reconciled with the run identity after a process restart.
-            self.store.set_setting(request_key, {"identity": key, "ref": self.policy["ci_ref"],
-                                                "revision": revision, "mtr_test": test, "sent_at": time.time()}, "coordinator")
-            self.github.repo(f"/actions/workflows/{workflow}/dispatches", "POST", {
-                "ref": self.policy["ci_ref"], "inputs": {
-                    "pr_number": str(pr["number"]), "base_sha": pr["base"]["sha"],
-                    "head_sha": pr["head"]["sha"], "merge_sha": merge,
-                    "workflow_revision": revision,
-                    **({"mtr_test": test} if test else {}),
-                    "parents_json": json.dumps(parents or [pr["base"]["sha"], pr["head"]["sha"]]),
-                    "candidate_repository": self.policy["bot_fork" if staged else "repository"]}})
-        return False, prefix + "Waiting for trusted public CI"
+        tested = sha(pr.get("merge_commit_sha"))
+        if staged:
+            require(graph is not None, "Prepared candidate validation needs its Git graph")
+            graph.fetch([f'refs/pull/{pr["number"]}/merge'])
+            require(graph.parents(tested) == [pr["base"]["sha"], pr["head"]["sha"]],
+                    "PR CI candidate is stale; update the PR before integrating")
+            require(graph.parents(merge) == parents and graph.tree(merge) == graph.tree(tested),
+                    "Prepared candidate differs from the PR's tested source tree")
+        else:
+            require(tested == merge, "PR CI candidate changed")
+        return existing_pr_ci(self.github, self.policy, pr, tested, paths)
 
     def publish(self, pr, ci_ok, summary, eligible=False):
         key = f'published:{pr["number"]}'
-        fingerprint = [self.policy["mode"], pr["head"]["sha"], pr["base"]["sha"], pr.get("body"),
+        fingerprint = ["Merge check", self.policy["mode"], pr["head"]["sha"], pr["base"]["sha"], pr.get("body"),
                        ci_ok, summary, bool(eligible), rehearsal_test(self.policy)]
         if self.store.setting(key) == fingerprint:
             return
         if self.policy["mode"] == "active":
             self.github.advisory_label(pr, eligible)
-        self.github.check(pr, "CE / public-ci", "success" if ci_ok else "failure", summary)
-        check_id = self.github.check(pr, "CE / policy", "success" if eligible else "failure",
+        check_id = self.github.check(pr, "Merge check", "success" if eligible else "failure",
                                      ("Ready for maintainer authorization" +
                                       (" — REHEARSAL: " + rehearsal_test(self.policy) + " only per MTR shard"
                                        if rehearsal_test(self.policy) else "")) if eligible else summary,
@@ -186,7 +128,7 @@ class Coordinator:
                 merge, paths, commits = self.evidence(pr, graph)
                 if promotion:
                     self.check_promotion(graph, pr, promotion, commits)
-                ok, summary = self.ci(pr, merge, paths)
+                ok, summary = self.ci(pr, merge, paths, graph=graph)
             hold = self.store.setting("hold")
             permitted = not hold or (promotion and hold.get("release_tag") == promotion["release_tag"])
             self.publish(pr, ok, summary, ok and permitted)
@@ -420,20 +362,18 @@ class Coordinator:
                     pr = self.github.pull(step["pr"])
                     paths, _ = graph.inspect(step["base_sha"], step["after"])
                     try:
-                        ok, message = self.ci(pr, step["after"], paths, parents=step["parents"], staged=True)
+                        ok, message = self.ci(pr, step["after"], paths, parents=step["parents"], staged=True, graph=graph)
                     except Blocked as error:
                         ok, message = False, str(error)
-                    self.github.check(pr, "CE / public-ci", "success" if ok else "failure", message,
+                    try:
+                        self.verify_step(step, graph)
+                    except Blocked as error:
+                        ok, message = False, str(error)
+                    self.github.check(pr, "Merge check", "success" if ok else "failure",
+                                      "Prepared batch; publication awaits every target" if ok else message,
                                       candidate=step["after"])
                     if not ok:
                         waiting.append(message)
-                    try:
-                        self.verify_step(step, graph)
-                        self.github.check(pr, "CE / policy", "success", "Prepared batch; publication awaits every target",
-                                          candidate=step["after"])
-                    except Blocked as error:
-                        self.github.check(pr, "CE / policy", "failure", str(error), candidate=step["after"])
-                        waiting.append(str(error))
                 if waiting:
                     data["reason"] = "; ".join(sorted(set(waiting)))
                     self.store.save(op, "prepared", "waiting-for-batch-validation")
@@ -445,7 +385,7 @@ class Coordinator:
                 for step in data["steps"]:
                     pr = self.verify_step(step, graph)
                     paths, _ = graph.inspect(step["base_sha"], step["after"])
-                    require(self.ci(pr, step["after"], paths, parents=step["parents"], staged=True)[0],
+                    require(self.ci(pr, step["after"], paths, parents=step["parents"], staged=True, graph=graph)[0],
                             "Candidate CI changed before publication")
                 data["receipt"] = graph.receipt(op["id"], data["steps"], data["actor"])
                 data["intent"] = True
@@ -490,7 +430,7 @@ class Coordinator:
             for step in op["data"]["steps"]:
                 pr = self.verify_step(step, graph)
                 paths, _ = graph.inspect(step["base_sha"], step["after"])
-                require(self.ci(pr, step["after"], paths, parents=step["parents"], staged=True)[0],
+                require(self.ci(pr, step["after"], paths, parents=step["parents"], staged=True, graph=graph)[0],
                         "Candidate CI is pending")
             graph.atomic_publish(op["data"]["steps"], op["data"]["receipt"], token=self.github.token())
         self.reconcile(op)

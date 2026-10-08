@@ -1,5 +1,6 @@
 # Copyright (c) 2026, Oracle and/or its affiliates.
 name: Format Check
+run-name: "pr:${{ github.event.pull_request.number }}:${{ github.event.pull_request.base.sha }}:${{ github.event.pull_request.head.sha }}:${{ github.sha }}"
 on:
   pull_request:
     paths:

@@ -20,8 +20,7 @@ class SuiteTests(unittest.TestCase):
             self.assertEqual(len(values), 4)
             return values
 
-        configured = suites("ce-merge-validation.yml")
-        self.assertEqual(configured, suites("mtr.yml"))
+        configured = suites("mtr.yml")
         for value in configured:
             with self.subTest(suites=value):
                 verify_suites(ROOT, value)

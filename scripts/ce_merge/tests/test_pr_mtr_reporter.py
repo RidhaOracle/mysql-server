@@ -20,6 +20,7 @@ const run = {id: 90, run_number: 9, run_attempt: 1, workflow_id: 5, name: 'MTR',
   path: '.github/workflows/mtr.yml', head_sha: sha, head_branch: 'feature',
   head_repository: repo, repository: repo, status: 'completed', event: 'pull_request',
   conclusion: input.failed ? 'failure' : 'success', html_url: 'https://example.test/run/90'};
+if (input.displayName) run.name = input.displayName;
 const pull = {number: 1, state: 'open', base: {ref: 'trunk', repo},
   head: {ref: 'feature', sha, repo}};
 const jobs = ['replication', 'storage', 'core', 'services'].map((shard, i) => {
@@ -72,6 +73,11 @@ class MTRReporterTests(unittest.TestCase):
             dict(scripts=scripts, selections=selections, **extra)), text=True, capture_output=True)
         self.assertEqual(result.returncode, 0, result.stderr)
         return json.loads(result.stdout)
+
+    def test_display_title_does_not_change_workflow_identity(self):
+        result = self.report([''] * 4, displayName='pr:1:base:head:merge')
+        self.assertEqual(result['statuses'][0]['state'], 'success')
+        self.assertEqual(result['statuses'][0]['context'], 'MTR')
 
     def test_full_suite_keeps_normal_success_and_label(self):
         result = self.report([''] * 4)
