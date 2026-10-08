@@ -42,10 +42,19 @@ def load(path):
     require(isinstance(ref, str) and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_./-]*", ref) and
             ".." not in ref and "//" not in ref and not ref.endswith(("/", ".", ".lock")),
             "Configure a trusted CI branch or tag in ci_ref")
+    rehearsal_test(policy)
     if policy["mode"] == "active":
         require(all(policy[k] > 0 for k in ("app_id", "installation_id", "fork_installation_id", "release_app_id")),
                 "Configure the GitHub App before activation")
     return policy
+
+
+def rehearsal_test(policy):
+    """An explicit deployment-only shortcut; an empty value keeps full MTR."""
+    value = policy.get("ci_mtr_test", "")
+    require(isinstance(value, str) and (not value or re.fullmatch(r"main\.[A-Za-z0-9_-]+", value)),
+            "ci_mtr_test must be empty or one main.test_name for rehearsal")
+    return value
 
 
 def matches(expected, actual):

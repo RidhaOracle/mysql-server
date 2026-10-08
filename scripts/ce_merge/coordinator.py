@@ -5,7 +5,7 @@ import json
 import time
 
 from .git import MergeConflict, PublicGraph
-from .policy import Blocked, check_content, documentation_only, matches, require, rulesets, sha, upmerge_till
+from .policy import Blocked, check_content, documentation_only, matches, require, rulesets, sha, upmerge_till, rehearsal_test
 from .release import validate_source
 
 
@@ -86,6 +86,7 @@ class Coordinator:
         request = self.store.setting(self.ci_request_key(run.get("display_title", "")))
         require(request and request["ref"] == self.policy["ci_ref"] and
                 request["revision"] == sha(self.github.revision(self.policy["ci_ref"])) and
+                request.get("mtr_test", "") == rehearsal_test(self.policy) and
                 self.matches_ci_run(run, request) and run["status"] == "completed",
                 "Only recorded, completed coordinator CI at the current trusted ref can be rerun")
         self.github.repo(f'/actions/runs/{run_id}/rerun', "POST", {})
@@ -94,8 +95,12 @@ class Coordinator:
     def ci(self, pr, merge, paths, parents=None, staged=False):
         if documentation_only(paths):
             return True, "Builds not applicable: documentation-only allowlist"
+        test = rehearsal_test(self.policy)
+        prefix = f"REHEARSAL ({test} only per MTR shard): " if test else ""
         revision = sha(self.github.revision(self.policy["ci_ref"]))
         key = f'ce:{pr["number"]}:{pr["base"]["sha"]}:{pr["head"]["sha"]}:{merge}:{revision}'
+        if test:
+            key += ":mtr=" + test
         request_key = self.ci_request_key(key)
         request = self.store.setting(request_key)
         recorded = request and request["ref"] == self.policy["ci_ref"] and request["revision"] == revision
@@ -106,9 +111,9 @@ class Coordinator:
         if matching:
             run = max(matching, key=lambda r: (r["id"], r["run_attempt"]))
             if run["status"] != "completed":
-                return False, "Public CI is running"
+                return False, prefix + "Public CI is running"
             if run["conclusion"] != "success":
-                raise Blocked("Public CI failed; fix the PR or rerun through the coordinator")
+                raise Blocked(prefix + "Public CI failed; fix the PR or rerun through the coordinator")
             jobs = self.github.pages(f'/actions/runs/{run["id"]}/attempts/{run["run_attempt"]}/jobs', "jobs")
             expected = {"build (clang)", "build (gcc)", "mtr (replication)", "mtr (storage)",
                         "mtr (core)", "mtr (services)", "format"}
@@ -122,32 +127,35 @@ class Coordinator:
                     required.append("Run unit tests")
                 steps = {s["name"]: s["conclusion"] for s in job["steps"]}
                 require(all(steps.get(name) == "success" for name in required), "Required CI step did not pass")
-            return True, "Public CI passed for the current base, head, and merge candidate"
+            return True, prefix + "Public CI passed for the current base, head, and merge candidate"
         if not recorded or time.time() - request["sent_at"] > 300:
             # Persist the expected revision before the network write; a lost response
             # can be reconciled with the run identity after a process restart.
             self.store.set_setting(request_key, {"identity": key, "ref": self.policy["ci_ref"],
-                                                "revision": revision, "sent_at": time.time()}, "coordinator")
+                                                "revision": revision, "mtr_test": test, "sent_at": time.time()}, "coordinator")
             self.github.repo(f"/actions/workflows/{workflow}/dispatches", "POST", {
                 "ref": self.policy["ci_ref"], "inputs": {
                     "pr_number": str(pr["number"]), "base_sha": pr["base"]["sha"],
                     "head_sha": pr["head"]["sha"], "merge_sha": merge,
                     "workflow_revision": revision,
+                    **({"mtr_test": test} if test else {}),
                     "parents_json": json.dumps(parents or [pr["base"]["sha"], pr["head"]["sha"]]),
                     "candidate_repository": self.policy["bot_fork" if staged else "repository"]}})
-        return False, "Waiting for trusted public CI"
+        return False, prefix + "Waiting for trusted public CI"
 
     def publish(self, pr, ci_ok, summary, eligible=False):
         key = f'published:{pr["number"]}'
         fingerprint = [self.policy["mode"], pr["head"]["sha"], pr["base"]["sha"], pr.get("body"),
-                       ci_ok, summary, bool(eligible)]
+                       ci_ok, summary, bool(eligible), rehearsal_test(self.policy)]
         if self.store.setting(key) == fingerprint:
             return
         if self.policy["mode"] == "active":
             self.github.advisory_label(pr, eligible)
         self.github.check(pr, "CE / public-ci", "success" if ci_ok else "failure", summary)
         check_id = self.github.check(pr, "CE / policy", "success" if eligible else "failure",
-                                     "Ready for maintainer authorization" if eligible else summary,
+                                     ("Ready for maintainer authorization" +
+                                      (" — REHEARSAL: " + rehearsal_test(self.policy) + " only per MTR shard"
+                                       if rehearsal_test(self.policy) else "")) if eligible else summary,
                                      action=eligible and self.policy["mode"] == "active")
         self.store.set_setting(key, fingerprint, "coordinator")
 

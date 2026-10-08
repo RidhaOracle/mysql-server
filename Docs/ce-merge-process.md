@@ -523,3 +523,29 @@ Daily scheduling, organizational 2FA, release signoff systems, final source tag
 publication, and live repository administration remain deployment responsibilities.
 To pause rollout, disable new integration requests, stop the executor safely, and
 reconcile any publication intent. Preserve all already-published history.
+
+## Temporary single-test MTR rehearsal
+
+The trusted `CE Merge Validation` workflow accepts optional input `mtr_test`,
+for example `main.1st`. Empty (the default) runs the existing full suite lists.
+To have the App request the shortcut, add `"ci_mtr_test": "main.1st"` to the
+separate rehearsal deployment policy and restart that coordinator. Do this only
+after this workflow version is available on its trusted `ci_ref`. The checked-in
+policy does not enable the shortcut, and existing running workflows are unchanged.
+
+This executes the named test for real in each of the four MTR jobs. It accepts
+one exact `main.test_name`, verifies that file exists in the candidate before
+building, and propagates MTR failure. Compilation, both compiler builds, unit
+tests, candidate verification, and reviews still run. It reduces MTR test time,
+not build time. The ordinary `MTR` pull-request workflow remains full-suite.
+
+Run titles include `:mtr=main.1st`; MTR job summaries and CE check summaries mark
+these results as REHEARSAL. The selected test is part of the durable CI request
+identity: changing or removing it cannot reuse single-test results as full-suite
+evidence. Manual dispatches still do not count as App-authorized CI.
+
+After testing, remove `ci_mtr_test` from the rehearsal policy and restart the
+coordinator, then run full validation for the candidate. Abort/rebuild any
+unpublished prepared batch before changing deployment policy; reconcile uncertain
+publication first. Revert the dedicated single-test-input PR to remove the
+shortcut entirely. Rehearsal results are not release qualification.
