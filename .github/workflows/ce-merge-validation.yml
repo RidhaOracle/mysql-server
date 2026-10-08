@@ -1,9 +1,14 @@
 # Copyright (c) 2026, Oracle and/or its affiliates.
 name: CE Merge Validation
-run-name: 'ce:${{ inputs.pr_number }}:${{ inputs.base_sha }}:${{ inputs.head_sha }}:${{ inputs.merge_sha }}:${{ inputs.workflow_revision }}'
+run-name: "ce:${{ inputs.pr_number }}:${{ inputs.base_sha }}:${{ inputs.head_sha }}:${{ inputs.merge_sha }}:${{ inputs.workflow_revision }}${{ inputs.mtr_test && format(':mtr={0}', inputs.mtr_test) || '' }}"
 on:
   workflow_dispatch:
     inputs:
+      mtr_test:
+        description: 'REHEARSAL ONLY: one main.test_name per MTR shard; empty runs full suites'
+        type: string
+        required: false
+        default: ''
       workflow_revision:
         type: string
         required: true
@@ -121,7 +126,12 @@ jobs:
         working-directory: source
         env:
           MTR_SUITES: ${{ matrix.suites }}
-        run: python3 ../trusted/scripts/ce_merge/verify_suites.py --suites="$MTR_SUITES"
+          CE_MTR_TEST: ${{ inputs.mtr_test }}
+        run: |
+          python3 ../trusted/scripts/ce_merge/verify_suites.py --suites="$MTR_SUITES"
+          if [ -n "$CE_MTR_TEST" ]; then
+            python3 ../trusted/scripts/ce_merge/mtr_rehearsal.py --test "$CE_MTR_TEST" --verify-only
+          fi
       - name: Install toolchain
         working-directory: source
         run: ../trusted/scripts/ci/bootstrap.sh
@@ -132,7 +142,13 @@ jobs:
         working-directory: source
         env:
           MTR_SUITES: ${{ matrix.suites }}
-        run: ../trusted/scripts/ci/mtr.sh --parallel=auto --force --suite="$MTR_SUITES"
+          CE_MTR_TEST: ${{ inputs.mtr_test }}
+        run: |
+          if [ -n "$CE_MTR_TEST" ]; then
+            python3 ../trusted/scripts/ce_merge/mtr_rehearsal.py --test "$CE_MTR_TEST"
+          else
+            ../trusted/scripts/ci/mtr.sh --parallel=auto --force --suite="$MTR_SUITES"
+          fi
       - name: Run unit tests
         if: ${{ matrix.shard == 'services' }}
         working-directory: source

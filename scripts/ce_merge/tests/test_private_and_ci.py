@@ -144,6 +144,41 @@ class CITests(unittest.TestCase):
         self.coordinator.ci(self.pr, self.merge, ["sql/a.cc"])
         self.dispatched = False
 
+    def test_rehearsal_selection_is_bound_to_dispatch_and_result(self):
+        self.policy["ci_mtr_test"] = "main.1st"
+        passed, message = self.coordinator.ci(self.pr, self.merge, ["sql/a.cc"])
+        self.assertFalse(passed)
+        self.assertIn("REHEARSAL", message)
+        self.assertEqual(self.dispatch["inputs"]["mtr_test"], "main.1st")
+        self.run["display_title"] += ":mtr=main.1st"
+        self.coordinator.store = Journal(self.store.path)
+        passed, message = self.coordinator.ci(self.pr, self.merge, ["sql/a.cc"])
+        self.assertTrue(passed)
+        self.assertIn("REHEARSAL (main.1st only per MTR shard)", message)
+        self.policy.pop("ci_mtr_test")
+        self.assertFalse(self.coordinator.ci(self.pr, self.merge, ["sql/a.cc"])[0])
+        with self.assertRaises(Blocked):
+            self.coordinator.rerun_ci(1, "operator")
+
+    def test_changing_rehearsal_test_dispatches_new_identity(self):
+        for test in ("main.1st", "main.ce_merge_smoke"):
+            self.policy["ci_mtr_test"] = test
+            self.dispatched = False
+            self.assertFalse(self.coordinator.ci(self.pr, self.merge, ["sql/a.cc"])[0])
+            self.assertTrue(self.dispatched)
+            self.assertEqual(self.dispatch["inputs"]["mtr_test"], test)
+
+    def test_default_dispatch_does_not_require_new_workflow_input(self):
+        self.assertNotIn("mtr_test", self.dispatch["inputs"])
+
+    def test_failed_rehearsal_remains_a_failure(self):
+        self.policy["ci_mtr_test"] = "main.1st"
+        self.coordinator.ci(self.pr, self.merge, ["sql/a.cc"])
+        self.run["display_title"] += ":mtr=main.1st"
+        self.run["conclusion"] = "failure"
+        with self.assertRaisesRegex(Blocked, "REHEARSAL.*failed"):
+            self.coordinator.ci(self.pr, self.merge, ["sql/a.cc"])
+
     def test_complete_trusted_ci_passes(self):
         self.assertTrue(self.coordinator.ci(self.pr, self.merge, ["sql/a.cc"])[0])
 
