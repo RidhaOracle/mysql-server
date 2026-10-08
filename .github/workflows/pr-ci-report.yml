@@ -25,6 +25,7 @@ jobs:
       pr_number: ${{ steps.resolve.outputs.pr_number }}
       head_sha: ${{ steps.resolve.outputs.head_sha }}
       classification: ${{ steps.resolve.outputs.classification }}
+      mtr_test: ${{ steps.resolve.outputs.mtr_test }}
       untrusted_reason: ${{ steps.resolve.outputs.untrusted_reason }}
       run_attempt: ${{ steps.resolve.outputs.run_attempt }}
       run_id: ${{ steps.resolve.outputs.run_id }}
@@ -167,6 +168,7 @@ jobs:
             const workflowChanged = files.length >= 3000 || workflowEdited;
 
             let result = 'error';
+            let mtrTest = '';
             if (run.conclusion === 'action_required') {
               result = 'pending';
             } else if (!workflowChanged) {
@@ -182,6 +184,7 @@ jobs:
                 },
               );
               const primaryConclusions = [];
+              const mtrSelections = new Set();
               let expectedLayout = true;
               for (const expected of config.primarySteps) {
                 const matchingJobs = jobs.filter((job) => (
@@ -204,8 +207,23 @@ jobs:
                   expectedLayout = false;
                   break;
                 }
-                const matchingSteps = (latestJobs[0].steps || [])
-                  .filter((step) => step.name === expected.step);
+                const steps = latestJobs[0].steps || [];
+                let matchingSteps = steps.filter((step) => step.name === expected.step);
+                if (config.key === 'mtr' && expected.step === 'Run MTR') {
+                  const selected = steps.filter((step) =>
+                    /^Run MTR rehearsal \(main\.[A-Za-z0-9_-]+\)$/.test(step.name) &&
+                    step.conclusion !== 'skipped');
+                  if (selected.length === 1 && matchingSteps.length === 1 &&
+                      matchingSteps[0].conclusion === 'skipped') {
+                    mtrSelections.add(selected[0].name.slice('Run MTR rehearsal ('.length, -1));
+                    matchingSteps = selected;
+                  } else if (selected.length === 0) {
+                    mtrSelections.add('');
+                  } else {
+                    expectedLayout = false;
+                    break;
+                  }
+                }
                 if (matchingSteps.length !== 1) {
                   expectedLayout = false;
                   break;
@@ -213,6 +231,10 @@ jobs:
                 primaryConclusions.push(matchingSteps[0].conclusion);
               }
 
+              // Mixed full/rehearsal shards or different selected tests cannot
+              // be combined by "Re-run failed jobs" into a successful result.
+              if (mtrSelections.size > 1) expectedLayout = false;
+              mtrTest = [...mtrSelections].find((value) => value) || '';
               if (
                 expectedLayout &&
                 run.conclusion === 'success' &&
@@ -246,6 +268,7 @@ jobs:
             core.setOutput('pr_number', String(pullNumber));
             core.setOutput('head_sha', headSha);
             core.setOutput('classification', result);
+            core.setOutput('mtr_test', mtrTest);
             core.setOutput('untrusted_reason', workflowEdited ? 'workflow_changed'
               : files.length >= 3000 ? 'incomplete_file_list' : '');
             core.setOutput('run_attempt', String(runAttempt));
@@ -274,6 +297,7 @@ jobs:
           SOURCE_HEAD_SHA: ${{ needs.resolve.outputs.head_sha }}
           SOURCE_PR_NUMBER: ${{ needs.resolve.outputs.pr_number }}
           SOURCE_RESULT: ${{ needs.resolve.outputs.classification }}
+          SOURCE_MTR_TEST: ${{ needs.resolve.outputs.mtr_test }}
           SOURCE_UNTRUSTED_REASON: ${{ needs.resolve.outputs.untrusted_reason }}
           SOURCE_RUN_ATTEMPT: ${{ needs.resolve.outputs.run_attempt }}
           SOURCE_RUN_ID: ${{ needs.resolve.outputs.run_id }}
@@ -331,6 +355,7 @@ jobs:
             const workflowName = process.env.SOURCE_WORKFLOW_NAME;
             const config = configurations.get(workflowName);
             const result = process.env.SOURCE_RESULT;
+            const mtrTest = process.env.SOURCE_MTR_TEST || '';
             const headSha = String(process.env.SOURCE_HEAD_SHA || '').toLowerCase();
             const pullNumber = Number(process.env.SOURCE_PR_NUMBER);
             const runAttempt = Number(process.env.SOURCE_RUN_ATTEMPT);
@@ -338,6 +363,7 @@ jobs:
             if (
               !config ||
               config.key !== process.env.SOURCE_WORKFLOW_KEY ||
+              (mtrTest && (config.key !== 'mtr' || !/^main\.[A-Za-z0-9_-]+$/.test(mtrTest))) ||
               !['success', 'failure', 'error', 'pending'].includes(result) ||
               !shaPattern.test(headSha) ||
               !Number.isSafeInteger(pullNumber) ||
@@ -457,12 +483,22 @@ jobs:
               core.warning('A newer source run appeared before status publication; skipping it.');
               return;
             }
+            if (mtrTest) {
+              await github.rest.repos.createCommitStatus({
+                ...context.repo,
+                sha: headSha,
+                state: 'pending',
+                context: workflowName,
+                description: 'Full MTR coverage not evaluated: single-test rehearsal',
+                target_url: run.html_url,
+              });
+            }
             await github.rest.repos.createCommitStatus({
               ...context.repo,
               sha: headSha,
               state: result,
-              context: workflowName,
-              description: (result === 'error' && {
+              context: mtrTest ? 'MTR rehearsal' : workflowName,
+              description: mtrTest ? `REHEARSAL ${mtrTest}: ${result}; full suites not run` : (result === 'error' && {
                 workflow_changed: 'PR edits this workflow; result is not trusted',
                 incomplete_file_list: 'Incomplete PR file list; workflow trust cannot be verified',
               }[process.env.SOURCE_UNTRUSTED_REASON]) || config.descriptions[result],
@@ -474,7 +510,7 @@ jobs:
               return;
             }
 
-            if (result === 'success' || result === 'failure') {
+            if (!mtrTest && (result === 'success' || result === 'failure')) {
               for (const label of config.labels) {
                 try {
                   await github.rest.issues.getLabel({ ...context.repo, name: label.name });
@@ -512,7 +548,7 @@ jobs:
               }
             };
 
-            if (result === 'success' || result === 'failure') {
+            if (!mtrTest && (result === 'success' || result === 'failure')) {
               const selected = result === 'success' ? config.labels[0] : config.labels[1];
               const opposite = result === 'success' ? config.labels[1] : config.labels[0];
               await removeLabel(opposite.name);
