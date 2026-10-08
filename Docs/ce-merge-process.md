@@ -187,7 +187,10 @@ service has no third-party dependencies. Never run contributor code on this host
 3. Copy `.github/ce-merge-policy.json` to `/etc/mysql-ce-merge/policy.json`. Set real
    repository name, ordered branches (Innovation last), release branches,
    maintainers, App/installation IDs, and public-content policy. Keep `strategy`
-   set to `forward`. Reviewers need the repository Write, Maintain, or Admin role.
+   set to `forward`. `release_app_id: 0` (or omitted) permits ordinary merge
+   activation while blocking creation of all non-receipt tags. Configure the
+   separate release App and update its tag ruleset before creating release tags;
+   the merge App receives no release-tag bypass. Reviewers need the repository Write, Maintain, or Admin role.
    Collaborators on personal repositories qualify with Write access. Approval does not require membership
    in the configured `maintainers` allowlist, which controls integration requests
    and trusted OCA verification. CODEOWNERS may still be used for review routing.
@@ -218,8 +221,25 @@ service has no third-party dependencies. Never run contributor code on this host
    version, before incremental downloads take effect. Do not delete the cache.
 6. Generate ruleset payloads and apply them as an administrator in rehearsal.
    Provision branches before enabling lifecycle protection. Validate existing
-   bypasses and native checks; create the advisory `Integrate` label. Shadow mode
+   bypasses and native checks; create the advisory `Integrate` label. GitHub hides
+   `bypass_actors` from an App with read-only administration access. An administrator
+   must export each full repository ruleset using administrator credentials into
+   a local JSON file shaped as `{"repository": "owner/repo", "rulesets": [...]}`.
+   Include each ruleset's `id`, `updated_at`, `source`, `source_type`, conditions,
+   rules, and full bypass list from `GET /repos/owner/repo/rulesets/{id}`.
+   Run `attest-deployment /path/to/snapshot.json` with the intended active policy
+   and the service's state directory. Only use a trusted administrator export;
+   this local command is an operator action, never a PR-supplied input. It checks
+   the live rules, records the snapshot with a policy fingerprint, and audits the
+   change. Runtime verification compares live ruleset identity and revision before
+   using its hidden bypass list; any ruleset edit or policy change requires fresh
+   attestation. The App keeps read-only administration permissions. See the
+   [GitHub ruleset API visibility contract](https://docs.github.com/en/rest/repos/rules#get-a-repository-ruleset).
+   Shadow mode
    reads existing PR CI and reports readiness but never authorizes, stages, or publishes merges.
+   If a previously evaluated PR targets a branch removed from this deployment,
+   its old readiness result is superseded by a neutral `Merge check` explaining
+   that the target is outside scope. This grants no integration authorization.
 7. Complete the acceptance rehearsal below. Drain/reconcile Gerrit CE work,
    disable the old public import/export writer, activate the reviewed settings,
    set `mode: active`, and set repository variable `CE_MERGE_MODE=active` to retire

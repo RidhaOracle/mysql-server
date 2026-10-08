@@ -1,5 +1,6 @@
 # Copyright (c) 2026, Oracle and/or its affiliates.
 """Single-writer public integration state machine."""
+from datetime import datetime
 import hashlib
 import json
 
@@ -7,6 +8,16 @@ from .validation import candidate_ci, validation_head
 from .git import MergeConflict, PublicGraph
 from .policy import Blocked, check_content, documentation_only, matches, require, rulesets, sha, upmerge_till, rehearsal_test, staging_repository
 from .release import validate_source
+
+
+def ruleset_revision(value):
+    # GitHub formats dates using the authenticated viewer's timezone.
+    try:
+        stamp = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        require(stamp.tzinfo is not None, "Ruleset revision must include a timezone")
+        return stamp
+    except (AttributeError, TypeError, ValueError):
+        raise Blocked("Ruleset changed since administrator verification; invalid revision") from None
 
 
 class TargetMoved(Blocked):
@@ -30,7 +41,15 @@ class Coordinator:
         require(op["data"].get("policy") == self.policy_identity(),
                 "Deployment policy changed; abort unpublished work and authorize a new batch")
 
-    def deployment(self):
+    def attest_deployment(self, snapshot, operator):
+        """Operator supplies a full ruleset export made with administrator access."""
+        require(snapshot.get("repository") == self.policy["repository"],
+                "Ruleset snapshot belongs to another repository")
+        attestation = dict(snapshot, policy=self.policy_identity())
+        self.deployment(attestation)
+        self.store.set_setting("deployment-attestation", attestation, operator)
+
+    def deployment(self, attestation=None):
         """Fail closed if protections drift. The App never changes its own protections."""
         require(self.policy["mode"] == "active", "Shadow mode cannot execute integration")
         repository = self.github.repo("")
@@ -38,9 +57,29 @@ class Coordinator:
                 and repository["allow_merge_commit"] and repository["allow_squash_merge"],
                 "Repository merge settings differ from approved policy")
         actual = {r["name"]: r for r in self.github.pages("/rulesets?includes_parents=false")}
+        attestation = attestation or self.store.setting("deployment-attestation")
         for expected in rulesets(self.policy):
             require(expected["name"] in actual, "Required CE ruleset is missing")
             found = self.github.repo(f'/rulesets/{actual[expected["name"]]["id"]}')
+            if "bypass_actors" not in found:
+                # GitHub hides this field unless the caller can WRITE rulesets.
+                # Retain read-only App permissions and bind the operator's full
+                # export to this policy and the live ruleset's identity/revision.
+                require(attestation and attestation.get("policy") == self.policy_identity()
+                        and attestation.get("repository") == self.policy["repository"],
+                        "Ruleset bypasses are hidden; administrator must attest this deployment")
+                snapshots = [r for r in attestation.get("rulesets", [])
+                             if r.get("name") == expected["name"]]
+                require(len(snapshots) == 1, "Administrator ruleset snapshot is missing or ambiguous")
+                snapshot = snapshots[0]
+                require(found.get("id") and found.get("updated_at")
+                        and snapshot.get("id") == found["id"]
+                        and ruleset_revision(snapshot.get("updated_at")) == ruleset_revision(found["updated_at"])
+                        and found.get("source_type") == snapshot.get("source_type") == "Repository"
+                        and found.get("source") == snapshot.get("source") == self.policy["repository"],
+                        "Ruleset changed since administrator verification; attest deployment again")
+                require(matches(expected, snapshot), "Administrator ruleset snapshot differs from approved policy")
+                found = dict(found, bypass_actors=snapshot["bypass_actors"])
             for key, value in expected.items():
                 require(matches(value, found.get(key)), "CE ruleset differs from approved policy")
 
@@ -101,6 +140,26 @@ class Coordinator:
                                       (" — REHEARSAL: " + rehearsal_test(self.policy) + " only per MTR shard"
                                        if rehearsal_test(self.policy) else "") + "\n\n" + summary) if eligible else summary,
                                      action=eligible and self.policy["mode"] == "active")
+        self.store.set_setting(key, fingerprint, "coordinator")
+
+    def publish_unmanaged(self, pr):
+        """Retire this coordinator's stale result when a target leaves its scope."""
+        targets = self.policy["branches"] + self.policy.get("release_branches", [])
+        require(pr["base"]["ref"] not in targets, "Configured targets require full evaluation")
+        key = f'published:{pr["number"]}'
+        previous = self.store.setting(key)
+        if not previous:
+            return  # Do not add checks to PRs this deployment never managed.
+        fingerprint = ["Merge check", "unmanaged", pr["head"]["sha"], pr["base"]["ref"], targets]
+        if previous == fingerprint:
+            return
+        if self.policy["mode"] == "active":
+            self.github.advisory_label(pr, False)
+        self.github.check(pr, "Merge check", "neutral",
+                          f'Target `{pr["base"]["ref"]}` is outside this coordinator’s configured branches. '
+                          'The earlier readiness result is superseded; this check does not authorize a merge. '
+                          'Configured targets: ' + ", ".join(f"`{b}`" for b in targets) + ".",
+                          action=False)
         self.store.set_setting(key, fingerprint, "coordinator")
 
     def promotion(self, pr):
@@ -547,5 +606,9 @@ class Coordinator:
                          s["pr"] != o["pr"] or o["state"] not in ("aborted", "complete"))}
         generated.update(n for o in self.store.operations() for n in o["data"].get("superseded_prs", []))
         for pr in self.github.pages("/pulls?state=open"):
-            if pr["number"] not in generated and pr["base"]["ref"] in self.policy["branches"] + self.policy.get("release_branches", []):
+            if pr["number"] in generated:
+                continue
+            if pr["base"]["ref"] in self.policy["branches"] + self.policy.get("release_branches", []):
                 self.evaluate(self.github.pull(pr["number"]))
+            else:
+                self.publish_unmanaged(pr)

@@ -53,9 +53,12 @@ def load(path):
             "Release and development branches overlap")
     require(policy["forbidden_paths"] and policy["maintainers"], "Missing merge policy")
     rehearsal_test(policy)
+    policy.setdefault("release_app_id", 0)
+    require(type(policy["release_app_id"]) is int and policy["release_app_id"] >= 0,
+            "release_app_id must be zero (disabled) or a positive App ID")
     if policy["mode"] == "active":
-        require(all(policy.get(k, 0) > 0 for k in ("app_id", "installation_id", "release_app_id")),
-                "Configure the merge and release Apps before activation")
+        require(all(policy.get(k, 0) > 0 for k in ("app_id", "installation_id")),
+                "Configure the merge App and installation before activation")
         if staging_repository(policy) != policy["repository"]:
             require(policy.get("fork_installation_id", 0) > 0,
                     "A separate staging fork requires its App installation ID")
@@ -145,7 +148,8 @@ def rulesets(policy):
              target="tag", include=["~ALL"]),
         rule("CE release tag creation", [{"type": "creation"}], [{
             "actor_id": policy["release_app_id"], "actor_type": "Integration",
-            "bypass_mode": "always"}], target="tag", include=["~ALL"],
+            "bypass_mode": "always"}] if policy.get("release_app_id", 0) else [],
+             target="tag", include=["~ALL"],
              exclude=["refs/tags/ce-integration/*"]),
         rule("CE receipt creation", [{"type": "creation"}], app,
              target="tag", include=["refs/tags/ce-integration/*"]),
