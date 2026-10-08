@@ -237,6 +237,9 @@ service has no third-party dependencies. Never run contributor code on this host
    [GitHub ruleset API visibility contract](https://docs.github.com/en/rest/repos/rules#get-a-repository-ruleset).
    Shadow mode
    reads existing PR CI and reports readiness but never authorizes, stages, or publishes merges.
+   If a previously evaluated PR targets a branch removed from this deployment,
+   its old readiness result is superseded by a neutral `Merge check` explaining
+   that the target is outside scope. This grants no integration authorization.
 7. Complete the acceptance rehearsal below. Drain/reconcile Gerrit CE work,
    disable the old public import/export writer, activate the reviewed settings,
    set `mode: active`, and set repository variable `CE_MERGE_MODE=active` to retire

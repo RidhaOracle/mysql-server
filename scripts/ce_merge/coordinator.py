@@ -142,6 +142,26 @@ class Coordinator:
                                      action=eligible and self.policy["mode"] == "active")
         self.store.set_setting(key, fingerprint, "coordinator")
 
+    def publish_unmanaged(self, pr):
+        """Retire this coordinator's stale result when a target leaves its scope."""
+        targets = self.policy["branches"] + self.policy.get("release_branches", [])
+        require(pr["base"]["ref"] not in targets, "Configured targets require full evaluation")
+        key = f'published:{pr["number"]}'
+        previous = self.store.setting(key)
+        if not previous:
+            return  # Do not add checks to PRs this deployment never managed.
+        fingerprint = ["Merge check", "unmanaged", pr["head"]["sha"], pr["base"]["ref"], targets]
+        if previous == fingerprint:
+            return
+        if self.policy["mode"] == "active":
+            self.github.advisory_label(pr, False)
+        self.github.check(pr, "Merge check", "neutral",
+                          f'Target `{pr["base"]["ref"]}` is outside this coordinator’s configured branches. '
+                          'The earlier readiness result is superseded; this check does not authorize a merge. '
+                          'Configured targets: ' + ", ".join(f"`{b}`" for b in targets) + ".",
+                          action=False)
+        self.store.set_setting(key, fingerprint, "coordinator")
+
     def promotion(self, pr):
         value = self.store.setting(f'promotion:{pr["number"]}')
         if value:
@@ -586,5 +606,9 @@ class Coordinator:
                          s["pr"] != o["pr"] or o["state"] not in ("aborted", "complete"))}
         generated.update(n for o in self.store.operations() for n in o["data"].get("superseded_prs", []))
         for pr in self.github.pages("/pulls?state=open"):
-            if pr["number"] not in generated and pr["base"]["ref"] in self.policy["branches"] + self.policy.get("release_branches", []):
+            if pr["number"] in generated:
+                continue
+            if pr["base"]["ref"] in self.policy["branches"] + self.policy.get("release_branches", []):
                 self.evaluate(self.github.pull(pr["number"]))
+            else:
+                self.publish_unmanaged(pr)
