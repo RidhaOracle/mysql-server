@@ -1,11 +1,12 @@
 # Copyright (c) 2026, Oracle and/or its affiliates.
 """Consume existing pull-request workflow results. Never dispatch or rerun CI."""
+import re
 import urllib.parse
 
 from .policy import require, rehearsal_test
 
 
-STALE_CI = ": waiting for CI on the current target and PR revision"
+STALE_CI = ": waiting for CI on the current PR revision and an accepted target ancestor"
 
 
 WORKFLOWS = {
@@ -24,24 +25,37 @@ def for_pr(run, pr):
     return any(ref.get('number') == pr['number'] for ref in run.get('pull_requests', []))
 
 
-def tested_revision(run, pr, merge):
+def tested_revision(run, pr, merge, graph=None):
     title = run.get('display_title', '')
+    def accepted_base(base):
+        # Target advancement does not invalidate checks on an unchanged PR head.
+        # Still reject unrelated/rewritten targets. Required job verification
+        # attests the recorded test merge; mergeability against today's base is
+        # checked locally by the coordinator before accepting these results.
+        return bool(isinstance(base, str) and re.fullmatch(r'[0-9a-f]{40}', base) and
+                    (graph.ancestor(base, pr['base']['sha']) if graph else base == pr['base']['sha']))
+
     if title.startswith('pr:'):
-        return title == f'pr:{pr["number"]}:{pr["base"]["sha"]}:{pr["head"]["sha"]}:{merge}'
+        parts = title.split(':')
+        return (len(parts) == 5 and parts[1] == str(pr['number']) and
+                accepted_base(parts[2]) and parts[3] == pr['head']['sha'] and
+                bool(re.fullmatch(r'[0-9a-f]{40}', parts[4])) and
+                (graph is not None or parts[4] == merge))
     # Existing runs predate run-title evidence. Accept their GitHub-provided
     # PR/base/head association only when complete; empty fork metadata blocks.
     for ref in run.get('pull_requests', []):
         if ref.get('number') != pr['number']:
             continue
-        if all(ref.get(side, {}).get('sha') == pr[side]['sha'] and
-               ref.get(side, {}).get('repo', {}).get('id') is not None and
-               ref[side]['repo']['id'] == pr[side]['repo'].get('id')
-               for side in ('base', 'head')) and ref['base'].get('ref') == pr['base']['ref']:
+        if (accepted_base(ref.get('base', {}).get('sha')) and
+                ref.get('head', {}).get('sha') == pr['head']['sha'] and
+                all(ref.get(side, {}).get('repo', {}).get('id') is not None and
+                    ref[side]['repo']['id'] == pr[side]['repo'].get('id') for side in ('base', 'head')) and
+                ref['base'].get('ref') == pr['base']['ref']):
             return True
     return False
 
 
-def existing_pr_ci(github, policy, pr, merge, paths):
+def existing_pr_ci(github, policy, pr, merge, paths, graph=None):
     selected = ['pr-build.yml', 'mtr.yml']
     if any(p == '.clang-format' or p.endswith(('.c', '.cc', '.cpp', '.h', '.hpp')) for p in paths):
         selected.append('clang-format.yml')
@@ -64,7 +78,7 @@ def existing_pr_ci(github, policy, pr, merge, paths):
             pending.append(label + ': waiting for existing PR workflow')
             continue
         run = max(runs, key=lambda r: (r['run_number'], r['id']))
-        if not tested_revision(run, pr, merge):
+        if not tested_revision(run, pr, merge, graph):
             pending.append(label + STALE_CI)
             continue
         if run['status'] != 'completed':
@@ -102,4 +116,4 @@ def existing_pr_ci(github, policy, pr, merge, paths):
     if pending:
         return False, '; '.join(pending)
     prefix = f'REHEARSAL ({test} only per MTR shard): ' if rehearsal else ''
-    return True, prefix + 'Existing PR CI passed for the current target and source tree; no extra workflow dispatched'
+    return True, prefix + 'Existing PR CI passed for the unchanged PR head; current target merges cleanly. CI may cover an earlier target revision.'

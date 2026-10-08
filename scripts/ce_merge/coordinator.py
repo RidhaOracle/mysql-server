@@ -3,7 +3,7 @@
 import hashlib
 import json
 
-from .validation import candidate_ci, current_merge, validation_head, retire_validations
+from .validation import candidate_ci, validation_head
 from .git import MergeConflict, PublicGraph
 from .policy import Blocked, check_content, documentation_only, matches, require, rulesets, sha, upmerge_till, rehearsal_test
 from .release import validate_source
@@ -70,7 +70,7 @@ class Coordinator:
         tree = graph.merge_tree(base, head)
         # GitHub may retain a merge ref for an older base. Prepare locally;
         # neither the contributor's branch nor protected CE refs need to move.
-        merge = current_merge(pr, graph, tree) or validation_head(graph, base, tree, head)
+        merge = validation_head(graph, base, tree, head)
         paths = graph.paths(base, merge)
         check_content(paths, "", self.policy)
         return merge, paths, commits
@@ -456,7 +456,7 @@ class Coordinator:
         self.source(self.github.pull(op["pr"]), op)
         with self.graph(self.policy) as graph:
             graph.restore_candidates(op["data"]["steps"], self.bundle(op))
-            # Recheck exact candidate CI, including reruns/revocations.
+            # Recheck current-head PR CI, including reruns/revocations.
             for step in op["data"]["steps"]:
                 pr = self.verify_step(step, graph)
                 paths, _ = graph.inspect(step["base_sha"], step["after"])
@@ -535,7 +535,6 @@ class Coordinator:
                 for op in self.store.uncertain():
                     self.reconcile(op)
                 return
-            retire_validations(self)
             pending = next((o for o in self.store.operations() if o["state"] in ("queued", "prepared")), None)
             if pending:
                 self.advance(pending)
@@ -544,7 +543,6 @@ class Coordinator:
                      for s in o["data"]["steps"] if "pr" in s and (
                          s["pr"] != o["pr"] or o["state"] not in ("aborted", "complete"))}
         generated.update(n for o in self.store.operations() for n in o["data"].get("superseded_prs", []))
-        generated.update(r["pr"] for r in self.store.settings("validation:") if r.get("pr"))
         for pr in self.github.pages("/pulls?state=open"):
             if pr["number"] not in generated and pr["base"]["ref"] in self.policy["branches"] + self.policy.get("release_branches", []):
                 self.evaluate(self.github.pull(pr["number"]))

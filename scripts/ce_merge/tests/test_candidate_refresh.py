@@ -3,12 +3,10 @@ import copy
 import unittest
 from unittest.mock import patch
 
-from scripts.ce_merge.ci import STALE_CI
 from scripts.ce_merge.coordinator import Coordinator
-from scripts.ce_merge.journal import Journal
 from scripts.ce_merge.policy import Blocked
-from scripts.ce_merge.validation import retire_validations
 import test_coordinator as fixtures
+import test_existing_ci as ci_fixtures
 
 
 class CandidateRefreshTests(unittest.TestCase):
@@ -19,19 +17,22 @@ class CandidateRefreshTests(unittest.TestCase):
         self.c = self.case.coordinator
         self.api = self.case.api
         self.tested = self.case.repo.merge_commit(self.case.repo.base, self.case.head)
-        self.case.repo.git('push', str(self.case.remote), self.tested + ':refs/pull/1/merge')
+        # Deliberately do not publish refs/pull/1/merge. CI evidence attests the
+        # tested merge; current mergeability must not depend on GitHub's old ref.
         self.api.pulls[1]['merge_commit_sha'] = self.tested
-        self.create = self.api.bot_pr
-        self.api.bot_pr = self.bot_pr
-
-    def bot_pr(self, *args, **kwargs):
-        number = self.create(*args, **kwargs)
-        pr = self.api.pull(number)
-        self.case.repo.git('fetch', str(self.case.fork), pr['head']['sha'])
-        tested = self.case.repo.merge_commit(pr['base']['sha'], pr['head']['sha'])
-        self.case.repo.git('push', str(self.case.remote), '+' + tested + f':refs/pull/{number}/merge')
-        self.api.pulls[number]['merge_commit_sha'] = tested
-        return number
+        self.api.pulls[1]['head']['repo']['id'] = 2
+        self.api.pulls[1]['base']['repo']['id'] = 1
+        self.ci_case = ci_fixtures.ExistingCITests()
+        self.ci_case.setUp()
+        self.identity = f'pr:1:{self.case.repo.base}:{self.case.head}:{self.tested}'
+        for runs in self.ci_case.runs.values():
+            runs[0].update(display_title=self.identity, head_sha=self.case.head,
+                           repository={'full_name': self.c.policy['repository']})
+        original_repo, original_pages = self.api.repo, self.api.pages
+        self.api.repo = lambda path, *a, **kw: (self.ci_case.api.repo(path) if path.startswith('/actions/')
+                                               else original_repo(path, *a, **kw))
+        self.api.pages = lambda path, key=None: (self.ci_case.api.pages(path, key) if path.startswith('/actions/')
+                                                else original_pages(path, key))
 
     def move_base(self):
         self.case.repo.git('checkout', 'lts')
@@ -45,115 +46,86 @@ class CandidateRefreshTests(unittest.TestCase):
             merge, paths, _ = self.c.evidence(pr, graph)
             return Coordinator.ci(self.c, pr, merge, paths, graph=graph)
 
-    def records(self):
-        return self.c.store.settings('validation:')
-
-    def test_current_results_reused_pending_and_failed_ci_never_duplicated(self):
-        with patch('scripts.ce_merge.validation.existing_pr_ci') as read:
-            for result in ((True, 'passed'), (False, 'MTR: in_progress')):
-                read.return_value = result
-                self.assertEqual(self.ci(), result)
-                self.assertEqual(self.records(), [])
-            read.side_effect = Blocked('MTR failed')
-            with self.assertRaisesRegex(Blocked, 'MTR failed'):
-                self.ci()
+    def assert_no_extra_pr(self):
         self.assertEqual(self.api.bot_pulls, {})
-
-    def test_stale_ref_refresh_preserves_source_and_survives_restart_without_cache(self):
-        base = self.move_base()
-        with patch('scripts.ce_merge.validation.existing_pr_ci', return_value=(True, 'passed')) as read:
-            self.assertTrue(self.ci()[0])
-            record = self.records()[0]
-            self.assertEqual(read.call_args.args[2]['number'], record['pr'])
-            self.c.store = Journal(self.c.store.path)
-            self.assertTrue(self.ci()[0])
-        self.assertEqual(len(self.api.bot_pulls), 1)
+        self.assertEqual(self.c.store.settings('validation:'), [])
         self.assertEqual(self.api.pull(1)['head']['sha'], self.case.head)
+
+    def test_existing_results_pass_without_github_merge_ref_or_extra_pr(self):
+        self.assertTrue(self.ci()[0])
+        self.assert_no_extra_pr()
+
+    def test_target_advance_accepts_old_base_ci_and_preserves_contributor_head(self):
+        base = self.move_base()
+        result = self.ci()
+        self.assertTrue(result[0])
+        self.assertIn('earlier target revision', result[1])
+        self.assert_no_extra_pr()
         self.assertEqual(self.api.branch('lts'), base)
         self.assertEqual(self.api.branch('trunk'), base)
         self.assertEqual(self.case.remote_git('tag', '--list', 'ce-integration/*'), '')
-        self.assertEqual(self.records()[0]['head'], record['head'])
 
-    def test_stale_ci_on_current_merge_creates_validation_pr(self):
-        def result(github, policy, pr, merge, paths):
-            return (False, 'MTR' + STALE_CI) if pr['number'] == 1 else (True, 'passed')
-        with patch('scripts.ce_merge.validation.existing_pr_ci', side_effect=result):
-            self.assertTrue(self.ci()[0])
-        self.assertEqual(len(self.records()), 1)
-
-    def test_lost_create_response_recovers_same_pr_without_duplicate(self):
+    def test_shadow_accepts_same_existing_evidence_without_staging(self):
         self.move_base()
-        def uncertain(*args, **kwargs):
-            self.bot_pr(*args, **kwargs)
-            raise TimeoutError('lost response')
-        self.api.bot_pr = uncertain
-        with self.assertRaises(TimeoutError):
+        self.c.policy = dict(self.c.policy, mode='shadow', fork_installation_id=0)
+        self.assertTrue(self.ci()[0])
+        self.assert_no_extra_pr()
+
+    def test_pending_and_missing_ci_wait_without_creating_pr(self):
+        self.move_base()
+        self.ci_case.runs['mtr.yml'][0]['status'] = 'in_progress'
+        self.assertFalse(self.ci()[0])
+        self.ci_case.runs['mtr.yml'] = []
+        self.assertFalse(self.ci()[0])
+        self.assert_no_extra_pr()
+
+    def test_failed_or_skipped_checks_remain_blocking_after_target_advance(self):
+        self.move_base()
+        run = self.ci_case.runs['mtr.yml'][0]
+        run['conclusion'] = 'failure'
+        with self.assertRaises(Blocked):
             self.ci()
-        self.assertNotIn('pr', self.records()[0])
-        self.api.bot_pr = self.bot_pr
-        with patch('scripts.ce_merge.validation.existing_pr_ci', return_value=(True, 'passed')):
-            self.assertTrue(self.ci()[0])
-        self.assertEqual(len(self.records()), 1)
-        self.assertEqual(len(self.api.bot_pulls), 1)
-
-    def test_validation_tampering_and_closed_pr_never_pass(self):
-        self.move_base()
-        with patch('scripts.ce_merge.validation.existing_pr_ci', return_value=(True, 'passed')) as read:
+        run['conclusion'] = 'success'
+        self.ci_case.jobs[2][0]['steps'][0]['conclusion'] = 'skipped'
+        with self.assertRaises(Blocked):
             self.ci()
-            record = self.records()[0]
-            original = copy.deepcopy(self.api.pulls[record['pr']])
-            for field in ('head', 'repository', 'state'):
-                pr = self.api.pulls[record['pr']] = copy.deepcopy(original)
-                if field == 'head':
-                    pr['head']['sha'] = self.case.head
-                elif field == 'repository':
-                    pr['head']['repo']['full_name'] = 'untrusted/ce'
-                else:
-                    pr['state'] = 'closed'
-                read.reset_mock()
-                with self.subTest(field=field), self.assertRaises(Blocked):
-                    self.ci()
-                read.assert_not_called()
+        self.assert_no_extra_pr()
 
-    def test_target_advance_retires_old_validation_and_requires_new_ci(self):
+    def test_old_head_unrelated_base_and_malformed_merge_evidence_do_not_pass(self):
         self.move_base()
-        with patch('scripts.ce_merge.validation.existing_pr_ci', return_value=(True, 'passed')):
+        run = self.ci_case.runs['mtr.yml'][0]
+        for title in (self.identity.replace(self.case.head, 'b'*40),
+                      self.identity.replace(self.case.repo.base, 'd'*40),
+                      self.identity.replace(self.tested, 'invalid')):
+            with self.subTest(title=title):
+                run['display_title'] = title
+                self.assertFalse(self.ci()[0])
+        self.assert_no_extra_pr()
+
+    def test_complete_legacy_metadata_accepts_ancestor_base(self):
+        old = self.api.pull(1)
+        self.move_base()
+        for runs in self.ci_case.runs.values():
+            runs[0].update(display_title='Legacy PR CI', pull_requests=[copy.deepcopy(old)])
+        self.assertTrue(self.ci()[0])
+        self.ci_case.runs['mtr.yml'][0]['pull_requests'][0]['head']['sha'] = 'b'*40
+        self.assertFalse(self.ci()[0])
+
+    def test_newer_failed_run_cannot_fall_back_to_old_success(self):
+        self.move_base()
+        runs = self.ci_case.runs['mtr.yml']
+        runs.append(dict(runs[0], id=20, run_number=2, conclusion='failure'))
+        with self.assertRaises(Blocked):
             self.ci()
-        old = self.records()[0]
-        self.case.repo.commit('next.cc', 'int next;\n')
-        self.case.repo.git('push', str(self.case.remote), 'lts:lts', 'lts:trunk')
-        retire_validations(self.c)
-        self.assertEqual(self.api.pull(old['pr'])['state'], 'closed')
-        with patch('scripts.ce_merge.validation.existing_pr_ci', return_value=(False, 'MTR: queued')) as read:
-            self.assertFalse(self.ci()[0])
-            self.assertNotEqual(read.call_args.args[2]['number'], old['pr'])
-        self.assertEqual(len(self.records()), 2)
-        self.assertTrue(self.c.store.setting(old['key'])['retired'])
-        self.assertEqual(self.api.pull(1)['head']['sha'], self.case.head)
+        self.assert_no_extra_pr()
 
-    def test_shadow_reports_refresh_requirement_without_writes(self):
-        self.move_base()
-        self.c.policy = dict(self.c.policy, mode='shadow')
-        result = self.ci()
-        self.assertFalse(result[0])
-        self.assertIn('without rebasing', result[1])
-        self.assertEqual(self.records(), [])
-        self.assertEqual(self.api.bot_pulls, {})
-
-    def test_missing_fork_installation_is_actionable(self):
-        self.move_base()
-        self.c.policy = dict(self.c.policy, fork_installation_id=0)
-        with self.assertRaisesRegex(Blocked, 'Install the App'):
-            self.ci()
-        self.assertEqual(self.records(), [])
-
-    def test_conflicts_require_resolution_without_staging(self):
+    def test_current_conflict_blocks_despite_passing_existing_checks(self):
         self.case.repo.git('checkout', 'lts')
         self.case.repo.commit('fix.cc', 'conflicting target\n')
         self.case.repo.git('push', str(self.case.remote), 'lts:lts')
         with self.assertRaisesRegex(Blocked, 'conflict'):
             self.ci()
-        self.assertEqual(self.records(), [])
+        self.assert_no_extra_pr()
 
     def test_unpublished_batch_rebuilt_after_base_move_with_same_authorization(self):
         old = self.case.prepare()
@@ -196,17 +168,6 @@ class CandidateRefreshTests(unittest.TestCase):
         self.c.advance(self.case.op())
         self.assertEqual(self.case.op()['state'], 'blocked')
         self.case.unchanged()
-
-    def test_validation_pr_not_evaluated_as_an_independent_contribution(self):
-        self.move_base()
-        with patch('scripts.ce_merge.validation.existing_pr_ci', return_value=(True, 'passed')):
-            self.ci()
-        # Drop the fixture's queued operation so work reaches PR evaluation.
-        self.c.store.save(self.case.op(), 'aborted', 'fixture')
-        pulls = [self.api.pull(n) for n in self.api.pulls]
-        with patch.object(self.api, 'pages', return_value=pulls), patch.object(self.c, 'evaluate') as evaluate:
-            self.c.work()
-        self.assertEqual([c.args[0]['number'] for c in evaluate.call_args_list], [1])
 
     def test_intent_is_reconciled_without_refreshing_candidates(self):
         op = self.case.prepare()

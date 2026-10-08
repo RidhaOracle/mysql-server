@@ -40,7 +40,7 @@ class CandidateEvidenceTests(unittest.TestCase):
                         parents=self.step['parents'], staged=True, graph=graph)
                 read.assert_not_called()
 
-    def test_wrong_candidate_parents_or_stale_pr_merge_cannot_pass(self):
+    def test_wrong_candidate_parents_or_changed_target_cannot_pass(self):
         with self.case.graph(self.case.coordinator.policy) as graph:
             graph.restore_candidates(self.op['data']['steps'], self.case.coordinator.bundle(self.op))
             with self.assertRaises(Blocked):

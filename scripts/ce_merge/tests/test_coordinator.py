@@ -108,7 +108,7 @@ class FakeGitHub:
     def advisory_label(self, *args):
         pass
 
-    def bot_pr(self, operation, index, head, base, original, detail="", validation=False):
+    def bot_pr(self, operation, index, head, base, original, detail=""):
         key = (operation, index)
         if key not in self.bot_pulls:
             number = max(self.pulls) + 1
@@ -242,8 +242,8 @@ class AtomicTests(unittest.TestCase):
         pr = api.pull(1)
         with self.coordinator.graph_for(pr) as graph:
             candidate, paths, commits = self.coordinator.evidence(pr, graph)
+            self.assertEqual(graph.tree(candidate), self.repo.git('rev-parse', merge + '^{tree}'))
         self.assertEqual(pr["base"]["sha"], base)
-        self.assertEqual(candidate, merge)
         self.assertEqual(paths, ["Docs/mock.md"])
         self.assertEqual(commits, [head])
         self.assertTrue(documentation_only(paths))

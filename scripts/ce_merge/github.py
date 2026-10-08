@@ -175,7 +175,7 @@ class GitHub:
         if pr["state"] == "open":
             self.repo(f'/pulls/{pr["number"]}', "PATCH", {"state": "closed"})
 
-    def bot_pr(self, operation, index, head, base, original, detail="", validation=False):
+    def bot_pr(self, operation, index, head, base, original, detail=""):
         """Deterministic names and lookup make retry after create-PR failure safe."""
         require(self.policy["mode"] == "active", "Shadow mode cannot create bot branches")
         branch = f"upmerge/{operation}/{index}"
@@ -190,15 +190,9 @@ class GitHub:
         require(len(pulls) <= 1, "Ambiguous generated PR")
         if pulls:
             return pulls[0]["number"]
-        purpose = ("CI-only snapshot of the reviewed source against the current target. "
-                   "Do not merge this PR or approve it instead of the source PR. "
-                   "The App verifies tree equality and retains review on the source PR. "
-                   "This PR runs the existing build/test workflows and is retired when obsolete."
-                   if validation else
-                   "Review this exact prepared candidate. All affected CE branches publish together "
-                   "only after every candidate passes review and CI; no separate PR merge occurs.")
         return self.repo("/pulls", "POST", {
-            "title": f'{"Validate" if validation else "Upmerge"} #{original} into {base}',
-            "head": owner + ":" + branch, "base": base,
-            "body": f"Original PR: #{original}\nCE operation: {operation}\n\n" + purpose + "\n\n" + detail
+            "title": f"Upmerge #{original} into {base}", "head": owner + ":" + branch,
+            "base": base, "body": f"Original PR: #{original}\nCE operation: {operation}\n\n"
+                                     "Review this exact prepared candidate. All affected CE branches publish together "
+                                     "only after every candidate passes review and CI; no separate PR merge occurs.\n\n" + detail
         })["number"]
