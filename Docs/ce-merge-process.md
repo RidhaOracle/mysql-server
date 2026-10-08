@@ -537,14 +537,23 @@ This executes the named test for real in each of the four MTR jobs. It accepts
 one exact `main.test_name`, verifies that file exists in the candidate before
 building, and propagates MTR failure. Compilation, both compiler builds, unit
 tests, candidate verification, and reviews still run. It reduces MTR test time,
-not build time. The ordinary `MTR` pull-request workflow remains full-suite.
+not build time. For the ordinary `MTR` pull-request workflow, set the repository Actions variable
+`CE_MTR_TEST=main.1st` as well. This workflow cannot read a local App policy.
+Its trusted checkout must already include `scripts/ce_merge/mtr_rehearsal.py`.
+New runs identify rehearsal in their titles and selected-test steps. The reporter
+publishes a separate `MTR rehearsal` status, clears full-suite labels, and leaves
+`MTR` pending with an explicit limited-coverage message. It never reports full
+MTR success from a rehearsal or a mixture of full and rehearsal shards.
+Existing runs retain their original workflow; cancel obsolete full-suite runs
+and trigger a fresh PR event after the workflow change reaches its branch.
 
 Run titles include `:mtr=main.1st`; MTR job summaries and CE check summaries mark
 these results as REHEARSAL. The selected test is part of the durable CI request
 identity: changing or removing it cannot reuse single-test results as full-suite
 evidence. Manual dispatches still do not count as App-authorized CI.
 
-After testing, remove `ci_mtr_test` from the rehearsal policy and restart the
+After testing, delete the repository variable `CE_MTR_TEST`, remove `ci_mtr_test`
+from the rehearsal policy, and restart the
 coordinator, then run full validation for the candidate. Abort/rebuild any
 unpublished prepared batch before changing deployment policy; reconcile uncertain
 publication first. Revert the dedicated single-test-input PR to remove the

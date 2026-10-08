@@ -1,5 +1,6 @@
 # Copyright (c) 2026, Oracle and/or its affiliates.
 name: MTR
+run-name: "MTR PR #${{ github.event.pull_request.number }}${{ vars.CE_MTR_TEST && format(' [REHEARSAL {0}]', vars.CE_MTR_TEST) || '' }}"
 on:
   pull_request:
     paths-ignore: ["Docs/**", "**/*.md"]
@@ -42,6 +43,7 @@ jobs:
       # Match the GCC PR build and trusted cache warmer exactly. ccache
       # includes the compiler name in its cache key, so allowing CMake to
       # discover cc/c++ here would prevent reuse of gcc/g++ entries.
+      CE_MTR_TEST: ${{ vars.CE_MTR_TEST }}
       CC: gcc
       CXX: g++
     steps:
@@ -57,7 +59,9 @@ jobs:
           ref: ${{ github.event.pull_request.base.sha }}
           fetch-depth: 1
           persist-credentials: false
-          sparse-checkout: scripts/ci
+          sparse-checkout: |
+            scripts/ci
+            scripts/ce_merge
           path: trusted
       - name: Verify PR merge commit
         working-directory: source
@@ -70,6 +74,10 @@ jobs:
           test "$(git rev-parse HEAD^1)" = "$EXPECTED_BASE"
           test "$(git rev-parse HEAD^2)" = "$EXPECTED_HEAD"
           test "$(git -C ../trusted rev-parse HEAD)" = "$EXPECTED_BASE"
+      - name: Verify rehearsal test
+        if: ${{ env.CE_MTR_TEST != '' }}
+        working-directory: source
+        run: python3 ../trusted/scripts/ce_merge/mtr_rehearsal.py --test "$CE_MTR_TEST" --verify-only
       - name: Install toolchain
         working-directory: source
         run: ../trusted/scripts/ci/bootstrap.sh
@@ -102,6 +110,7 @@ jobs:
         working-directory: source
         run: ccache --show-stats
       - name: Run MTR
+        if: ${{ env.CE_MTR_TEST == '' }}
         working-directory: source
         env:
           MTR_SUITES: ${{ matrix.suites }}
@@ -116,6 +125,10 @@ jobs:
             "--suite=${MTR_SUITES}"
           )
           ../trusted/scripts/ci/mtr.sh "${args[@]}"
+      - name: Run MTR rehearsal (${{ env.CE_MTR_TEST }})
+        if: ${{ env.CE_MTR_TEST != '' }}
+        working-directory: source
+        run: python3 ../trusted/scripts/ce_merge/mtr_rehearsal.py --test "$CE_MTR_TEST"
       - name: Run unit tests
         if: ${{ matrix.run_unit_tests }}
         working-directory: source
