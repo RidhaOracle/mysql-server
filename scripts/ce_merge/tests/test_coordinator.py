@@ -14,7 +14,7 @@ from concurrent.futures import ThreadPoolExecutor
 from scripts.ce_merge.__main__ import authorize, main, signed
 from scripts.ce_merge.coordinator import Coordinator
 from scripts.ce_merge.git import PublicGraph
-from scripts.ce_merge.github import authorization_identity
+from scripts.ce_merge.github import GitHub, authorization_identity
 from scripts.ce_merge.journal import Journal
 from scripts.ce_merge.policy import Blocked, check_content, documentation_only, load, matches, rulesets, upmerge_till
 from scripts.ce_merge.release import publish as publish_promotion
@@ -218,6 +218,43 @@ class AtomicTests(unittest.TestCase):
     def test_same_repository_pr_publishes_entire_chain(self):
         self.api.pulls[1]["head"]["repo"]["full_name"] = POLICY["repository"]
         self.test_entire_chain_published_with_receipt_and_squash()
+
+    def advanced_base_candidate(self):
+        self.repo.git("checkout", "-b", "documentation", self.repo.base)
+        head = self.repo.commit("Docs/mock.md", "Documentation-only test\n")
+        self.repo.git("push", str(self.remote), "+" + head + ":refs/pull/1/head")
+        self.api.pulls[1]["head"]["sha"] = head
+        self.repo.git("checkout", "lts")
+        base = self.repo.commit("target-only.cc", "int target_only;\n")
+        self.repo.git("push", str(self.remote), "lts:lts")
+        merge = self.repo.merge_commit(base, head)
+        self.repo.git("push", str(self.remote), merge + ":refs/pull/1/merge")
+        raw = self.api.pull(1)
+        raw["base"]["sha"] = self.repo.base
+        raw["merge_commit_sha"] = merge
+        api = GitHub(POLICY)
+        api.repo = lambda path: (copy.deepcopy(raw) if path == "/pulls/1" else
+                                 {"commit": {"sha": self.api.branch("lts")}})
+        return api, head, base, merge
+
+    def test_old_pr_base_uses_current_candidate_and_keeps_documentation_exemption(self):
+        api, head, base, merge = self.advanced_base_candidate()
+        pr = api.pull(1)
+        with self.coordinator.graph_for(pr) as graph:
+            candidate, paths, commits = self.coordinator.evidence(pr, graph)
+        self.assertEqual(pr["base"]["sha"], base)
+        self.assertEqual(candidate, merge)
+        self.assertEqual(paths, ["Docs/mock.md"])
+        self.assertEqual(commits, [head])
+        self.assertTrue(documentation_only(paths))
+
+    def test_candidate_with_old_parent_still_blocks_after_branch_refresh(self):
+        api, _, _, _ = self.advanced_base_candidate()
+        self.repo.commit("later.cc", "int later;\n")
+        self.repo.git("push", str(self.remote), "lts:lts")
+        pr = api.pull(1)
+        with self.coordinator.graph_for(pr) as graph, self.assertRaisesRegex(Blocked, "candidate is stale"):
+            self.coordinator.evidence(pr, graph)
 
     def test_replacement_promotion_excludes_closed_aborted_source_from_batch(self):
         self.coordinator.policy = dict(POLICY, branches=["lts"])
