@@ -2,7 +2,9 @@
 """Small GitHub App client. Never retries a write with an uncertain outcome."""
 import base64
 import hashlib
+import http.client
 import json
+import logging
 import os
 import subprocess
 import time
@@ -56,13 +58,30 @@ class GitHub:
             headers={"Authorization": "Bearer " + (token or self.token(fork)),
                      "Accept": "application/vnd.github+json", "Content-Type": "application/json",
                      "X-GitHub-Api-Version": "2022-11-28", "User-Agent": "mysql-ce-merge"})
-        try:
-            with urllib.request.urlopen(req, timeout=30) as response:
-                body = response.read()
-                return json.loads(body) if body else None
-        except urllib.error.HTTPError as error:
-            # Never put API response bodies or credentials into public diagnostics.
-            raise Blocked(f"GitHub API returned HTTP {error.code}") from None
+        attempts = 3 if method in ("GET", "HEAD") else 1
+        for attempt in range(attempts):
+            try:
+                with urllib.request.urlopen(req, timeout=30) as response:
+                    body = response.read()
+                    return json.loads(body) if body else None
+            except urllib.error.HTTPError as error:
+                # Never put API response bodies or credentials into diagnostics.
+                code = error.code
+                error.close()
+                if attempts == 1 or code not in (502, 503, 504):
+                    raise Blocked(f"GitHub API returned HTTP {code}") from None
+            except (urllib.error.URLError, http.client.RemoteDisconnected,
+                    http.client.IncompleteRead, ConnectionError, TimeoutError):
+                if attempts == 1:
+                    # A write may already have succeeded. Let its caller reconcile
+                    # recorded intent instead of blindly submitting it again.
+                    raise ConnectionError("GitHub API connection failed; request outcome may be unknown") from None
+            if attempt + 1 == attempts:
+                raise Blocked("GitHub API read unavailable after 3 attempts; will reevaluate on the next poll") from None
+            delay = attempt + 1
+            logging.warning("GitHub API read interrupted; retrying in %s second(s), attempt %s/%s",
+                            delay, attempt + 2, attempts)
+            time.sleep(delay)
 
     def repo(self, suffix, method="GET", data=None, fork=False):
         name = self.policy["bot_fork" if fork else "repository"]

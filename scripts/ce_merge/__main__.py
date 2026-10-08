@@ -90,7 +90,7 @@ def serve(coordinator, host, port):
             except BlockingIOError:
                 pass
             except Exception:
-                logging.exception("Coordinator tick failed; publication intent retained for receipt reconciliation")
+                logging.exception("Coordinator tick failed; will retry on the next poll")
             wake.wait(coordinator.policy.get("poll_seconds", 60))
             wake.clear()
     finally:
