@@ -35,6 +35,34 @@ class SameRepositoryPolicyTests(unittest.TestCase):
         self.assertEqual(value['bot_fork'], value['repository'])
         self.assertEqual(value['fork_installation_id'], value['installation_id'])
 
+    def test_active_without_release_app_blocks_release_tag_creation(self):
+        for supplied in (False, True):
+            policy = same_policy()
+            policy.pop('release_app_id')
+            if supplied:
+                policy['release_app_id'] = 0
+            value = self.load(policy)
+            rules = {r['name']: r for r in rulesets(value)}
+            release = rules['CE release tag creation']
+            self.assertEqual(release['rules'], [{'type': 'creation'}])
+            self.assertEqual(release['bypass_actors'], [])
+            self.assertEqual(release['conditions']['ref_name'], {
+                'include': ['~ALL'], 'exclude': ['refs/tags/ce-integration/*']})
+            self.assertEqual(rules['CE receipt creation']['bypass_actors'][0]['actor_id'],
+                             value['app_id'])
+            self.assertEqual(rules['CE immutable tags']['bypass_actors'], [])
+
+    def test_release_app_configuration_rejects_invalid_ids(self):
+        for value in (-1, None, '123', True):
+            with self.subTest(value=value), self.assertRaisesRegex(Blocked, 'release_app_id'):
+                self.load(dict(same_policy(), release_app_id=value))
+
+    def test_configured_release_app_remains_the_only_release_tag_creator(self):
+        value = self.load(same_policy())
+        release = next(r for r in rulesets(value) if r['name'] == 'CE release tag creation')
+        self.assertEqual(release['bypass_actors'], [{
+            'actor_id': value['release_app_id'], 'actor_type': 'Integration', 'bypass_mode': 'always'}])
+
     def test_explicit_same_repo_ignores_obsolete_fork_installation(self):
         for installation in (0, 999):
             value = self.load(dict(same_policy(), bot_fork='example/ce', fork_installation_id=installation))

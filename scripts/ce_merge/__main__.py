@@ -106,6 +106,7 @@ def main():
     commands = parser.add_subparsers(dest="command", required=True)
     for name in ("rulesets", "verify-deployment", "once", "status", "audit", "snapshot"):
         commands.add_parser(name)
+    commands.add_parser("attest-deployment").add_argument("snapshot")
     server = commands.add_parser("serve")
     server.add_argument("--host", default="127.0.0.1")
     server.add_argument("--port", type=int, default=8080)
@@ -153,6 +154,9 @@ def main():
     with store.exclusive():
         if args.command == "once":
             coordinator.tick()
+        elif args.command == "attest-deployment":
+            coordinator.attest_deployment(json.loads(Path(args.snapshot).read_text()), operator)
+            print("Administrator ruleset snapshot verified against live deployment and recorded")
         elif args.command == "verify-deployment":
             coordinator.deployment()
             print("CE repository settings and rulesets match deployment policy")
