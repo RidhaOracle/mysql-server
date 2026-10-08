@@ -7,7 +7,7 @@ import subprocess
 import urllib.parse
 
 from .git import PublicGraph
-from .policy import require, sha
+from .policy import require, sha, staging_repository
 
 
 def public_release(github, manifest):
@@ -33,7 +33,7 @@ def validate_source(graph, manifest, head, commits):
 
 def publish(policy, store, github, manifest):
     require(policy["mode"] == "active", "Shadow mode cannot publish security code")
-    public_release(github, manifest)  # Before any public write, including a fork ref.
+    public_release(github, manifest)  # Before any public write, including a staging ref.
     require(not store.uncertain(), "Reconcile uncertain CE publication first")
     hold = store.setting("hold")
     require(hold and hold.get("release_tag") == manifest["release_tag"], "Matching promotion hold is required")
@@ -62,16 +62,18 @@ def publish(policy, store, github, manifest):
                    GIT_TERMINAL_PROMPT="0", GIT_CONFIG_GLOBAL=os.devnull, GIT_CONFIG_NOSYSTEM="1")
         store.audit(operation, "promotion-publish-intent", {"head": head, "release": manifest["release_tag"]})
         result = subprocess.run(["git", "-c", "core.hooksPath=/dev/null", "push",
-                                 "https://github.com/" + policy["bot_fork"] + ".git",
+                                 "https://github.com/" + staging_repository(policy) + ".git",
                                  head + ":refs/heads/" + branch], cwd=graph.path, env=env,
                                 stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=300)
         require(result.returncode == 0, "Publication outcome requires inspection; deterministic ref is safe to retry")
-    owner = policy["bot_fork"].split("/")[0]
+    staging = staging_repository(policy)
+    owner = staging.split("/")[0]
+    pr_head = branch if staging == policy["repository"] else owner + ":" + branch
     pulls = github.repo("/pulls?state=all&head=" + urllib.parse.quote(owner + ":" + branch, safe=""))
     require(len(pulls) <= 1, "Ambiguous promotion PR")
     pr = pulls[0] if pulls else github.repo("/pulls", "POST", {
         "title": "Released security code for " + manifest["release_tag"],
-        "head": owner + ":" + branch, "base": manifest["base"],
+        "head": pr_head, "base": manifest["base"],
         "body": "Approved code-only promotion after public release. Independent review and CE validation are required."})
     manifest = dict(manifest, pr=pr["number"])
     require(pr["state"] == "open" and not pr.get("draft") and

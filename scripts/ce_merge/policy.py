@@ -20,29 +20,45 @@ def sha(value):
     return value
 
 
+def staging_repository(policy):
+    """Stage in CE by default; preserve explicitly configured legacy forks."""
+    return policy.get("bot_fork", policy["repository"])
+
+
 def load(path):
     policy = json.loads(Path(path).read_text())
     policy.pop("ci_revision", None)  # Ignore obsolete dispatch configuration.
     policy.pop("ci_ref", None)
     require(policy["mode"] in ("shadow", "active"), "Invalid coordinator mode")
     require(policy.get("strategy") == "forward", "Only the forward integration strategy is supported")
+    policy.setdefault("bot_fork", policy["repository"])
+    if staging_repository(policy) == policy["repository"]:
+        # Same repository means the same installation, including old configs
+        # that retained a zero or obsolete fork installation ID.
+        policy["fork_installation_id"] = policy["installation_id"]
     for key in ("repository", "bot_fork"):
         require(re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", policy[key]),
                 "Invalid repository name")
-    require(policy["repository"] != policy["bot_fork"], "Bot must use a separate fork")
     branches = policy["branches"]
     require(branches and len(set(branches)) == len(branches), "Invalid branch chain")
     for branch in branches + policy.get("release_branches", []):
         require(re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_./-]*", branch)
                 and ".." not in branch and "//" not in branch
                 and not branch.endswith(("/", ".", ".lock")), "Invalid branch name")
+    if staging_repository(policy) == policy["repository"]:
+        require(not any(b in ("upmerge", "promotion") or b.startswith(("upmerge/", "promotion/"))
+                        for b in branches + policy.get("release_branches", [])),
+                "CE targets cannot use reserved bot staging namespaces")
     require(not set(branches) & set(policy.get("release_branches", [])),
             "Release and development branches overlap")
     require(policy["forbidden_paths"] and policy["maintainers"], "Missing merge policy")
     rehearsal_test(policy)
     if policy["mode"] == "active":
-        require(all(policy[k] > 0 for k in ("app_id", "installation_id", "fork_installation_id", "release_app_id")),
-                "Configure the GitHub App before activation")
+        require(all(policy.get(k, 0) > 0 for k in ("app_id", "installation_id", "release_app_id")),
+                "Configure the merge and release Apps before activation")
+        if staging_repository(policy) != policy["repository"]:
+            require(policy.get("fork_installation_id", 0) > 0,
+                    "A separate staging fork requires its App installation ID")
     return policy
 
 
@@ -107,7 +123,7 @@ def rulesets(policy):
                 "conditions": {"ref_name": {"include": include or targets, "exclude": exclude or []}},
                 "bypass_actors": bypass or [], "rules": rules}
 
-    return [
+    result = [
         rule("CE merge executor", [{"type": "update", "parameters": {
             "update_allows_fetch_and_merge": False}}], app),
         # The App verifies the linked PRs before a single atomic push. Native
@@ -134,3 +150,10 @@ def rulesets(policy):
         rule("CE receipt creation", [{"type": "creation"}], app,
              target="tag", include=["refs/tags/ce-integration/*"]),
     ]
+    if staging_repository(policy) == policy["repository"]:
+        result.append(rule("CE bot staging", [
+            {"type": "creation"},
+            {"type": "update", "parameters": {"update_allows_fetch_and_merge": False}},
+            {"type": "deletion"}, {"type": "non_fast_forward"}], app,
+            include=["refs/heads/upmerge/**/*", "refs/heads/promotion/**/*"]))
+    return result
