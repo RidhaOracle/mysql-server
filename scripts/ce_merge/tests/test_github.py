@@ -37,6 +37,38 @@ class ReviewTests(unittest.TestCase):
         self.api.reviewed(self.pr)
         self.api.oca(self.pr)
 
+    def test_pull_refreshes_old_base_from_current_target_branch(self):
+        self.pr["base"].update(ref="release/lts")
+        calls = []
+        def repo(path):
+            calls.append(path)
+            if path == "/pulls/12":
+                return copy.deepcopy(self.pr)
+            if path == "/branches/release%2Flts":
+                return {"commit": {"sha": "c" * 40}}
+            raise AssertionError(path)
+        self.api.repo = repo
+        pr = self.api.pull(12)
+        self.assertEqual(pr["base"]["sha"], "c" * 40)
+        self.assertEqual(pr["head"], self.pr["head"])
+        self.assertEqual(calls, ["/pulls/12", "/branches/release%2Flts"])
+
+    def test_pull_does_not_fall_back_to_old_base_when_branch_unavailable(self):
+        self.pr["base"]["ref"] = "lts"
+        def repo(path):
+            if path == "/pulls/12":
+                return copy.deepcopy(self.pr)
+            raise Blocked("GitHub API returned HTTP 404")
+        self.api.repo = repo
+        with self.assertRaisesRegex(Blocked, "404"):
+            self.api.pull(12)
+
+    def test_pull_rejects_invalid_current_branch_sha(self):
+        self.pr["base"]["ref"] = "lts"
+        self.api.repo = lambda path: copy.deepcopy(self.pr) if path == "/pulls/12" else {"commit": {"sha": "invalid"}}
+        with self.assertRaisesRegex(Blocked, "Invalid commit SHA"):
+            self.api.pull(12)
+
     def test_trusted_ref_resolution_supports_branch_or_tag_names(self):
         calls = []
         def resolve(path):

@@ -10,7 +10,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
-from .policy import Blocked, require
+from .policy import Blocked, require, sha
 
 
 def encode(value):
@@ -80,7 +80,11 @@ class GitHub:
         raise Blocked("API pagination limit exceeded")
 
     def pull(self, number):
-        return self.repo(f"/pulls/{int(number)}")
+        pr = self.repo(f"/pulls/{int(number)}")
+        # The PR payload can retain its original base SHA after the target moves.
+        # Use the current branch tip; candidate-parent checks still reject races.
+        pr["base"]["sha"] = sha(self.branch(pr["base"]["ref"]))
+        return pr
 
     def branch(self, branch):
         return self.repo("/branches/" + urllib.parse.quote(branch, safe=""))["commit"]["sha"]

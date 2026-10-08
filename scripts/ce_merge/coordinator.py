@@ -5,7 +5,7 @@ import json
 import time
 
 from .git import MergeConflict, PublicGraph
-from .policy import Blocked, documentation_only, matches, require, rulesets, sha, upmerge_till
+from .policy import Blocked, check_content, documentation_only, matches, require, rulesets, sha, upmerge_till
 from .release import validate_source
 
 
@@ -64,7 +64,11 @@ class Coordinator:
         merge = sha(pr.get("merge_commit_sha"))
         require(graph.parents(merge) == [pr["base"]["sha"], pr["head"]["sha"]],
                 "GitHub merge candidate is stale; retry after regeneration")
-        paths, commits = graph.inspect(pr["base"]["sha"], pr["head"]["sha"])
+        _, commits = graph.inspect(pr["base"]["sha"], pr["head"]["sha"])
+        # Classify the actual candidate's changes, excluding unrelated target
+        # changes absent from an older contributor branch.
+        paths = graph.paths(pr["base"]["sha"], merge)
+        check_content(paths, "", self.policy)
         return merge, paths, commits
 
     def ci_request_key(self, identity):
