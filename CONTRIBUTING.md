@@ -78,7 +78,8 @@ things reviewers always need. On open, CI automatically:
 - runs MTR,
 - auto-labels the affected area and assigns a reviewer.
 
-CI reports completion or actionable failures after the build and MTR run finish.
+CI reports completion or actionable failures after the build and MTR run finish;
+use the pull request's Checks tab to follow live progress.
 
 ## CE merge-process rollout
 
