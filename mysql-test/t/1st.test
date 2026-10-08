@@ -1,3 +1,6 @@
 # Check that we haven't any strange new tables or databases
 select schema_name from information_schema.schemata order by schema_name;
 show tables in mysql where Tables_in_mysql != 'ndb_binlog_index';
+
+# Temporary CE App rehearsal: confirm the selected candidate test executes.
+SELECT 1 + 1 AS ce_rehearsal_sum;
