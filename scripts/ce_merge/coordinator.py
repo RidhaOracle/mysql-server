@@ -3,10 +3,14 @@
 import hashlib
 import json
 
-from .ci import existing_pr_ci
+from .validation import candidate_ci, validation_head
 from .git import MergeConflict, PublicGraph
 from .policy import Blocked, check_content, documentation_only, matches, require, rulesets, sha, upmerge_till, rehearsal_test
 from .release import validate_source
+
+
+class TargetMoved(Blocked):
+    """An unpublished snapshot needs refresh on the next coordinator poll."""
 
 
 class Coordinator:
@@ -54,37 +58,35 @@ class Coordinator:
         try:
             graph.fetch(["refs/heads/" + b for b in self.policy["branches"] +
                          self.policy.get("release_branches", [])] +
-                        [f'refs/pull/{pr["number"]}/head', f'refs/pull/{pr["number"]}/merge'])
+                        [f'refs/pull/{pr["number"]}/head'])
             return graph
         except Exception:
             graph.__exit__()
             raise
 
     def evidence(self, pr, graph):
-        merge = sha(pr.get("merge_commit_sha"))
-        require(graph.parents(merge) == [pr["base"]["sha"], pr["head"]["sha"]],
-                "GitHub merge candidate is stale; retry after regeneration")
-        _, commits = graph.inspect(pr["base"]["sha"], pr["head"]["sha"])
-        # Classify the actual candidate's changes, excluding unrelated target
-        # changes absent from an older contributor branch.
-        paths = graph.paths(pr["base"]["sha"], merge)
+        base, head = pr["base"]["sha"], pr["head"]["sha"]
+        _, commits = graph.inspect(base, head)
+        tree = graph.merge_tree(base, head)
+        # GitHub may retain a merge ref for an older base. Prepare locally;
+        # neither the contributor's branch nor protected CE refs need to move.
+        merge = validation_head(graph, base, tree, head)
+        paths = graph.paths(base, merge)
         check_content(paths, "", self.policy)
         return merge, paths, commits
 
     def ci(self, pr, merge, paths, parents=None, staged=False, graph=None):
+        require(graph is not None, "Candidate validation needs its Git graph")
+        if staged:
+            require(graph.parents(merge) == parents, "Prepared candidate parents changed")
+            require(parents and parents[0] == pr["base"]["sha"],
+                    "Prepared target changed; rebuild the unpublished batch")
+            graph.fetch([f'refs/pull/{pr["number"]}/head'])
+            require(graph.merge_tree(pr["base"]["sha"], pr["head"]["sha"]) == graph.tree(merge),
+                    "Prepared candidate differs from the reviewed source tree")
         if documentation_only(paths):
             return True, "Builds not applicable: documentation-only allowlist"
-        tested = sha(pr.get("merge_commit_sha"))
-        if staged:
-            require(graph is not None, "Prepared candidate validation needs its Git graph")
-            graph.fetch([f'refs/pull/{pr["number"]}/merge'])
-            require(graph.parents(tested) == [pr["base"]["sha"], pr["head"]["sha"]],
-                    "PR CI candidate is stale; update the PR before integrating")
-            require(graph.parents(merge) == parents and graph.tree(merge) == graph.tree(tested),
-                    "Prepared candidate differs from the PR's tested source tree")
-        else:
-            require(tested == merge, "PR CI candidate changed")
-        return existing_pr_ci(self.github, self.policy, pr, tested, paths)
+        return candidate_ci(self, pr, graph, graph.tree(merge), paths)
 
     def publish(self, pr, ci_ok, summary, eligible=False):
         key = f'published:{pr["number"]}'
@@ -97,7 +99,7 @@ class Coordinator:
         check_id = self.github.check(pr, "Merge check", "success" if eligible else "failure",
                                      ("Ready for maintainer authorization" +
                                       (" — REHEARSAL: " + rehearsal_test(self.policy) + " only per MTR shard"
-                                       if rehearsal_test(self.policy) else "")) if eligible else summary,
+                                       if rehearsal_test(self.policy) else "") + "\n\n" + summary) if eligible else summary,
                                      action=eligible and self.policy["mode"] == "active")
         self.store.set_setting(key, fingerprint, "coordinator")
 
@@ -229,6 +231,8 @@ class Coordinator:
                     steps[index]["conflict"] = True
                     op["data"]["conflict_index"] = index
                     op["data"]["reason"] = f'Upmerge into {steps[index]["branch"]} needs a reviewed resolution PR'
+                require(steps[0]["tree"] != graph.tree(steps[0]["base_sha"]),
+                        "Contribution is already present or has no changes on the current target")
                 steps[0].update(source_pr=root["number"], source_head=op["head"])
             graph.export_candidates([s for s in steps if "after" in s], self.bundle(op))
         op["data"]["steps"] = steps
@@ -325,8 +329,10 @@ class Coordinator:
     def verify_step(self, step, graph):
         pr = self.github.pull(step["pr"])
         self.basic(pr)
-        require(pr["head"]["sha"] == step["review_head"] and pr["base"]["ref"] == step["branch"] and
-                pr["base"]["sha"] == step["base_sha"], "Candidate or target changed; abort and prepare a new batch")
+        require(pr["head"]["sha"] == step["review_head"] and pr["base"]["ref"] == step["branch"],
+                "Candidate changed; abort and prepare a new batch")
+        if pr["base"]["sha"] != step["base_sha"]:
+            raise TargetMoved("Target advanced; rebuilding unpublished candidates on the next poll")
         self.github.reviewed(pr)
         if "repair_body" in step:
             require((pr.get("body") or "") == step["repair_body"], "Resolution instructions changed")
@@ -340,6 +346,24 @@ class Coordinator:
             self.check_promotion(graph, source, step["promotion"], commits)
         return pr
 
+    def refresh_targets(self, op):
+        """Discard only unpublished candidates; retain authorization on the source head."""
+        data = op["data"]
+        require(not data["intent"], "Reconcile publication before rebuilding candidates")
+        changed = any(self.github.branch(s["branch"]) != s["base_sha"] for s in data["steps"])
+        if not changed:
+            return
+        require(not any(s.get("promotion") or "repair_body" in s for s in data["steps"]),
+                "Target changed for a promotion or reviewed resolution; abort and prepare a reviewed replacement")
+        data.setdefault("superseded_batches", []).append(data["steps"])
+        data.setdefault("superseded_prs", []).extend(s["pr"] for s in data["steps"]
+                                                   if s.get("pr") and s["pr"] != op["pr"])
+        data["generation"] = data.get("generation", 0) + 1
+        data["steps"] = []
+        data.pop("conflict_index", None)
+        data.pop("reason", None)
+        self.store.save(op, "queued", "target-moved-rebuild-unpublished-batch")
+
     def advance(self, op):
         data = op["data"]
         try:
@@ -348,6 +372,9 @@ class Coordinator:
                 return
             self.deployment()
             self.source(self.github.pull(op["pr"]), op)
+            if data["steps"]:
+                self.check_prepared_policy(op)
+                self.refresh_targets(op)
             if not data["steps"]:
                 self.prepare(op)
             self.check_prepared_policy(op)
@@ -370,7 +397,7 @@ class Coordinator:
                     except Blocked as error:
                         ok, message = False, str(error)
                     self.github.check(pr, "Merge check", "success" if ok else "failure",
-                                      "Prepared batch; publication awaits every target" if ok else message,
+                                      "Prepared batch; publication awaits every target\n\n" + message if ok else message,
                                       candidate=step["after"])
                     if not ok:
                         waiting.append(message)
@@ -392,6 +419,9 @@ class Coordinator:
                 self.store.save(op, "publishing", "atomic-push-intent")
                 graph.atomic_publish(data["steps"], data["receipt"], token=self.github.token())
             self.reconcile(op)
+        except TargetMoved as error:
+            data["reason"] = str(error)
+            self.store.save(op, "uncertain" if data["intent"] else "prepared", "target-moved")
         except Blocked as error:
             data["reason"] = str(error)
             self.store.save(op, "uncertain" if data["intent"] else "blocked", "blocked")
@@ -426,7 +456,7 @@ class Coordinator:
         self.source(self.github.pull(op["pr"]), op)
         with self.graph(self.policy) as graph:
             graph.restore_candidates(op["data"]["steps"], self.bundle(op))
-            # Recheck exact candidate CI, including reruns/revocations.
+            # Recheck current-head PR CI, including reruns/revocations.
             for step in op["data"]["steps"]:
                 pr = self.verify_step(step, graph)
                 paths, _ = graph.inspect(step["base_sha"], step["after"])

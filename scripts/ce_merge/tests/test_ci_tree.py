@@ -23,7 +23,7 @@ class CandidateEvidenceTests(unittest.TestCase):
         self.assertNotEqual(self.step['after'], self.tested)
         with self.case.graph(self.case.coordinator.policy) as graph:
             graph.restore_candidates(self.op['data']['steps'], self.case.coordinator.bundle(self.op))
-            with patch('scripts.ce_merge.coordinator.existing_pr_ci', return_value=(True, 'passed')) as read:
+            with patch('scripts.ce_merge.validation.existing_pr_ci', return_value=(True, 'passed')) as read:
                 self.assertTrue(Coordinator.ci(self.case.coordinator, self.pr, self.step['after'], ['fix.cc'],
                     parents=self.step['parents'], staged=True, graph=graph)[0])
                 self.assertEqual(read.call_args.args[3], self.tested)
@@ -34,20 +34,20 @@ class CandidateEvidenceTests(unittest.TestCase):
             graph.restore_candidates(self.op['data']['steps'], self.case.coordinator.bundle(self.op))
             graph.run('fetch', str(self.case.repo.path), other)
             candidate = graph.commit(graph.tree(other), self.step['parents'], 'Different source')
-            with patch('scripts.ce_merge.coordinator.existing_pr_ci') as read:
+            with patch('scripts.ce_merge.validation.existing_pr_ci') as read:
                 with self.assertRaisesRegex(Blocked, 'differs'):
                     Coordinator.ci(self.case.coordinator, self.pr, candidate, ['fix.cc'],
                         parents=self.step['parents'], staged=True, graph=graph)
                 read.assert_not_called()
 
-    def test_wrong_candidate_parents_or_stale_pr_merge_cannot_pass(self):
+    def test_wrong_candidate_parents_or_changed_target_cannot_pass(self):
         with self.case.graph(self.case.coordinator.policy) as graph:
             graph.restore_candidates(self.op['data']['steps'], self.case.coordinator.bundle(self.op))
             with self.assertRaises(Blocked):
                 Coordinator.ci(self.case.coordinator, self.pr, self.step['after'], ['fix.cc'],
                     parents=[], staged=True, graph=graph)
             self.pr['base']['sha'] = 'd'*40
-            with self.assertRaisesRegex(Blocked, 'stale'):
+            with self.assertRaisesRegex(Blocked, 'target changed'):
                 Coordinator.ci(self.case.coordinator, self.pr, self.step['after'], ['fix.cc'],
                     parents=self.step['parents'], staged=True, graph=graph)
 

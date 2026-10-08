@@ -4,7 +4,7 @@ Option A is implemented: start at the oldest applicable supported branch and
 propagate toward Innovation. **All affected CE branch refs and an integration
 receipt publish in one `git push --atomic`. There is no SQLite database.**
 The checked-in configuration is **shadow mode**, with only `trunk` configured;
-production LTS names, ownership, App IDs, and trusted CI ref still require
+production LTS names, ownership, and App IDs still require
 an administrator's inventory and non-production rehearsal.
 
 ## What the contributor and bot do
@@ -21,13 +21,17 @@ not first merge into `trunk`. These version names are illustrative only.
 2. Trusted OCA verification, public CI, resolved conversations, and
    current-head approval from a reviewer with the repository Write, Maintain, or Admin
    role (including collaborators on personal repositories) make it eligible. CODEOWNERS is not an integration gate.
+   Target advancement alone does not require a contributor rebase: existing CI
+   remains valid for the unchanged PR head if it tested an ancestor of the current
+   target and the changes still merge cleanly. No extra validation PR is opened.
 3. An authorized maintainer clicks **Integrate** on the App's `Merge check` check.
    Authorization binds the PR head, target, and body. The label is advisory.
 4. The App snapshots the chain and prepares the original squash commit and every
    forward merge commit. Nothing has merged into any CE target yet.
 5. The App stages candidates in its public bot fork and opens an upmerge PR for
    each newer branch. Reviewers approve those exact candidates, including null
-   merges. CI builds/tests the actual candidate commits that will be published.
+   merges. CI validates each reviewed PR head; the App checks its clean merge
+   against the current target before publication.
 6. After every target passes, the App rechecks authorization, reviews, checks,
    branch snapshots, release holds, and deployment policy. One atomic push updates
    all affected CE refs and creates an immutable receipt.
@@ -42,7 +46,7 @@ flowchart TD
     Prepare --> Conflict{"Conflict?"}
     Conflict -- Yes --> Resolve["Resolution PR: contributor resolves; owner reviews"]
     Resolve --> Prepare
-    Conflict -- No --> Review["Bot upmerge PRs: review + CI on every exact candidate"]
+    Conflict -- No --> Review["Bot upmerge PRs: current-head review + CI"]
     Review --> Ready{"All gates pass and snapshots unchanged?"}
     Ready -- No --> Wait["Wait or rebuild; CE refs unchanged"]
     Wait --> Review
@@ -219,31 +223,50 @@ The App publishes one **Merge check**, which reports readiness and offers
 Format Check workflows; there is no CE Merge Validation workflow or App-triggered
 CI dispatch. Rerun failed jobs through GitHub Actions when needed.
 
-Acceptance requires a successful current PR run from each required repository
-workflow and every required job/step, including both compiler builds, all four
-MTR shards, and services unit tests. Format Check is required for C/C++ and
-`.clang-format` changes. The App does not infer success from labels or accept its
-own summary as CI evidence. Changed CI workflow files require a reviewed bootstrap
-update before their results can be trusted.
+Acceptance requires a successful run for the **current PR head** from each
+required repository workflow and every required job/step, including both compiler
+builds, all four MTR shards, and services unit tests. Format Check is required for
+C/C++ and `.clang-format` changes. The App does not infer success from labels or
+accept its own summary as CI evidence. Changed CI workflow files require a
+reviewed bootstrap update before their results can be trusted.
 
 Each PR workflow records `pr:<number>:<base>:<head>:<merge>` in its run title.
-Existing older runs can be reused only when GitHub supplies a complete matching
-PR/base/head association and their merge-verification step passed. Empty fork
-metadata or stale evidence blocks integration; it never causes an App dispatch.
-Successful sibling jobs from earlier attempts of the same run can be reused when
-failed jobs are rerun. Newer pending/failed runs supersede old successes.
+The recorded PR number and head must match the open PR; the recorded target base
+must be an ancestor of the current target. Passing merge-verification steps attest
+the combination actually tested. Existing older runs can be reused only when
+GitHub supplies a complete matching PR/head/repository association and an accepted
+target ancestor. Empty fork metadata, checks on an older contributor revision,
+or unrelated target history cannot authorize integration. Successful sibling
+jobs from earlier attempts of the same run can be reused when failed jobs are
+rerun. Newer pending/failed runs supersede old successes.
 
-For prepared squash/upmerge commits, the App checks the PR merge candidate's
-parents, the prepared commit's parents, and equality of their source trees before
-reusing that PR's results. The published SHA can differ because of squash or
-merge metadata; the validated source tree and target base must match. Generated
-upmerge PRs trigger the ordinary PR workflows, with their results and reviews
-checked again before atomic publication. This removes duplicate CI jobs while
-retaining candidate validation.
+**Accepted tradeoff:** the target can advance after CI runs. The coordinator
+computes the merge against the latest target locally and rejects conflicts, but
+does not require CI to have tested that latest combined tree. A clean Git merge
+does not prove that the combination is free of build or behavioral regressions.
+This policy deliberately accepts that risk to avoid mandatory rebases or repeat
+CI solely because the target advances. Targeting a branch does not automatically
+rebase the contributor's commits. The bot leaves those commits and their approvals
+unchanged; source changes still require fresh checks and current-head approval.
+
+The coordinator uses no extra validation PR, validation branch, workflow dispatch,
+or automatic CI rerun. GitHub's temporary test-merge ref may be stale or absent:
+current mergeability is computed from the current target and source objects.
+For a prepared squash/upmerge, the App checks the prepared parents and equality
+with the current clean merge of its reviewed source PR. It rechecks source
+reviews, OCA, CI, and target snapshots before the atomic push. The normal forward
+upmerge PRs still provide their required reviews and existing PR CI.
+
+If a target moves while an ordinary unpublished batch waits, the App retains
+source-head authorization, archives the old candidate mapping, and rebuilds the
+chain. Changed upmerge PR heads need fresh reviews and CI. Promotions and accepted
+conflict resolutions require explicitly reviewed replacements if their recorded
+target moves. Once publication intent exists, only receipt reconciliation/retry
+is allowed; a possibly published transaction is never automatically rebuilt.
 
 Only `Docs/**`, `README`, `README.md`, and `CONTRIBUTING.md` qualify for an explicit
 documentation-only exemption. Other Markdown files are covered by PR CI. Missing,
-skipped, foreign, or stale evidence never passes. Active deployments must replace
+skipped, foreign, or superseded-head evidence never passes. Active deployments must replace
 the two legacy required check contexts with **Merge check**, still bound to the
 App; the deployment verifier blocks until the rulesets match. Historical checks
 are left intact, but only the new check name can authorize integration.
@@ -300,9 +323,11 @@ python3 -m scripts.ce_merge retry OPERATION_ID
 python3 -m scripts.ce_merge resolve-rejected OPERATION_ID --fencing-record RECORD
 ```
 
-`resume` rechecks unchanged unpublished work. If a source revision/body, target
-snapshot, or policy changes, abort the unpublished batch and obtain fresh Integrate
-authorization; old candidate PRs are superseded and must not be merged manually.
+`resume` rechecks unpublished work. Ordinary target movement automatically
+rebuilds the batch while retaining source-head authorization. If the source
+revision/body or policy changes, abort and obtain fresh Integrate authorization.
+Promotion and reviewed-resolution target changes require a reviewed replacement.
+Superseded upmerge PRs must not be merged manually.
 Abort creates no CE changes and clears cached eligibility so a fresh action can
 be offered. Completed and uncertain operations cannot be aborted.
 
@@ -395,7 +420,7 @@ sequenceDiagram
     C->>G: Verify published release evidence
     C->>G: Push only approved CE-parented head to bot fork
     C->>G: Create promotion PR
-    G-->>C: Independent review and exact-candidate CI
+    G-->>C: Independent review and current-head PR CI
     C->>G: Publish all approved target refs atomically, including ancestry
     R->>R: Final validation, public source tag, private synchronization
     R->>C: Lift hold with validation and synchronization records
