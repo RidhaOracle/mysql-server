@@ -742,7 +742,7 @@ class AtomicTests(unittest.TestCase):
         self.coordinator.ci = fail
         self.coordinator.advance(self.op())
         self.unchanged()
-        failures = [(args, kwargs) for args, kwargs in self.api.checks if args[1:3] == ("CE / public-ci", "failure")]
+        failures = [(args, kwargs) for args, kwargs in self.api.checks if args[1:3] == ("Merge check", "failure")]
         self.assertEqual(len(failures), 2)
         self.assertEqual({kw["candidate"] for _, kw in failures}, {s["after"] for s in self.op()["data"]["steps"]})
 
@@ -825,28 +825,30 @@ class AtomicTests(unittest.TestCase):
         pr = self.api.pull(1)
         payload = {"action": "requested_action", "requested_action": {"identifier": "integrate"},
                    "repository": {"full_name": POLICY["repository"]}, "installation": {"id": 3},
-                   "sender": {"login": "owner"}, "check_run": {"id": 123, "name": "CE / policy",
+                   "sender": {"login": "owner"}, "check_run": {"id": 123, "name": "Merge check",
                    "conclusion": "success", "app": {"id": 1}, "head_sha": pr["head"]["sha"],
                    "external_id": authorization_identity(pr)}}
         self.assertEqual(authorize(payload, "delivery", POLICY, self.store, self.api), self.operation)
+        for old_name in ("CE / policy", "CE / public-ci"):
+            payload["check_run"]["name"] = old_name
+            with self.subTest(check=old_name), self.assertRaises(Blocked):
+                authorize(payload, "old-check", POLICY, self.store, self.api)
+        payload["check_run"]["name"] = "Merge check"
         self.api.pulls[1]["base"]["ref"] = "trunk"
         with self.assertRaises(Blocked):
             authorize(payload, "delivery2", POLICY, self.store, self.api)
 
 
 class PolicyTests(unittest.TestCase):
-    def test_ci_ref_replaces_manual_revision_in_old_and_new_configurations(self):
+    def test_obsolete_dispatch_configuration_is_not_required(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "policy.json"
-            for extra in ({}, {"ci_revision": "CONFIGURE_TRUSTED_DEPLOYMENT_SHA"}):
-                path.write_text(json.dumps(dict(POLICY, ci_ref="trunk", **extra)))
+            for extra in ({}, {"ci_ref": "trunk", "ci_revision": "old"}, {"ci_ref": None}):
+                path.write_text(json.dumps(dict(POLICY, **extra)))
                 policy = load(path)
-                self.assertEqual(policy["ci_ref"], "trunk")
+                self.assertNotIn("ci_ref", policy)
                 self.assertNotIn("ci_revision", policy)
-            for ref in (None, "", "../trunk"):
-                path.write_text(json.dumps(dict(POLICY, ci_ref=ref)))
-                with self.subTest(ref=ref), self.assertRaises(Blocked):
-                    load(path)
+
     def test_malformed_or_backward_metadata_fails_closed(self):
         for body in ("Upmerge-Till:\nUpmerge-Reason: example", "Upmerge-Till: trunk\nUpmerge-Till: trunk",
                      "Backport-To: lts", "Upmerge-Till: lts\nUpmerge-Reason: \nNext section"):

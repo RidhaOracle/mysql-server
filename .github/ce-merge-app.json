@@ -9,7 +9,7 @@
     "workflows": "write",
     "pull_requests": "write",
     "checks": "write",
-    "actions": "write",
+    "actions": "read",
     "issues": "write"
   },
   "default_events": ["check_run", "pull_request", "pull_request_review", "workflow_run"]

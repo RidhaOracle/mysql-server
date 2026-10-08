@@ -75,8 +75,8 @@ jobs:
               }],
             ]);
 
-            const config = configurations.get(run?.name);
             const runPath = String(run?.path || '').split('@', 1)[0];
+            const config = [...configurations.values()].find((value) => value.path === runPath);
             const headSha = String(run?.head_sha || '').toLowerCase();
             const headBranch = run?.head_branch;
             const headOwner = run?.head_repository?.owner?.login;
@@ -110,7 +110,7 @@ jobs:
             if (
               String(workflow.id) !== String(run.workflow_id) ||
               workflow.path !== config.path ||
-              workflow.name !== run.name
+              configurations.get(workflow.name)?.path !== config.path
             ) {
               core.warning('Ignoring a source run that is not the expected repository workflow.');
               return;
@@ -274,7 +274,7 @@ jobs:
             core.setOutput('run_attempt', String(runAttempt));
             core.setOutput('run_id', String(runId));
             core.setOutput('workflow_key', config.key);
-            core.setOutput('workflow_name', run.name);
+            core.setOutput('workflow_name', workflow.name);
             core.setOutput('ready', 'true');
 
   publish:
@@ -382,7 +382,6 @@ jobs:
             });
             const runPath = String(run.path || '').split('@', 1)[0];
             if (
-              run.name !== workflowName ||
               run.event !== 'pull_request' ||
               run.status !== 'completed' ||
               Number(run.run_attempt) !== runAttempt ||

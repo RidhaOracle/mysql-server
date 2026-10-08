@@ -28,7 +28,7 @@ def authorize(payload, delivery, policy, store, github):
     actor = payload["sender"]["login"]
     require(github.can_integrate(actor), "Only configured maintainers may authorize integration")
     check = payload["check_run"]
-    require(check.get("name") == "CE / policy" and check.get("conclusion") == "success",
+    require(check.get("name") == "Merge check" and check.get("conclusion") == "success",
             "Integration requires a successful App policy check")
     identity = check.get("external_id", "")
     number = identity.split(":", 1)[0]
@@ -125,7 +125,6 @@ def main():
     rejected.add_argument("operation")
     rejected.add_argument("--fencing-record", required=True,
                           help="Evidence that the old push process/token can no longer complete")
-    commands.add_parser("rerun-ci").add_argument("run_id", type=int)
     for name in ("register-promotion", "publish-promotion"):
         commands.add_parser(name).add_argument("manifest")
     retire = commands.add_parser("retire-promotion")
@@ -193,8 +192,6 @@ def main():
                 if args.command == "abort":
                     store.set_setting(f'published:{op["pr"]}', None, operator)
             coordinator.report(op)
-        elif args.command == "rerun-ci":
-            coordinator.rerun_ci(args.run_id, operator)
         elif args.command == "hold":
             require(not store.uncertain(), "Reconcile uncertain publication before changing holds")
             require(not args.release_tag or args.target, "Release holds must declare all target branches")
