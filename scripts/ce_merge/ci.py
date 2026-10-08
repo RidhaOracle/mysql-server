@@ -5,6 +5,9 @@ import urllib.parse
 from .policy import require, rehearsal_test
 
 
+STALE_CI = ": waiting for CI on the current target and PR revision"
+
+
 WORKFLOWS = {
     'pr-build.yml': {'Debug build (gcc)': ['Verify PR merge commit', 'Build'],
                      'Debug build (clang)': ['Verify PR merge commit', 'Build']},
@@ -62,7 +65,7 @@ def existing_pr_ci(github, policy, pr, merge, paths):
             continue
         run = max(runs, key=lambda r: (r['run_number'], r['id']))
         if not tested_revision(run, pr, merge):
-            pending.append(label + ': waiting for CI on the current target and PR revision')
+            pending.append(label + STALE_CI)
             continue
         if run['status'] != 'completed':
             pending.append(label + ': ' + run['status'])

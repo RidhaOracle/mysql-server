@@ -108,7 +108,7 @@ class FakeGitHub:
     def advisory_label(self, *args):
         pass
 
-    def bot_pr(self, operation, index, head, base, original, detail=""):
+    def bot_pr(self, operation, index, head, base, original, detail="", validation=False):
         key = (operation, index)
         if key not in self.bot_pulls:
             number = max(self.pulls) + 1
@@ -248,13 +248,19 @@ class AtomicTests(unittest.TestCase):
         self.assertEqual(commits, [head])
         self.assertTrue(documentation_only(paths))
 
-    def test_candidate_with_old_parent_still_blocks_after_branch_refresh(self):
-        api, _, _, _ = self.advanced_base_candidate()
-        self.repo.commit("later.cc", "int later;\n")
+    def test_stale_github_merge_is_rebuilt_locally_without_changing_contributor(self):
+        api, head, _, old_merge = self.advanced_base_candidate()
+        base = self.repo.commit("later.cc", "int later;\n")
         self.repo.git("push", str(self.remote), "lts:lts")
         pr = api.pull(1)
-        with self.coordinator.graph_for(pr) as graph, self.assertRaisesRegex(Blocked, "candidate is stale"):
-            self.coordinator.evidence(pr, graph)
+        with self.coordinator.graph_for(pr) as graph:
+            candidate, paths, commits = self.coordinator.evidence(pr, graph)
+            self.assertEqual(graph.parents(candidate), [base])
+            self.assertEqual(graph.tree(candidate), graph.merge_tree(base, head))
+        self.assertNotEqual(candidate, old_merge)
+        self.assertEqual(paths, ["Docs/mock.md"])
+        self.assertEqual(commits, [head])
+        self.assertEqual(api.pull(1)["head"]["sha"], head)
 
     def test_replacement_promotion_excludes_closed_aborted_source_from_batch(self):
         self.coordinator.policy = dict(POLICY, branches=["lts"])

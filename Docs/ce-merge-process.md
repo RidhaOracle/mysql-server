@@ -4,7 +4,7 @@ Option A is implemented: start at the oldest applicable supported branch and
 propagate toward Innovation. **All affected CE branch refs and an integration
 receipt publish in one `git push --atomic`. There is no SQLite database.**
 The checked-in configuration is **shadow mode**, with only `trunk` configured;
-production LTS names, ownership, App IDs, and trusted CI ref still require
+production LTS names, ownership, and App IDs still require
 an administrator's inventory and non-production rehearsal.
 
 ## What the contributor and bot do
@@ -21,6 +21,9 @@ not first merge into `trunk`. These version names are illustrative only.
 2. Trusted OCA verification, public CI, resolved conversations, and
    current-head approval from a reviewer with the repository Write, Maintain, or Admin
    role (including collaborators on personal repositories) make it eligible. CODEOWNERS is not an integration gate.
+   A contributor branch may be behind its target: the bot prepares fresh validation
+   when needed, without rebasing or pushing to that branch. Actual content conflicts
+   still require a reviewed resolution.
 3. An authorized maintainer clicks **Integrate** on the App's `Merge check` check.
    Authorization binds the PR head, target, and body. The label is advisory.
 4. The App snapshots the chain and prepares the original squash commit and every
@@ -229,17 +232,64 @@ update before their results can be trusted.
 Each PR workflow records `pr:<number>:<base>:<head>:<merge>` in its run title.
 Existing older runs can be reused only when GitHub supplies a complete matching
 PR/base/head association and their merge-verification step passed. Empty fork
-metadata or stale evidence blocks integration; it never causes an App dispatch.
+metadata or stale evidence cannot authorize integration. If a run tested an older
+base, active mode prepares a fresh bot validation PR; it never dispatches a separate
+workflow.
 Successful sibling jobs from earlier attempts of the same run can be reused when
 failed jobs are rerun. Newer pending/failed runs supersede old successes.
 
-For prepared squash/upmerge commits, the App checks the PR merge candidate's
-parents, the prepared commit's parents, and equality of their source trees before
-reusing that PR's results. The published SHA can differ because of squash or
-merge metadata; the validated source tree and target base must match. Generated
-upmerge PRs trigger the ordinary PR workflows, with their results and reviews
-checked again before atomic publication. This removes duplicate CI jobs while
-retaining candidate validation.
+The App computes the current target plus source changes locally. It reuses
+existing PR results when their recorded target, head, merge parents, and source
+tree match. A pending or failed run for that current candidate does not cause a
+second validation PR; retry a failed run through GitHub Actions.
+
+When GitHub's merge ref or the recorded CI target is stale, the App creates a
+**CI-only validation PR** in the controlled bot fork. Its deterministic head is a
+snapshot of the freshly computed tree on the current target. Opening this PR
+triggers the same PR Build, MTR, and applicable Format Check workflows. The App
+checks its repository, base, head, merge parents, source tree, and workflow evidence.
+There is no new workflow, dispatch permission, or write to the contributor's fork.
+Fresh testing is necessary when the target changes; identical current evidence is
+reused. The source PR's Merge check links the validation PR by number.
+
+A CI-only PR must not be merged manually. Approval stays on the original reviewed
+source head, with OCA and conversations rechecked there. Forward upmerge and
+resolution PRs retain their own mandatory reviews; a CI-only snapshot does not
+replace those approvals. For prepared squash/upmerge commits, the App also verifies
+the prepared parents and equality with the reviewed source's current merged tree.
+Publication rechecks every source review and CI result before the atomic push.
+
+Validation intents and PR identities are persisted before/after staging, with
+stable commit bytes and branch names for recovery after an uncertain API response.
+Obsolete validation PRs are closed when the source closes, changes head/target, or
+the target advances; their audit records and CI history remain. Shadow mode reports
+that fresh validation is needed but does not create branches or PRs. Active mode
+requires the App installed on the controlled bot fork.
+
+If a target moves while an ordinary unpublished batch waits, the App retains
+source-head authorization, archives the old candidate mapping, and rebuilds the
+chain. New upmerge candidates need fresh reviews and CI. A promotion or accepted
+conflict resolution requires an explicitly reviewed replacement if its recorded
+target moves. Once publication intent exists, only receipt reconciliation/retry
+is allowed: no automatic rebuilding of a possibly published transaction.
+
+```mermaid
+flowchart TD
+    Source["Reviewed contributor PR; head unchanged"] --> Prepare["Compute current target + PR changes"]
+    Prepare --> Conflict{"Content conflict?"}
+    Conflict -- Yes --> Fix["Contributor supplies reviewed resolution"]
+    Conflict -- No --> Evidence{"Current matching PR CI available?"}
+    Evidence -- Yes --> Reuse["Reuse existing CI; wait if still running"]
+    Evidence -- "Stale target or merge ref" --> Bot["Bot opens CI-only validation PR"]
+    Bot --> CI["Existing build / MTR / format workflows"]
+    CI --> Ready["Source Merge check ready after all gates"]
+    Reuse --> Ready
+    Ready --> Integrate["Maintainer authorizes source head"]
+    Integrate --> Chain["Prepare forward chain; review and validate each target"]
+    Chain --> Publish["Recheck snapshots; publish all targets atomically"]
+    Chain -- "Target advances before publication" --> Rebuild["Rebuild unpublished candidates; keep source head"]
+    Rebuild --> Chain
+```
 
 Only `Docs/**`, `README`, `README.md`, and `CONTRIBUTING.md` qualify for an explicit
 documentation-only exemption. Other Markdown files are covered by PR CI. Missing,
@@ -300,9 +350,11 @@ python3 -m scripts.ce_merge retry OPERATION_ID
 python3 -m scripts.ce_merge resolve-rejected OPERATION_ID --fencing-record RECORD
 ```
 
-`resume` rechecks unchanged unpublished work. If a source revision/body, target
-snapshot, or policy changes, abort the unpublished batch and obtain fresh Integrate
-authorization; old candidate PRs are superseded and must not be merged manually.
+`resume` rechecks unpublished work. Ordinary target movement automatically
+rebuilds the batch while retaining source-head authorization. If the source
+revision/body or policy changes, abort and obtain fresh Integrate authorization.
+Promotion and reviewed-resolution target changes require a reviewed replacement.
+Superseded candidate PRs must not be merged manually.
 Abort creates no CE changes and clears cached eligibility so a fresh action can
 be offered. Completed and uncertain operations cannot be aborted.
 
