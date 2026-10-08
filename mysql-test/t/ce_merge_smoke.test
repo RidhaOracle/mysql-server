@@ -1,0 +1,2 @@
+# CE App rehearsal: exercise non-documentation CI and the main MTR suite.
+SELECT 1 + 1 AS sum_value, NULL <=> NULL AS null_safe_equal;
