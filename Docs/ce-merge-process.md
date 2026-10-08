@@ -28,7 +28,7 @@ not first merge into `trunk`. These version names are illustrative only.
    Authorization binds the PR head, target, and body. The label is advisory.
 4. The App snapshots the chain and prepares the original squash commit and every
    forward merge commit. Nothing has merged into any CE target yet.
-5. The App stages candidates in its public bot fork and opens an upmerge PR for
+5. The App stages candidates under `upmerge/` in the CE repository and opens an upmerge PR for
    each newer branch. Reviewers approve those exact candidates, including null
    merges. CI validates each reviewed PR head; the App checks its clean merge
    against the current target before publication.
@@ -93,11 +93,11 @@ Every target uses an exact expected-old-SHA lease and must advance by ancestry.
 The App never falls back to sequential merge API calls or individual pushes.
 The receipt tag `ce-integration/<operation-id>` is created in the same transaction.
 This guarantee covers refs in the CE repository, not review events, PR UI changes,
-bot-fork staging, or separate SEC and EE repositories.
+temporary staging refs, or separate SEC and EE repositories.
 
 A single service host uses a process-scoped `flock` to exclude concurrent workers.
 There is no durable merge-lock owner or timeout-based unlock. Local JSON manifests
-retain the authorized revision, prepared SHAs, fork PRs, CI source revision, and
+retain the authorized revision, prepared SHAs, generated PRs, CI source revision, and
 publication intent; Git bundles preserve prepared objects across restarts. These
 are fsynced on persistent local disk, with append-only JSONL audit events. They
 are needed to resume the exact approved batch, not to simulate multi-branch
@@ -118,10 +118,31 @@ are not tamperproof against the service/filesystem administrator.
 | Tags | Immutable; only the merge App creates receipts, separate release App creates release tags |
 
 Branch rules cover the configured development-chain and release targets. Other
-branches in the CE repository can be created and updated according to normal
-repository permissions and any additional organization rules. The bot still uses
-its separate controlled fork for staging; security promotion also retains that
-controlled-fork requirement.
+contributor branches in the CE repository can be created and updated according
+to normal repository permissions and any additional organization rules.
+
+Bot staging defaults to the CE repository and reuses its existing App installation.
+No second GitHub account, repository, or installation is required. The generated
+**CE bot staging** ruleset reserves `upmerge/` and `promotion/` branch namespaces
+for the App. These temporary refs are separate from the configured CE target refs:
+staging does not merge a change into any maintained branch. GitHub's
+[recursive ruleset patterns](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-rulesets/creating-rulesets-for-a-repository#using-fnmatch-syntax)
+cover nested operation names. Target quality checks retain no bypass, and only
+the configured App can bypass staging creation/update/deletion restrictions.
+Targets cannot be configured inside these reserved namespaces.
+
+Omit the legacy `bot_fork` and `fork_installation_id` fields for this default.
+Existing deployments that explicitly configure a different `bot_fork` remain
+supported and require that fork's installation ID. If `bot_fork` equals
+`repository`, the main installation is always reused. Apply the generated
+staging ruleset before activating the updated service. Changing staging policy
+requires aborting/re-authorizing unpublished work; reconcile uncertain publication
+before changing it.
+
+Security promotion uses `promotion/` branches in the same repository. Approved
+SC manifests, independent release/security authorization, validated source trees,
+and the requirement for an already public release remain mandatory before any
+public staging write. No SEC/EE history is merged into CE.
 
 An App direct push is therefore part of this design. A requirement that even the
 App may only use GitHub's single-PR merge endpoint would conflict with atomic
@@ -158,12 +179,13 @@ service has no third-party dependencies. Never run contributor code on this host
    tree. Routine sync refuses unrelated histories and does not resolve conflicts
    with automatic ours/theirs strategies.
 2. Register the GitHub App from `.github/ce-merge-app.json` with the actual webhook
-   URL. Install only on public CE and its controlled public bot fork. No human
-   developers should push to that fork. `workflows: write` allows reviewed workflow
-   changes to integrate; the App has no SEC/EE access. Use separate private and
+   URL. Install on public CE; ordinary staging reuses this installation. The
+   generated staging ruleset restricts bot branch writes to this App.
+   `workflows: write` allows reviewed workflow changes to integrate; the App has
+   no SEC/EE access. Use separate private and
    release credentials. Require organization 2FA for members/collaborators.
 3. Copy `.github/ce-merge-policy.json` to `/etc/mysql-ce-merge/policy.json`. Set real
-   repository/fork names, ordered branches (Innovation last), release branches,
+   repository name, ordered branches (Innovation last), release branches,
    maintainers, App/installation IDs, and public-content policy. Keep `strategy`
    set to `forward`. Reviewers need the repository Write, Maintain, or Admin role.
    Collaborators on personal repositories qualify with Write access. Approval does not require membership
@@ -292,7 +314,7 @@ stateDiagram-v2
     blocked --> aborted: cancel unpublished batch
 ```
 
-For a conflict, the bot stages the lower candidate in its fork and opens a PR
+For a conflict, the bot stages the lower candidate under `upmerge/` in CE and opens a PR
 against the conflicting target. The check lists the exact lower candidate and
 base SHAs. In your own fork, fetch that bot branch, start a resolution branch from
 the recorded target base, merge the lower candidate, resolve conflicts, and commit.
@@ -418,7 +440,7 @@ sequenceDiagram
     R->>R: Publish corresponding product release
     R->>C: Release hold and approved publication manifest
     C->>G: Verify published release evidence
-    C->>G: Push only approved CE-parented head to bot fork
+    C->>G: Push only approved CE-parented head to CE promotion branch
     C->>G: Create promotion PR
     G-->>C: Independent review and current-head PR CI
     C->>G: Publish all approved target refs atomically, including ancestry

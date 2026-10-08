@@ -12,7 +12,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
-from .policy import Blocked, require, sha
+from .policy import Blocked, require, sha, staging_repository
 
 
 def encode(value):
@@ -32,8 +32,10 @@ class GitHub:
         self.tokens = {}
 
     def token(self, fork=False):
-        installation = self.policy["fork_installation_id" if fork else "installation_id"]
-        cache_key = (installation, self.policy["bot_fork" if fork else "repository"])
+        repository = staging_repository(self.policy) if fork else self.policy["repository"]
+        installation = (self.policy["installation_id"] if repository == self.policy["repository"]
+                        else self.policy["fork_installation_id"])
+        cache_key = (installation, repository)
         token, expires = self.tokens.get(cache_key, (None, 0))
         if expires > time.time() + 60:
             return token
@@ -46,7 +48,7 @@ class GitHub:
             ["openssl", "dgst", "-sha256", "-sign", os.environ["CE_APP_PRIVATE_KEY"]],
             input=unsigned.encode(), stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True).stdout
         result = self.request("POST", f"/app/installations/{installation}/access_tokens",
-                              {"repositories": [self.policy["bot_fork" if fork else "repository"].split("/")[1]]},
+                              {"repositories": [repository.split("/")[1]]},
                               token=unsigned + "." + encode(signature))
         self.tokens[cache_key] = (result["token"], time.time() + 3000)
         return result["token"]
@@ -84,7 +86,7 @@ class GitHub:
             time.sleep(delay)
 
     def repo(self, suffix, method="GET", data=None, fork=False):
-        name = self.policy["bot_fork" if fork else "repository"]
+        name = staging_repository(self.policy) if fork else self.policy["repository"]
         return self.request(method, "/repos/" + name + suffix, data, fork=fork)
 
     def pages(self, suffix, key=None):
@@ -185,13 +187,15 @@ class GitHub:
             require(exact[0]["object"]["sha"] == head, "Bot branch changed unexpectedly")
         else:
             self.repo("/git/refs", "POST", {"ref": "refs/heads/" + branch, "sha": head}, fork=True)
-        owner = self.policy["bot_fork"].split("/")[0]
+        staging = staging_repository(self.policy)
+        owner = staging.split("/")[0]
+        pr_head = branch if staging == self.policy["repository"] else owner + ":" + branch
         pulls = self.repo("/pulls?state=all&head=" + urllib.parse.quote(owner + ":" + branch, safe=""))
         require(len(pulls) <= 1, "Ambiguous generated PR")
         if pulls:
             return pulls[0]["number"]
         return self.repo("/pulls", "POST", {
-            "title": f"Upmerge #{original} into {base}", "head": owner + ":" + branch,
+            "title": f"Upmerge #{original} into {base}", "head": pr_head,
             "base": base, "body": f"Original PR: #{original}\nCE operation: {operation}\n\n"
                                      "Review this exact prepared candidate. All affected CE branches publish together "
                                      "only after every candidate passes review and CI; no separate PR merge occurs.\n\n" + detail

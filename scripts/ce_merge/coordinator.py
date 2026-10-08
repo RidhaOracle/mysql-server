@@ -5,7 +5,7 @@ import json
 
 from .validation import candidate_ci, validation_head
 from .git import MergeConflict, PublicGraph
-from .policy import Blocked, check_content, documentation_only, matches, require, rulesets, sha, upmerge_till, rehearsal_test
+from .policy import Blocked, check_content, documentation_only, matches, require, rulesets, sha, upmerge_till, rehearsal_test, staging_repository
 from .release import validate_source
 
 
@@ -138,8 +138,11 @@ class Coordinator:
             self.publish(pr, False, str(error))
 
     def check_promotion(self, graph, pr, manifest, commits):
-        require(pr["head"]["repo"]["full_name"] == self.policy["bot_fork"],
-                "Promotion must use the controlled public fork")
+        require(pr["head"]["repo"]["full_name"] == staging_repository(self.policy),
+                "Promotion must use the configured public staging repository")
+        if staging_repository(self.policy) == self.policy["repository"]:
+            require(pr["head"].get("ref", "").startswith("promotion/"),
+                    "Promotion must use the protected promotion branch namespace")
         validate_source(graph, manifest, pr["head"]["sha"], commits)
         require(graph.ancestor(manifest["base_sha"], pr["base"]["sha"]), "Promotion base is unrelated")
 
@@ -241,7 +244,7 @@ class Coordinator:
 
     def stage(self, op, graph):
         steps = [s for s in op["data"]["steps"] if "after" in s or s.get("conflict")]
-        remote = "https://github.com/" + self.policy["bot_fork"] + ".git"
+        remote = "https://github.com/" + staging_repository(self.policy) + ".git"
         for step in steps:
             step.setdefault("stage_id", op["id"] + (f'-r{op["data"]["generation"]}' if op["data"].get("generation") else ""))
         refs = [f'refs/heads/upmerge/{s["stage_id"]}/{i}' for i, s in enumerate(steps)]
