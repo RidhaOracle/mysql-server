@@ -65,7 +65,11 @@ scripts/ci/mtr.sh --suite=innodb     # pass MTR args straight through
 
 ## 6. Open the pull request
 
-Push your branch and open a PR against `trunk`. The
+Push your branch to a personal fork or, if you have push access, to this repository.
+Both use the same contribution checks. Select the oldest applicable supported
+branch as the PR **base**. The published CE policy lists supported targets; the
+checked-in configuration uses three rehearsal branches. A fix needed in an LTS
+and Innovation starts at that LTS. The
 [pull request template](.github/PULL_REQUEST_TEMPLATE.md) prompts for the few
 things reviewers always need. On open, CI automatically:
 
@@ -75,6 +79,40 @@ things reviewers always need. On open, CI automatically:
 - auto-labels the affected area and assigns a reviewer.
 
 CI reports completion or actionable failures after the build and MTR run finish.
+
+## Merge changes across versions
+
+After administrator provisioning, a configured maintainer requests integration
+with `/integrate` on an approved, OCA-verified PR with successful **Merge check**.
+Target the oldest applicable version and include `Merge-Through: <last-version>`.
+Optional `Resolution-PR: <version> <PR-link>` lines supply reviewed version-specific
+conflict resolutions. For an earlier content stop, include `Merge-Reason:`;
+reviewed history-only merges still connect the remaining versions. Legacy
+`Upmerge:` and `Upmerge-Till:` spellings remain accepted.
+
+The bot first prepares the whole chain and tests all versions in parallel,
+without opening generated integration PRs. Matching original/resolution PR CI
+can satisfy individual checks; only missing checks launch **Merge Version Tests**.
+Source and resolution PRs require current-head human approval and trusted OCA
+verification. Unresolved conversations and change requests block integration.
+
+Once all tests pass, it squashes the original PR with `gh pr merge --squash`, then
+creates and merges one integration PR at a time with `gh pr merge --merge`.
+Each includes the actual preceding merge commit and reviewed version resolution.
+Verified generated PRs do not require another human approval under the configured
+bot review exception. Required tests, PR use, and history protections remain.
+Changed targets or file trees need fresh evidence. Earlier merges remain published
+if a later version blocks; the persistent lock stays held until completion.
+
+Authorization binds the original head, base, and body to readiness published
+before a new, unedited `/integrate` comment. The `Integrate` label is informational.
+Progress comments link test evidence, PRs, and actual merge commits. There is no
+automatic backport from `trunk`. Undisclosed security code and tests must remain
+private, including in forks and PR descriptions.
+
+See the [Merge Bot process and operator runbook](Docs/ce-merge-process.md) for
+configuration, deployment, conflict resolution, and recovery. Until cutover is
+complete, the existing repository integration process remains in effect.
 
 ## What to expect from us (triage SLAs)
 

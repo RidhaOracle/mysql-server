@@ -1,0 +1,22 @@
+{
+  "repository": "RidhaOracle/mysql-server",
+  "branches": [
+    "codex/ce-test-lts-old",
+    "codex/ce-test-lts-new",
+    "codex/ce-test-innovation"
+  ],
+  "maintainers": [
+    "seemasundara",
+    "gopshank",
+    "RidhaOracle"
+  ],
+  "ci_mtr_test": "main.1st",
+  "oca_label": "OCA Verified",
+  "forbidden_paths": [
+    "internal",
+    "internal-sec"
+  ],
+  "forbidden_metadata_patterns": [],
+  "bot_user_id": 91072007,
+  "state_branch": "ce-merge-state"
+}
