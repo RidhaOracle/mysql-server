@@ -1,4 +1,6 @@
 {
   "key": "hold",
-  "value": null
+  "value": {
+    "reason": "Move live rehearsal from disposable codex branches to the actual 8.4, 9.7, trunk version chain at user request"
+  }
 }
