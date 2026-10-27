@@ -12,7 +12,7 @@ from scripts.ce_merge.__main__ import authorize, main, operate
 from scripts.ce_merge.coordinator import Coordinator
 from scripts.ce_merge.github import authorization_identity
 from scripts.ce_merge.journal import Journal
-from scripts.ce_merge.policy import Blocked, load, resolution_number, resolution_prs, rulesets, upmerge_till
+from scripts.ce_merge.policy import Blocked, load, resolution_number, resolution_prs, rulesets, merge_through
 from test_coordinator import POLICY
 
 
@@ -23,7 +23,7 @@ class AuthorizationTests(unittest.TestCase):
         self.store = Journal(self.temp.name)
         self.github = MagicMock()
         self.coordinator = Coordinator(POLICY, self.store, self.github)
-        self.pr = {"number": 1, "state": "open", "draft": False, "body": "Upmerge: trunk",
+        self.pr = {"number": 1, "state": "open", "draft": False, "body": "Merge-Through: trunk",
                    "head": {"sha": "a" * 40, "repo": {"full_name": "contributor/ce"}},
                    "base": {"sha": "b" * 40, "ref": "lts", "repo": {"full_name": POLICY["repository"]}}}
         self.comment = {"id": 123, "body": "/integrate", "user": {"id": 5, "login": "owner"},
@@ -88,7 +88,7 @@ class AuthorizationTests(unittest.TestCase):
     def test_head_base_body_and_policy_changes_invalidate_readiness(self):
         mutations = [lambda: self.pr["head"].update(sha="c" * 40),
                      lambda: self.pr["base"].update(ref="trunk"),
-                     lambda: self.pr.update(body="Upmerge-Till: lts"),
+                     lambda: self.pr.update(body="Merge-Through: lts"),
                      lambda: setattr(self.coordinator, "policy", dict(POLICY, forbidden_paths=["different"]))]
         for change in mutations:
             before = copy.deepcopy(self.pr)
@@ -132,12 +132,16 @@ class AuthorizationTests(unittest.TestCase):
 
 
 class PolicyAndWorkflowTests(unittest.TestCase):
-    def test_public_metadata_and_legacy_aliases(self):
-        self.assertEqual(upmerge_till('Merge-Through: trunk', 'lts', POLICY['branches']), 'trunk')
-        for body in ('Merge-Through: trunk\nUpmerge: trunk', 'Merge-Through: lts',
-                     'Merge-Through: trunk\nMerge-Through: trunk'):
+    def test_only_public_metadata_is_accepted(self):
+        self.assertEqual(merge_through('Merge-Through: trunk', 'lts', POLICY['branches']), 'trunk')
+        self.assertEqual(merge_through('Merge-Through: lts', 'lts', POLICY['branches']), 'lts')
+        for body in ('Merge-Through: trunk\nMerge-Through: trunk',
+                     'Upmerge: trunk', 'Upmerge-Till: trunk',
+                     'Merge-Through: trunk\nUpmerge: trunk',
+                     'Merge-Through: trunk\nUpmerge-Till: lts',
+                     'Merge-Through: lts\nUpmerge-Reason: already fixed'):
             with self.subTest(body=body), self.assertRaises(Blocked):
-                upmerge_till(body, 'lts', POLICY['branches'])
+                merge_through(body, 'lts', POLICY['branches'])
 
     def test_resolution_links_are_repository_and_version_bound(self):
         body = 'Resolution-PR: trunk https://github.com/example/ce/pull/123'
@@ -153,8 +157,8 @@ class PolicyAndWorkflowTests(unittest.TestCase):
     def test_state_and_staging_names_cannot_overlap_targets(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "policy.json"
-            for change in ({"state_branch": "lts"}, {"branches": ["upmerge/test"]},
-                           {"state_branch": "upmerge/state"}, {"bot_user_id": 0}, {"state_branch": "bad..name"}):
+            for change in ({"state_branch": "lts"}, {"branches": ["merge/test"]},
+                           {"state_branch": "merge-tests/state"}, {"bot_user_id": 0}, {"state_branch": "bad..name"}):
                 path.write_text(json.dumps(dict(POLICY, **change)))
                 with self.subTest(change=change), self.assertRaises(Blocked):
                     load(path)

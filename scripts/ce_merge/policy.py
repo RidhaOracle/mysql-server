@@ -36,7 +36,7 @@ def load(path):
     require(branches and len(set(branches)) == len(branches), "Invalid branch chain")
     policy.setdefault("state_branch", "ce-merge-state")
     branch_name(policy["state_branch"])
-    reserved = ("merge", "merge-tests", "upmerge")
+    reserved = ("merge", "merge-tests")
     require(policy["state_branch"] not in branches and not any(
             policy["state_branch"] == p or policy["state_branch"].startswith(p + "/") for p in reserved),
             "State branch must be separate from integration and staging branches")
@@ -79,20 +79,24 @@ def matches(expected, actual):
     return expected == actual
 
 
-def upmerge_till(body, base, branches):
+def merge_through(body, base, branches):
     body = re.sub(r"<!--.*?-->", "", body or "", flags=re.S)
     require(base in branches, "Target branch is not in the forward chain")
     require(not re.search(r"^[ \t]*Backport[^:\n]*:", body, re.M | re.I),
             "Backport instructions are not supported: target the oldest applicable branch")
-    values = re.findall(r"^[ \t]*(?:Merge-Through|Upmerge(?:-Till)?):[ \t]*([^\n]*)$", body, re.M)
+    require(not re.search(r"^[ \t]*Upmerge(?:-Till|-Reason)?:", body, re.M),
+            "Use Merge-Through and Merge-Reason metadata")
+    values = re.findall(r"^[ \t]*Merge-Through:[ \t]*([^\n]*)$", body, re.M)
     require(len(values) == 1, "Exactly one Merge-Through: <last-content-branch> field is required")
     target = values[0].strip()
     require(target in branches and branches.index(target) >= branches.index(base),
             "Invalid Merge-Through target")
     if target != branches[-1]:
-        reasons = re.findall(r"^[ \t]*(?:Merge-Reason|Upmerge-Reason):[ \t]*(.*)$", body, re.M)
-        require(len(reasons) == 1 and reasons[0].strip(),
-                "Early content stop requires Merge-Reason and reviewed applicability")
+        reasons = re.findall(r"^[ \t]*Merge-Reason:[ \t]*(.*)$", body, re.M)
+        # Stopping at the PR base explicitly selects a backport-only change;
+        # every later version receives an ancestry-only merge.
+        require((target == base and not reasons) or (len(reasons) == 1 and reasons[0].strip()),
+                "Early content stop beyond the PR target requires Merge-Reason; supplied reasons must be non-empty")
     return target
 
 

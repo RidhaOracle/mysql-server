@@ -86,9 +86,10 @@ After administrator provisioning, a configured maintainer requests integration
 with `/integrate` on an approved, OCA-verified PR with successful **Merge check**.
 Target the oldest applicable version and include `Merge-Through: <last-version>`.
 Optional `Resolution-PR: <version> <PR-link>` lines supply reviewed version-specific
-conflict resolutions. For an earlier content stop, include `Merge-Reason:`;
-reviewed history-only merges still connect the remaining versions. Legacy
-`Upmerge:` and `Upmerge-Till:` spellings remain accepted.
+conflict resolutions. When the PR target equals `Merge-Through`, the bot infers a
+backport null merge: apply the fix there and preserve all later versions' files
+while connecting their history. No separate reason is needed. For an earlier
+content stop beyond the PR target, include `Merge-Reason:`.
 
 The bot first prepares the whole chain and tests all versions in parallel,
 without opening generated integration PRs. Matching original/resolution PR CI

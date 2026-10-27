@@ -78,7 +78,6 @@ class StateTests(unittest.TestCase):
         with self.assertRaises(PersistenceError):
             self.case.coordinator.tick()
         self.case.unchanged()
-        self.assertEqual(self.case.remote_git("for-each-ref", "--format=%(refname)", "refs/heads/upmerge"), "")
         self.assertEqual(self.case.remote_git("for-each-ref", "--format=%(refname)", "refs/heads/merge"), "")
         self.assertEqual(self.case.remote_git("for-each-ref", "--format=%(refname)", "refs/heads/merge-tests"), "")
         hook.unlink()

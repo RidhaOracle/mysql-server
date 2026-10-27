@@ -18,7 +18,7 @@ from .state import GitJournal
 
 COMMANDS = ("once", "init-state", "status", "audit", "snapshot", "rulesets", "verify-deployment",
             "attest-deployment", "resume", "abort", "reconcile", "retry",
-            "use-resolution", "repair-upmerge", "refresh-checks", "hold", "unhold")
+            "use-resolution", "refresh-checks", "hold", "unhold")
 
 
 def timestamp(value):
@@ -90,7 +90,7 @@ def operate(coordinator, command, args, actor):
     else:
         op = next((o for o in store.operations() if o["id"] == args.operation), None)
         require(op, "Unknown operation")
-        if command in ("use-resolution", "repair-upmerge"):
+        if command == "use-resolution":
             coordinator.repair(op, resolution_number(args.pr, coordinator.policy['repository']))
         elif command == 'refresh-checks':
             require(not op['data']['intent'] and op['state'] not in ('complete', 'aborted'),
