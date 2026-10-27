@@ -16,6 +16,7 @@
     },
     "policy": "0f693ffc76b00fdb1d14f107545d504718a4514d1b1ed8bf777d396f1550fc44",
     "protocol": "two-phase-v1",
+    "reason": "GitHub merge was not confirmed; reconcile before retrying",
     "resolution_prs": {},
     "steps": [
       {
@@ -53,5 +54,5 @@
   "head": "ef70776ae5231c755d93742153ad9d4e4cdfbc19",
   "id": "45aee340cb1250a6902fec31f3f1d7e1",
   "pr": 65,
-  "state": "publishing"
+  "state": "uncertain"
 }
