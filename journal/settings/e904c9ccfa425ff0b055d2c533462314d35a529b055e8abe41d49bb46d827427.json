@@ -1,0 +1,7 @@
+{
+  "key": "format",
+  "value": {
+    "repository": "RidhaOracle/mysql-server",
+    "version": 1
+  }
+}
