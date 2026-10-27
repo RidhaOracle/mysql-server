@@ -7,8 +7,8 @@ squashes the original PR and opens and merges one integration PR at a time using
 the actual preceding merge commit. All publication PRs have GitHub's native
 **Merged** state. Earlier merges remain published if a later merge is blocked.
 
-The configured repository, maintainers, three `codex/ce-test-*` branches, and
-`ci_mtr_test: main.1st` rehearsal setting are preserved. The rehearsal uses
+The fork uses the real version branch chain `8.4` → `9.7` → `trunk`, with
+`ci_mtr_test: main.1st` selecting the rehearsal test in each MTR shard. The rehearsal uses
 `RidhaOracle` (GitHub ID `91072007`) as the automation account in `bot_user_id`.
 Its token must be supplied as `CE_MERGE_TOKEN`. There is no shadow mode or separate
 activation gate.
@@ -18,14 +18,14 @@ activation gate.
 Target the oldest applicable configured version and include:
 
 ```text
-Merge-Through: codex/ce-test-innovation
+Merge-Through: trunk
 ```
 
 Optional version-specific conflict resolutions can be linked in the same body:
 
 ```text
-Resolution-PR: codex/ce-test-lts-new https://github.com/RidhaOracle/mysql-server/pull/456
-Resolution-PR: codex/ce-test-innovation https://github.com/RidhaOracle/mysql-server/pull/457
+Resolution-PR: 9.7 https://github.com/RidhaOracle/mysql-server/pull/456
+Resolution-PR: trunk https://github.com/RidhaOracle/mysql-server/pull/457
 ```
 
 Each configured later version can have one resolution link. Numbers such as
@@ -37,7 +37,6 @@ version without changing their files. No separate reason field is required.
 For example, a PR targeting `8.4` with `Merge-Through: 8.4` changes `8.4`, then
 creates history-only merge PRs into `9.7` and `trunk`. A PR targeting `9.7` with
 `Merge-Through: 9.7` changes `9.7`, null-merges into `trunk`, and leaves `8.4` alone.
-Use the actual configured rehearsal branch names until production cutover.
 
 For a content stop beyond the PR target but before the newest version, include
 `Merge-Reason:` with a reviewed applicability explanation. Supplied reason fields

@@ -4,7 +4,8 @@ set -euo pipefail
 ctest_args=(
   --test-dir build
   --parallel "$(nproc)"
-  --test-timeout 120
+  # Some CTest entries contain an entire integration suite.
+  --timeout 900
   --output-on-failure
   # Bug#39882117 and Bug#39980115: Temporarily quarantine persistent
   # trunk failures. Keep the retry path below for transient failures

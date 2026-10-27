@@ -68,7 +68,7 @@ scripts/ci/mtr.sh --suite=innodb     # pass MTR args straight through
 Push your branch to a personal fork or, if you have push access, to this repository.
 Both use the same contribution checks. Select the oldest applicable supported
 branch as the PR **base**. The published CE policy lists supported targets; the
-checked-in configuration uses three rehearsal branches. A fix needed in an LTS
+checked-in fork configuration uses `8.4`, `9.7`, and `trunk` with MTR rehearsal coverage. A fix needed in an LTS
 and Innovation starts at that LTS. The
 [pull request template](.github/PULL_REQUEST_TEMPLATE.md) prompts for the few
 things reviewers always need. On open, CI automatically:

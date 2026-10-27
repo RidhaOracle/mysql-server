@@ -1,9 +1,9 @@
 {
   "repository": "RidhaOracle/mysql-server",
   "branches": [
-    "codex/ce-test-lts-old",
-    "codex/ce-test-lts-new",
-    "codex/ce-test-innovation"
+    "8.4",
+    "9.7",
+    "trunk"
   ],
   "maintainers": [
     "seemasundara",
@@ -18,5 +18,13 @@
   ],
   "forbidden_metadata_patterns": [],
   "bot_user_id": 91072007,
-  "state_branch": "ce-merge-state"
+  "state_branch": "ce-merge-state",
+  "ci_suites": {
+    "8.4": {
+      "replication": "binlog,binlog_gtid,binlog_nogtid,clone,federated,group_replication,rpl,rpl_gtid,rpl_nogtid",
+      "storage": "encryption,innodb,innodb_fts,innodb_gis,innodb_undo,innodb_zip,parts",
+      "core": "auth_sec,collations,component_keyring_file,connection_control,funcs_2,gcol,gis,information_schema,interactive_utilities,json,main,opt_trace,query_rewrite_plugins,x",
+      "services": "perfschema,secondary_engine,service_status_var_registration,service_sys_var_registration,service_udf_registration,sys_vars,sysschema,test_service_sql_api,test_services"
+    }
+  }
 }
