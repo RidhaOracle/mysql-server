@@ -1,0 +1,150 @@
+# Copyright (c) 2026, Oracle and/or its affiliates.
+name: MTR
+run-name: "pr:${{ github.event.pull_request.number }}:${{ github.event.pull_request.base.sha }}:${{ github.event.pull_request.head.sha }}:${{ github.sha }}"
+on:
+  pull_request:
+    paths-ignore: ["Docs/**", "README", "README.md", "CONTRIBUTING.md"]
+  # Use Actions → MTR → Run workflow to test a pipeline revision before a
+  # subsequent PR update creates its normal pull_request run.
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: mtr-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+# Run MTR's normal default test selection on every PR, split by suite so each
+# shard stays below MTR's suite timeout and the runner's job time limit.
+jobs:
+  mtr:
+    name: MTR (${{ matrix.shard }})
+    runs-on: ubuntu-latest
+    # A full default MTR selection needs substantially more time than the
+    # retired smoke check. 360 minutes is GitHub-hosted runners' job maximum.
+    timeout-minutes: 360
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - shard: replication
+            suites: binlog,binlog_gtid,binlog_nogtid,clone,federated,group_replication,rpl,rpl_gtid,rpl_nogtid
+            run_unit_tests: false
+          - shard: storage
+            suites: encryption,innodb,innodb_fts,innodb_gis,innodb_undo,innodb_zip,parts
+            run_unit_tests: false
+          - shard: core
+            suites: auth_sec,collations,component_keyring_file,connection_control,funcs_2,gcol,gis,information_schema,interactive_utilities,json,main,opt_trace,query_rewrite_plugins,x
+            run_unit_tests: false
+          - shard: services
+            suites: perfschema,secondary_engine,service_status_var_registration,service_sys_var_registration,service_udf_registration,sys_vars,sysschema,test_service_sql_api,test_services
+            run_unit_tests: true
+    permissions:
+      contents: read
+    env:
+      # Match the GCC PR build and trusted cache warmer exactly. ccache
+      # includes the compiler name in its cache key, so allowing CMake to
+      # discover cc/c++ here would prevent reuse of gcc/g++ entries.
+      CE_MTR_TEST: ${{ vars.CE_MTR_TEST }}
+      CC: gcc
+      CXX: g++
+    steps:
+      - name: Check out PR merge commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 2
+          persist-credentials: false
+          path: source
+      - name: Check out trusted CI scripts
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Manual runs always use the current trusted trunk scripts. PR runs
+          # pin the scripts to the PR base commit to retain their trust model.
+          ref: ${{ github.event.pull_request.base.sha || 'trunk' }}
+          fetch-depth: 1
+          persist-credentials: false
+          sparse-checkout: |
+            scripts/ci
+            scripts/ce_merge
+          path: trusted
+      - name: Verify PR merge commit
+        if: ${{ github.event_name == 'pull_request' }}
+        working-directory: source
+        env:
+          EXPECTED_BASE: ${{ github.event.pull_request.base.sha }}
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}
+          EXPECTED_MERGE: ${{ github.sha }}
+        run: |
+          test "$(git rev-parse HEAD)" = "$EXPECTED_MERGE"
+          test "$(git rev-parse HEAD^1)" = "$EXPECTED_BASE"
+          test "$(git rev-parse HEAD^2)" = "$EXPECTED_HEAD"
+          test "$(git -C ../trusted rev-parse HEAD)" = "$EXPECTED_BASE"
+      - name: Verify MTR suites
+        working-directory: source
+        env:
+          MTR_SUITES: ${{ matrix.suites }}
+        run: python3 ../trusted/scripts/ci/verify_suites.py --suites="$MTR_SUITES"
+      - name: Verify rehearsal test
+        if: ${{ env.CE_MTR_TEST != '' }}
+        working-directory: source
+        run: python3 ../trusted/scripts/ce_merge/mtr_rehearsal.py --test "$CE_MTR_TEST" --verify-only
+      - name: Install toolchain
+        working-directory: source
+        run: ../trusted/scripts/ci/bootstrap.sh
+      # Fork revisions can poison PR-scoped caches. Restore only for trusted,
+      # same-repository branches, and never save data from this PR workflow.
+      - name: Restore Boost cache
+        if: ${{ github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.id == github.event.repository.id }}
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/mysql-boost
+          key: boost-${{ hashFiles('source/cmake/boost.cmake') }}
+      - name: Restore ccache
+        if: ${{ github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.id == github.event.repository.id }}
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/ccache
+          key: ccache-gcc-${{ github.event.pull_request.head.sha || github.sha }}
+          restore-keys: ccache-gcc-
+      - name: Show runner resources
+        working-directory: source
+        run: |
+          echo "CPU cores: $(nproc)"
+          free -h
+          df -h .
+      - name: Build
+        working-directory: source
+        run: ../trusted/scripts/ci/build.sh debug
+      - name: Show ccache stats
+        if: always()
+        working-directory: source
+        run: ccache --show-stats
+      - name: Run MTR
+        if: ${{ env.CE_MTR_TEST == '' }}
+        working-directory: source
+        env:
+          MTR_SUITES: ${{ matrix.suites }}
+        run: ../trusted/scripts/ci/run_mtr.sh
+      - name: Run MTR rehearsal (${{ env.CE_MTR_TEST }})
+        if: ${{ env.CE_MTR_TEST != '' }}
+        working-directory: source
+        run: python3 ../trusted/scripts/ce_merge/mtr_rehearsal.py --test "$CE_MTR_TEST"
+      - name: Run unit tests
+        if: ${{ matrix.run_unit_tests }}
+        working-directory: source
+        run: ../trusted/scripts/ci/run_unit_tests.sh
+      - name: Publish test report
+        if: ${{ always() }}
+        # The privileged reporter never downloads or executes this untrusted artifact.
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: mtr-logs-${{ matrix.shard }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            source/build/mysql-test/var/log/
+            source/build/mysql-test/var/ctest*.log
+            source/build/mysql-test/var/**/log/**
+            source/build/mysql-test/var/**/core*
+            source/build/mysql-test/var/**/mysqld*.err
+            source/build/Testing/Temporary/
+          if-no-files-found: ignore
+          retention-days: 14
