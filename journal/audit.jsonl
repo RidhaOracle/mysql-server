@@ -47,3 +47,4 @@
 {"data": {"state": "prepared"}, "event": "candidate-tests-checked", "operation": "45aee340cb1250a6902fec31f3f1d7e1", "timestamp": 1793093018.9162161}
 {"data": {"state": "prepared"}, "event": "integration-pr-linked", "operation": "45aee340cb1250a6902fec31f3f1d7e1", "timestamp": 1793093020.4007897}
 {"data": {"state": "prepared"}, "event": "candidate-tests-checked", "operation": "45aee340cb1250a6902fec31f3f1d7e1", "timestamp": 1793093026.7607772}
+{"data": {"state": "publishing"}, "event": "github-pr-merge-intent", "operation": "45aee340cb1250a6902fec31f3f1d7e1", "timestamp": 1793093034.366201}

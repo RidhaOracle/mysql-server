@@ -4,7 +4,16 @@
     "actor": "RidhaOracle",
     "base": "9.7",
     "body": "Exercise the Merge Bot on the fork's real 9.7 and trunk branches using a documentation-only fixture. PR #64 and its actual compiler/MTR runs continue unchanged.\n\nMerge-Through: trunk\n\nOnly `Docs/ce-merge-rehearsal.md` changes. Builds and MTR are not applicable under the existing documentation-only policy; no build success is simulated. This rehearsal verifies real PR merges, durable state, and preservation of the actual squash commit in trunk history. It does not validate compiler or runtime behavior.\n\nRequires trusted OCA verification and current-head approval by a Write collaborator. After readiness, a configured maintainer posts `/integrate`; the bot must squash this PR into 9.7 and create/merge the generated trunk PR. Do not merge manually.\n\n8.4 must remain unchanged during this forward integration.\n",
-    "intent": false,
+    "intent": true,
+    "merge_intent": {
+      "base": "318f8b4d9335832c286276f78a40d9989e27ec77",
+      "head": "ef70776ae5231c755d93742153ad9d4e4cdfbc19",
+      "index": 0,
+      "message": "Rehearse sequential merges with a docs-only change (#65)\n\nCE integration 45aee340cb1250a6902fec31f3f1d7e1 into 9.7\n\nCo-authored-by: Ridha Chahed <ridha.chahed@oracle.com>",
+      "method": "squash",
+      "pr": 65,
+      "tree": "f36205281f087e6698d95d56997eea0fe81c48c3"
+    },
     "policy": "0f693ffc76b00fdb1d14f107545d504718a4514d1b1ed8bf777d396f1550fc44",
     "protocol": "two-phase-v1",
     "resolution_prs": {},
@@ -44,5 +53,5 @@
   "head": "ef70776ae5231c755d93742153ad9d4e4cdfbc19",
   "id": "45aee340cb1250a6902fec31f3f1d7e1",
   "pr": 65,
-  "state": "prepared"
+  "state": "publishing"
 }
