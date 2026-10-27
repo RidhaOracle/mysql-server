@@ -23,13 +23,13 @@
      newer versions need no content. History continues through the last version.
 
      Optional reviewed conflict resolutions (one per target version):
-     Resolution-PR: codex/ce-test-lts-new https://github.com/RidhaOracle/mysql-server/pull/456
-     Resolution-PR: codex/ce-test-innovation https://github.com/RidhaOracle/mysql-server/pull/457
+     Resolution-PR: 9.7 https://github.com/RidhaOracle/mysql-server/pull/456
+     Resolution-PR: trunk https://github.com/RidhaOracle/mysql-server/pull/457
      Resolutions must include the exact candidate and target inputs published by
      the bot. Matching CI is reused; missing tests run independently of PR creation.
      Earlier merges remain if a later version blocks. No backports from trunk. -->
 
-Merge-Through: codex/ce-test-innovation
+Merge-Through: trunk
 
 ### How was it tested?
 
