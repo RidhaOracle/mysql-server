@@ -9,7 +9,7 @@ from .github import authorization_identity, integration_body
 from .testing import candidate_tests
 from .journal import PersistenceError
 from .git import MergeConflict, PublicGraph
-from .policy import Blocked, check_content, documentation_only, matches, require, rulesets, sha, upmerge_till, rehearsal_test, resolution_prs
+from .policy import Blocked, check_content, documentation_only, matches, require, rulesets, sha, merge_through, rehearsal_test, resolution_prs
 
 
 def ruleset_revision(value):
@@ -155,7 +155,7 @@ class Coordinator:
     def evaluate(self, pr):
         try:
             self.source(pr)
-            upmerge_till(pr.get("body"), pr["base"]["ref"], self.policy["branches"])
+            merge_through(pr.get("body"), pr["base"]["ref"], self.policy["branches"])
             with self.graph_for(pr) as graph:
                 merge, paths, _ = self.evidence(pr, graph)
                 ok, summary = self.ci(pr, merge, paths, graph=graph)
@@ -170,7 +170,7 @@ class Coordinator:
                     'Original squash merge changed')
         else:
             self.basic(pr)
-        upmerge_till(pr.get('body'), pr['base']['ref'], self.policy['branches'])
+        merge_through(pr.get('body'), pr['base']['ref'], self.policy['branches'])
         resolution_prs(pr.get('body'), pr['base']['ref'], self.policy)
         if op:
             require(pr["head"]["sha"] == op["head"] and
@@ -212,7 +212,7 @@ class Coordinator:
         chain = self.policy["branches"]
         op['data']['resolution_prs'] = resolution_prs(root.get('body'), root['base']['ref'], self.policy)
         branches = chain[chain.index(root["base"]["ref"]):]
-        stop = upmerge_till(root.get("body"), root["base"]["ref"], chain)
+        stop = merge_through(root.get("body"), root["base"]["ref"], chain)
         with self.graph(self.policy) as graph:
             refs = ["refs/heads/" + b for b in chain]
             advertised = graph.remote_refs(refs)
