@@ -72,3 +72,4 @@
 {"data": {"state": "uncertain"}, "event": "pr-merge-not-yet-observed", "operation": "45aee340cb1250a6902fec31f3f1d7e1", "timestamp": 1793093673.0426283}
 {"data": {"state": "prepared"}, "event": "retry-same-pr-after-reconciliation", "operation": "45aee340cb1250a6902fec31f3f1d7e1", "timestamp": 1793093675.6425962}
 {"data": {"state": "prepared"}, "event": "remaining-chain-preflight", "operation": "45aee340cb1250a6902fec31f3f1d7e1", "timestamp": 1793093687.4278212}
+{"data": {"state": "prepared"}, "event": "candidate-tests-checked", "operation": "45aee340cb1250a6902fec31f3f1d7e1", "timestamp": 1793093690.0716712}

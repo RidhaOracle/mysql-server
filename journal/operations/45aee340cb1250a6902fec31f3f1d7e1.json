@@ -17,7 +17,6 @@
     },
     "policy": "0f693ffc76b00fdb1d14f107545d504718a4514d1b1ed8bf777d396f1550fc44",
     "protocol": "two-phase-v1",
-    "reason": "PR merge is unconfirmed; inspect GitHub and use retry after resolving protections or queue state",
     "resolution_prs": {},
     "steps": [
       {
@@ -31,6 +30,7 @@
           "318f8b4d9335832c286276f78a40d9989e27ec77"
         ],
         "squash": true,
+        "test_summary": "Documentation-only exemption",
         "tree": "f36205281f087e6698d95d56997eea0fe81c48c3"
       },
       {
@@ -44,6 +44,7 @@
           "816d52ceb493713602e658d93406c5e7d5629404"
         ],
         "squash": false,
+        "test_summary": "Documentation-only exemption",
         "tree": "eb70f80fa77cd5fc25c75361ca57d0207c1c15b0"
       }
     ]
