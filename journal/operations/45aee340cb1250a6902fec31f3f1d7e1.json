@@ -5,11 +5,40 @@
     "base": "9.7",
     "body": "Exercise the Merge Bot on the fork's real 9.7 and trunk branches using a documentation-only fixture. PR #64 and its actual compiler/MTR runs continue unchanged.\n\nMerge-Through: trunk\n\nOnly `Docs/ce-merge-rehearsal.md` changes. Builds and MTR are not applicable under the existing documentation-only policy; no build success is simulated. This rehearsal verifies real PR merges, durable state, and preservation of the actual squash commit in trunk history. It does not validate compiler or runtime behavior.\n\nRequires trusted OCA verification and current-head approval by a Write collaborator. After readiness, a configured maintainer posts `/integrate`; the bot must squash this PR into 9.7 and create/merge the generated trunk PR. Do not merge manually.\n\n8.4 must remain unchanged during this forward integration.\n",
     "intent": false,
+    "policy": "0f693ffc76b00fdb1d14f107545d504718a4514d1b1ed8bf777d396f1550fc44",
     "protocol": "two-phase-v1",
-    "steps": []
+    "resolution_prs": {},
+    "steps": [
+      {
+        "after": "8f47db602ae555c9e2747a7a16754162e7309456",
+        "base_sha": "318f8b4d9335832c286276f78a40d9989e27ec77",
+        "branch": "9.7",
+        "input_head": "ef70776ae5231c755d93742153ad9d4e4cdfbc19",
+        "message": "Rehearse sequential merges with a docs-only change (#65)",
+        "null": false,
+        "parents": [
+          "318f8b4d9335832c286276f78a40d9989e27ec77"
+        ],
+        "squash": true,
+        "tree": "f36205281f087e6698d95d56997eea0fe81c48c3"
+      },
+      {
+        "after": "264d60b91d1b211d0c330e0566ee7b1cf2b9e330",
+        "base_sha": "097fa1513e6d6a0589df477aeebc4637847a8248",
+        "branch": "trunk",
+        "input_head": "8f47db602ae555c9e2747a7a16754162e7309456",
+        "null": false,
+        "parents": [
+          "097fa1513e6d6a0589df477aeebc4637847a8248",
+          "8f47db602ae555c9e2747a7a16754162e7309456"
+        ],
+        "squash": false,
+        "tree": "a608aa1b5b3ba26ceea4cc46bdce2b5e6b5acea4"
+      }
+    ]
   },
   "head": "ef70776ae5231c755d93742153ad9d4e4cdfbc19",
   "id": "45aee340cb1250a6902fec31f3f1d7e1",
   "pr": 65,
-  "state": "queued"
+  "state": "prepared"
 }
