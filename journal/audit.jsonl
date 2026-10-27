@@ -74,3 +74,4 @@
 {"data": {"state": "prepared"}, "event": "remaining-chain-preflight", "operation": "45aee340cb1250a6902fec31f3f1d7e1", "timestamp": 1793093687.4278212}
 {"data": {"state": "prepared"}, "event": "candidate-tests-checked", "operation": "45aee340cb1250a6902fec31f3f1d7e1", "timestamp": 1793093690.0716712}
 {"data": {"state": "prepared"}, "event": "integration-pr-linked", "operation": "45aee340cb1250a6902fec31f3f1d7e1", "timestamp": 1793093691.7880244}
+{"data": {"state": "prepared"}, "event": "candidate-tests-checked", "operation": "45aee340cb1250a6902fec31f3f1d7e1", "timestamp": 1793093699.82781}
