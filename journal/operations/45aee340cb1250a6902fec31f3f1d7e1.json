@@ -4,7 +4,7 @@
     "actor": "RidhaOracle",
     "base": "9.7",
     "body": "Exercise the Merge Bot on the fork's real 9.7 and trunk branches using a documentation-only fixture. PR #64 and its actual compiler/MTR runs continue unchanged.\n\nMerge-Through: trunk\n\nOnly `Docs/ce-merge-rehearsal.md` changes. Builds and MTR are not applicable under the existing documentation-only policy; no build success is simulated. This rehearsal verifies real PR merges, durable state, and preservation of the actual squash commit in trunk history. It does not validate compiler or runtime behavior.\n\nRequires trusted OCA verification and current-head approval by a Write collaborator. After readiness, a configured maintainer posts `/integrate`; the bot must squash this PR into 9.7 and create/merge the generated trunk PR. Do not merge manually.\n\n8.4 must remain unchanged during this forward integration.\n",
-    "generation": 1,
+    "generation": 2,
     "intent": false,
     "merges": [
       {
@@ -40,17 +40,16 @@
         "tree": "f36205281f087e6698d95d56997eea0fe81c48c3"
       },
       {
-        "after": "995969692789ae4e2a90d3797409159625e65729",
+        "after": "2cbc57dd55cab7cbe641654f7c4a311a9ec3b86e",
         "base_sha": "828c5e11616fc98a107ae0897204a1b710fa665f",
         "branch": "trunk",
-        "input_head": "816d52ceb493713602e658d93406c5e7d5629404",
+        "input_head": "4956090d89ee94b0f6831d78631d4fb2e6154a23",
         "null": false,
         "parents": [
           "828c5e11616fc98a107ae0897204a1b710fa665f",
-          "816d52ceb493713602e658d93406c5e7d5629404"
+          "4956090d89ee94b0f6831d78631d4fb2e6154a23"
         ],
         "squash": false,
-        "test_summary": "Documentation-only exemption",
         "tree": "eb70f80fa77cd5fc25c75361ca57d0207c1c15b0"
       }
     ]
