@@ -36,17 +36,12 @@ def load(path):
     require(branches and len(set(branches)) == len(branches), "Invalid branch chain")
     policy.setdefault("state_branch", "ce-merge-state")
     branch_name(policy["state_branch"])
-    reserved = ("merge", "merge-tests")
-    require(policy["state_branch"] not in branches and not any(
-            policy["state_branch"] == p or policy["state_branch"].startswith(p + "/") for p in reserved),
-            "State branch must be separate from integration and staging branches")
+    require(policy["state_branch"] not in branches, "State branch must be separate from version branches")
     all_names = branches + [policy["state_branch"]]
     require(not any(a != b and b.startswith(a + "/") for a in all_names for b in all_names),
             "Branch names cannot occupy each other's ref namespaces")
     for branch in branches:
         branch_name(branch)
-        require(not any(branch == p or branch.startswith(p + "/") for p in reserved),
-                "CE targets cannot use the reserved bot staging namespace")
     require(policy["forbidden_paths"] and policy["maintainers"], "Missing merge policy")
     require(type(policy.get("bot_user_id")) is int and policy["bot_user_id"] > 0,
             "Configure bot_user_id with the automation account's GitHub ID")
@@ -167,8 +162,7 @@ def rulesets(policy):
             "required_status_checks": [{"context": "Merge check"}]}}] + history),
         rule("CE branch lifecycle", [{"type": "creation"}]),
         rule("CE immutable tags", [update, {"type": "deletion"}], target="tag", include=["~ALL"]),
-        rule("CE bot staging and state", [{"type": "creation"}, update], bot,
-             include=["refs/heads/merge/**/*", "refs/heads/merge-tests/**/*", "refs/heads/" + policy["state_branch"]]),
-        rule("CE bot history", history,
-             include=["refs/heads/merge/**/*", "refs/heads/merge-tests/**/*", "refs/heads/" + policy["state_branch"]]),
+        rule("CE merge state", [{"type": "creation"}, update], bot,
+             include=["refs/heads/" + policy["state_branch"]]),
+        rule("CE state history", history, include=["refs/heads/" + policy["state_branch"]]),
     ]

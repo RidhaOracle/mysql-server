@@ -5,7 +5,7 @@ import json
 import re
 
 from .ci import WORKFLOWS, checked_jobs, existing_pr_ci, required_checks, workflow_runs
-from .policy import Blocked, rehearsal_test, require, sha
+from .policy import Blocked, documentation_only, rehearsal_test, require, sha
 
 
 WORKFLOW = 'merge-version-tests.yml'
@@ -69,6 +69,10 @@ def candidate_tests(coordinator, op, graph, index):
     """Reuse individual equivalent PR checks; dispatch only missing checks."""
     step = op['data']['steps'][index]
     paths = graph.paths(step['base_sha'], step['after'])
+    if not paths and step['null']:
+        source = op['data']['steps'][0]
+        if documentation_only(graph.paths(source['base_sha'], source['after'])):
+            return True, 'Documentation-only history propagation; target tree unchanged'
     required = required_checks(paths)
     require(not any('.github/workflows/' + p in paths for p in (*WORKFLOWS, WORKFLOW)),
             'Required workflow changes need a reviewed bootstrap before integration')
@@ -102,15 +106,10 @@ def candidate_tests(coordinator, op, graph, index):
     request = hashlib.sha256(json.dumps(identity, sort_keys=True).encode()).hexdigest()
     record = step.get('test_request')
     if not record or record['request'] != request:
-        ref = f'refs/heads/merge-tests/{op["id"]}/{index}-{request[:16]}'
-        record = dict(identity, request=request, candidate=step['after'], ref=ref)
+        record = dict(identity, request=request, candidate=step['after'], bundle=coordinator.bundle(op).name)
         step['test_request'] = record
         store.save(op, 'prepared', 'candidate-test-staging-intent')
-        current = graph.remote_refs([ref]).get(ref)
-        require(current in (None, record['candidate']), 'Candidate test ref changed unexpectedly')
-        if current is None:
-            graph.run('push', '--force-with-lease=' + ref + ':', graph.remote,
-                      record['candidate'] + ':' + ref, token=github.token())
+        record['state'] = sha(store.head)
         # This checkpoint precedes dispatch. An uncertain response is reconciled
         # by request ID; refresh-checks explicitly creates a new attempt if needed.
         record['dispatched'] = True
@@ -119,7 +118,8 @@ def candidate_tests(coordinator, op, graph, index):
             'ref': default, 'inputs': {
                 'request': request, 'candidate': record['candidate'], 'base': record['base'],
                 'tree': record['tree'], 'checks': json.dumps(missing),
-                'suites': json.dumps(suites), 'mtr_test': record['mtr_test']}})
+                'suites': json.dumps(suites), 'mtr_test': record['mtr_test'],
+                'state': record['state'], 'bundle': record['bundle']}})
     elif not record.get('dispatched'):
         # A runner interrupted between staging intent and dispatch has made no
         # uncertain dispatch. Recreate the request on the next bounded pass.

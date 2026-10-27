@@ -99,7 +99,11 @@ verification. Unresolved conversations and change requests block integration.
 
 Once all tests pass, it squashes the original PR with `gh pr merge --squash`, then
 creates and merges one integration PR at a time with `gh pr merge --merge`.
-Each includes the actual preceding merge commit and reviewed version resolution.
+These PRs connect the real version branches directly: `8.4` → `9.7` → `trunk`.
+The bot never creates temporary integration or testing branches. A conflicting
+hop uses your reviewed resolution PR itself; it must include the actual preceding
+merge commit. Updating a preflight resolution after the squash needs fresh approval.
+History-only hops must preserve the newer tree exactly or wait for a resolution PR.
 Verified generated PRs do not require another human approval under the configured
 bot review exception. Required tests, PR use, and history protections remain.
 Changed targets or file trees need fresh evidence. Earlier merges remain published

@@ -4,7 +4,7 @@ import copy
 import os
 import unittest
 from unittest.mock import MagicMock, patch
-from scripts.ce_merge.github import GitHub
+from scripts.ce_merge.github import GitHub, integration_body
 from scripts.ce_merge.policy import Blocked
 
 
@@ -253,14 +253,22 @@ class IdentityAndReportingTests(unittest.TestCase):
             self.api.merge_pr(12, 'b' * 40, 'squash', 'Original PR', generated=True)
 
     def test_existing_generated_pr_is_reused_without_any_write(self):
-        def repo(path, method="GET", data=None):
-            self.assertEqual(method, "GET")
-            if path.startswith("/git/matching-refs/"):
-                return [{"ref": "refs/heads/merge/test/1", "object": {"sha": "b" * 40}}]
-            self.assertTrue(path.startswith("/pulls?state=all&head="))
-            return [{"number": 2}]
-        self.api.repo.side_effect = repo
-        self.assertEqual(self.api.bot_pr("test", 1, "trunk", 1), 2)
+        self.api.pages.return_value = [{'number': 2, 'state': 'open', 'body': integration_body('test', 1)}]
+        self.assertEqual(self.api.bot_pr("test", 'lts', "trunk", 1), 2)
+        self.assertIn('base=trunk&head=example%3Alts', self.api.pages.call_args.args[0])
+        self.api.repo.assert_not_called()
+
+    def test_closed_earlier_version_pr_does_not_confuse_new_operation(self):
+        self.api.pages.return_value = [{'number': 2, 'state': 'closed', 'body': integration_body('old', 1)}]
+        self.api.repo.return_value = {'number': 3}
+        self.assertEqual(self.api.bot_pr('new', 'lts', 'trunk', 1), 3)
+        self.assertEqual(self.api.repo.call_args.args[2]['head'], 'lts')
+
+    def test_unrelated_open_version_pr_cannot_receive_the_review_waiver(self):
+        self.api.pages.return_value = [{'number': 2, 'state': 'open', 'body': 'Human-authored PR'}]
+        with self.assertRaises(Blocked):
+            self.api.bot_pr('new', 'lts', 'trunk', 1)
+        self.api.repo.assert_not_called()
 
 
 if __name__ == "__main__":

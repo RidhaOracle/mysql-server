@@ -214,15 +214,19 @@ class GitHub:
             raise Blocked("GitHub merge interrupted; reconcile before retrying") from None
         require(result.returncode == 0, "GitHub merge was not confirmed; reconcile before retrying")
 
-    def bot_pr(self, operation, index, base, original, detail=""):
-        """Deterministic names and lookup make retry after create-PR failure safe."""
-        branch = f"merge/{operation}/{index}"
+    def bot_pr(self, operation, branch, base, original, detail=""):
+        """Reuse this operation's PR between real version branches after a lost response."""
         owner = self.policy["repository"].split("/")[0]
-        pulls = self.repo("/pulls?state=all&head=" + urllib.parse.quote(owner + ":" + branch, safe=""))
-        require(len(pulls) <= 1, "Ambiguous generated PR")
-        if pulls:
-            return pulls[0]["number"]
+        pulls = self.pages("/pulls?state=all&base=" + urllib.parse.quote(base, safe="") +
+                           "&head=" + urllib.parse.quote(owner + ":" + branch, safe=""))
+        body = integration_body(operation, original, detail)
+        matching = [p for p in pulls if p.get('body') == body]
+        require(len(matching) <= 1, "Ambiguous integration PR")
+        if matching:
+            return matching[0]["number"]
+        require(not any(p['state'] == 'open' for p in pulls),
+                "An existing PR already connects these version branches; inspect it before continuing")
         return self.repo("/pulls", "POST", {
-            "title": f"Merge #{original} into {base}", "head": branch,
-            "base": base, "body": integration_body(operation, original, detail)
+            "title": f"Merge {branch} into {base} for #{original}", "head": branch,
+            "base": base, "body": body
         })["number"]

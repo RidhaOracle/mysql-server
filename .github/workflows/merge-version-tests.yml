@@ -9,7 +9,15 @@ on:
         required: true
         type: string
       candidate:
-        description: Exact public candidate commit
+        description: Exact candidate commit in the public state bundle
+        required: true
+        type: string
+      state:
+        description: Exact protected state checkpoint containing the bundle
+        required: true
+        type: string
+      bundle:
+        description: Candidate bundle filename in the state checkpoint
         required: true
         type: string
       base:
@@ -36,8 +44,8 @@ on:
 permissions:
   contents: read
 # Tests execute contributor code on separate disposable runners. The merger
-# credential and state branch never enter these jobs. Only trusted workflow
-# definitions and scripts are used; inputs identify public Git objects.
+# credential never enters these jobs. A pinned public state bundle supplies the
+# candidate without a temporary branch. All verification scripts are trusted.
 concurrency:
   group: merge-tests-${{ inputs.request }}
   cancel-in-progress: false
@@ -56,13 +64,21 @@ jobs:
       CXX: ${{ matrix.compiler == 'gcc' && 'g++' || 'clang++' }}
     steps:
       - &checkout_candidate
-        name: Check out candidate
+        name: Check out target snapshot
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          ref: ${{ inputs.candidate }}
+          ref: ${{ inputs.base }}
           fetch-depth: 2
           persist-credentials: false
           path: source
+      - &checkout_bundle
+        name: Read public candidate bundle
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ inputs.state }}
+          persist-credentials: false
+          sparse-checkout: journal/bundles
+          path: state
       - &checkout_automation
         name: Check out trusted automation
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -92,6 +108,8 @@ jobs:
           MERGE_CHECKS: ${{ inputs.checks }}
           MERGE_SUITES: ${{ inputs.suites }}
           MERGE_MTR_TEST: ${{ inputs.mtr_test }}
+          MERGE_STATE: ${{ inputs.state }}
+          MERGE_BUNDLE: ${{ inputs.bundle }}
         run: python3 ../automation/scripts/ce_merge/verify_candidate.py
       - name: Install toolchain
         working-directory: source
@@ -116,6 +134,7 @@ jobs:
       MTR_SHARD: ${{ matrix.shard }}
     steps:
       - *checkout_candidate
+      - *checkout_bundle
       - *checkout_automation
       - *checkout_test_scripts
       - *verify_candidate
@@ -161,6 +180,7 @@ jobs:
     timeout-minutes: 30
     steps:
       - *checkout_candidate
+      - *checkout_bundle
       - *checkout_automation
       - *checkout_test_scripts
       - *verify_candidate

@@ -61,7 +61,7 @@ are rejected conservatively. The `Integrate` label is advisory.
 1. Acquire the persistent merge lock, restore public Git objects and journal
    checkpoints, and verify that the initial lower-to-higher branch ancestry is in
    sync. No contributor code runs in the credentialed coordinator.
-2. Prepare a temporary squash and subsequent merge candidates. Pin each target
+2. Prepare local squash and subsequent merge candidates. Pin each target
    SHA, resulting file tree, parent list, and any reviewed resolution. Rehearse
    the full chain before publishing anything.
 3. For each version, inspect reusable **PR Build**, **MTR**, and applicable
@@ -69,9 +69,10 @@ are rejected conservatively. The `Integrate` label is advisory.
    per check group: run only groups with missing or stale evidence. An explicitly
    failed latest applicable run blocks; fix/rerun it rather than hiding the failure.
 4. Dispatch **Merge Version Tests** on the trusted default branch for missing
-   checks. Immutable `merge-tests/<operation>/...` refs expose candidates, without
-   creating integration PRs. Separate read-only runners verify the exact candidate
-   SHA, target ancestry, tree, and trusted version scripts before executing builds.
+   checks. Candidates come from a Git bundle in a pinned `ce-merge-state`
+   checkpoint. No integration or testing branches are created. Separate read-only
+   runners verify the checkpoint, bundle, exact candidate SHA, target ancestry,
+   tree, and trusted version scripts before executing builds.
 5. Wait until every version has passing evidence. Runs exit while waiting and
    resume from CI/PR events or the five-minute schedule.
 
@@ -107,8 +108,16 @@ candidate and recorded target as ancestors. A similar patch or another PR fixing
 the same bug is insufficient. The bot checks OCA, current-head approval,
 conversations, content restrictions, and the pinned PR body and SHA.
 
-When a merge conflicts, the progress comment gives a fetchable `merge-tests/*`
-input ref and exact target SHA. Merge those two inputs in a contributor branch,
+When a merge conflicts, the progress comment gives a public state bundle filename,
+exact input SHA and target SHA. Fetch the state branch and import the saved input:
+
+```bash
+git fetch origin ce-merge-state
+git show FETCH_HEAD:journal/bundles/<bundle-name>.bundle > ce-merge.bundle
+git fetch ./ce-merge.bundle 'refs/ce-candidates/*:refs/ce-candidates/*'
+```
+
+Merge the exact input and target in your resolution PR's existing branch,
 resolve the files, and open/reuse a resolution PR. A metadata link is consumed
 automatically; otherwise run **Use resolution PR** (`use-resolution`) with the
 operation ID and PR number or URL. Attaching a late PR this way avoids editing the already-authorized source
@@ -120,10 +129,17 @@ evidence. Changed resolution heads, bodies, bases, dismissed approvals, lost
 reviewer access, and change requests block its use. A moved resolution target
 requires a fresh resolution; it is never silently rebased.
 
-Resolution PRs are references for approved content. They are not automatically
-merged or marked **Merged**: the bot-generated integration PR performs publication.
-No generated integration PRs are opened during testing; contributor-created
-resolution PRs are the deliberate exception.
+The resolution PR itself is merged into its version during publication. It must
+include the actual preceding version merge, not only the local preflight commit.
+After the source squash creates that actual commit, update a preflight resolution
+PR to include it and obtain fresh approval and CI. The bot never copies a reviewed
+tree onto a new branch. No propagation PRs are opened during testing;
+contributor-provided resolution PRs are the deliberate exception.
+
+For a backport, a normal version-branch merge is permitted only when it preserves
+the newer target tree exactly. Otherwise the bot pauses before publication for a
+reviewed history-only resolution PR. It never substitutes a content-changing merge
+for an ancestry-only request.
 
 ## Phase 2: merge changes across versions
 
@@ -135,12 +151,12 @@ After all tests pass:
 2. Prepare the next version from **actual F**, retaining any reviewed resolution
    files. If its target or file tree differs from testing, obtain fresh evidence
    before publication. Revalidate existing results, including failed reruns.
-3. Open the next PR from a deterministic `merge/pr-<source>/<version>/<operation>-r<N>/<index>`
-   branch. For example, its title is **Merge #123 into 9.7**. No speculative PR-head
-   refresh or approval transfer is needed. `[skip ci]` avoids redundant ordinary
-   PR builds; the trusted coordinator still runs. **Merge check** links revalidated
-   preparation evidence, not a claim that tests ran on the new SHA.
-4. Verify the bot author, repository, exact head/parents/base, expected body and
+3. Open or reuse a PR directly between the actual version branches: **8.4 → 9.7**,
+   then **9.7 → trunk**. Its head is the actual lower version commit. A conflicting
+   hop uses the maintainer-provided resolution PR instead. No bot-created branches
+   or extra integration commits are used. **Merge check** links revalidated
+   testing evidence, not a claim that tests ran on a new SHA.
+4. Verify the bot author, repository, exact source branch/head/base, expected body and
    tested file tree, and check for objections or unresolved discussions. The
    approved policy allows generated integration PRs without another human approval.
    The source and resolution PRs always retain their human-review requirements.
@@ -236,10 +252,11 @@ state or force-push to clear it. Reporting failures cannot repeat confirmed merg
 4. Generate `python3 -m scripts.ce_merge rulesets`, then apply the reviewed output
    as an administrator. Enable squash/merge commits; disable rebase and auto-merge.
    Apply the new PR-only bot review exception, mandatory PR/quality/history rules,
-   and protected `merge/*`, `merge-tests/*`, and state branches. Remove obsolete
+   and the protected persistent state branch. No temporary branch namespace is
+   provisioned. Remove obsolete
    App requirements/receipt rules. Preserve immutable tags. **Merge check** is the
-   aggregate required check; requiring raw PR Build/MTR checks on skipped generated
-   heads would prevent reuse. Never give the bot a quality/history bypass.
+   aggregate required check; requiring raw PR Build/MTR checks as well would prevent
+   per-version evidence reuse. Never give the bot a quality/history bypass.
 5. Run `init-state` and `verify-deployment`. If GitHub hides bypass actors, commit
    a reviewed full administrator export to `.github/ce-merge-rulesets.json`, with
    `{"repository":"OWNER/REPO","rulesets":[FULL_RULESET_OBJECTS]}`. Run

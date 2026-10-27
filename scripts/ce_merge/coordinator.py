@@ -27,7 +27,7 @@ class Coordinator:
         self.policy, self.store, self.github, self.graph = policy, store, github, graph
 
     def policy_identity(self):
-        return hashlib.sha256(json.dumps({"protocol": "two-phase-v1", "policy": self.policy}, sort_keys=True).encode()).hexdigest()
+        return hashlib.sha256(json.dumps({"protocol": "direct-versions-v1", "policy": self.policy}, sort_keys=True).encode()).hexdigest()
 
     def bundle(self, op):
         return self.store.bundle(op["id"], op["data"].get("generation", 0))
@@ -183,27 +183,27 @@ class Coordinator:
         self.github.oca(pr)
         self.github.reviewed(pr)
 
-    def candidates(self, op, graph, steps, previous, start=0, invalidated=(), staging=False):
+    def candidates(self, op, graph, steps, previous, start=0, invalidated=()):
         """Build a suffix until its first conflict, using one path for every rehearsal."""
         data = op['data']
         data.pop('conflict_index', None)
         for index in range(start, len(steps)):
             step = steps[index]
             step['squash'] = index == 0
+            step['input_head'] = previous
             try:
                 # A moved target must get a fresh reviewed resolution even if
                 # its old resolved tree would still apply without a Git conflict.
                 if index in invalidated:
-                    step['input_head'] = previous
                     raise MergeConflict('Reviewed resolution target moved')
+                if step['null'] and not step.get('resolved_tree'):
+                    if graph.merge_tree(step['base_sha'], previous) != graph.tree(step['base_sha']):
+                        raise MergeConflict('History-only propagation needs a reviewed resolution preserving the target files')
                 graph.candidates([step], previous, op['id'])
             except MergeConflict:
                 require(index > 0, 'Original PR conflicts with its target; update the PR and authorize a new operation')
                 data['conflict_index'] = index
                 break
-            if staging and index > 0:
-                step['after'] = graph.commit(step['tree'], step['parents'],
-                    f'Merge #{op["pr"]} into {step["branch"]} [skip ci]')
             previous = step['after']
 
     def prepare(self, op):
@@ -278,7 +278,7 @@ class Coordinator:
             self.store.save(op, "prepared", "reviewed-resolution-accepted")
 
     def acquire(self, op):
-        require(op['data'].get('protocol') == 'two-phase-v1',
+        require(op['data'].get('protocol') == 'direct-versions-v1',
                 'Legacy operation: reconcile or abort it with the previous coordinator before cutover')
         owner = self.store.setting('merge-lock')
         require(owner in (None, op['id']), 'CE soft merge lock belongs to another operation')
@@ -291,34 +291,38 @@ class Coordinator:
             self.store.set_setting('merge-lock', None, op['data']['actor'])
 
     def stage(self, op, graph, index):
-        """Create only the next integration PR, after all versions passed testing."""
+        """Use real version branches, or a maintainer's reviewed resolution PR."""
         step = op['data']['steps'][index]
         if index == 0:
             step.update(pr=op['pr'], review_head=op['head'])
         else:
-            # One immutable branch for each actual candidate; a moved target gets
-            # a new generation rather than rewriting a public PR branch.
-            stage_id = f'pr-{op["pr"]}/{step["branch"]}/{op["id"]}-r{op["data"].get("generation", 0)}'
-            step.setdefault('stage_id', stage_id)
-            ref = f'refs/heads/merge/{step["stage_id"]}/{index}'
-            head = step['after']
-            self.store.save(op, 'prepared', 'integration-pr-staging-intent')
-            current = graph.remote_refs([ref]).get(ref)
-            require(current in (None, head), 'Integration branch changed unexpectedly')
-            if current is None:
-                graph.run('push', '--force-with-lease=' + ref + ':', graph.remote,
-                          head + ':' + ref, token=self.github.token())
-            detail = f'Tested file tree: `{step["tree"]}`\n'
-            if step['null']:
-                detail += 'History-only propagation; target files stay unchanged.\n'
             if step.get('resolution'):
-                detail += f'Resolution PR: #{step["resolution"]["pr"]}\n'
-            number = self.github.bot_pr(step['stage_id'], index, step['branch'], op['pr'], detail=detail)
-            require(step.get('pr', number) == number, 'Generated PR identity changed')
-            pr = self.github.pull(number)
-            step.update(pr=number, review_head=head)
-            step['pr_body'] = integration_body(step['stage_id'], op['pr'], detail)
-            require((pr.get('body') or '') == step['pr_body'], 'Generated PR identity or body changed')
+                saved = step['resolution']
+                head = saved['head']
+                if not graph.ancestor(step['input_head'], head):
+                    op['data']['conflict_index'] = index
+                    raise MergeConflict('Update the resolution PR to include the actual lower version commit, then obtain fresh approval')
+                step.update(pr=saved['pr'], review_head=head, pr_kind='resolution')
+            else:
+                lower = op['data']['steps'][index - 1]
+                head, branch = lower['merged_sha'], lower['branch']
+                require(self.github.branch(branch) == head, 'Lower version branch moved')
+                try:
+                    tree = graph.merge_tree(step['base_sha'], head)
+                except MergeConflict:
+                    op['data']['conflict_index'] = index
+                    raise
+                if tree != step['tree']:
+                    op['data']['conflict_index'] = index
+                    raise MergeConflict('A normal version-branch merge would change the required tree; provide a reviewed resolution PR')
+                detail = f'From `{branch}` into `{step["branch"]}`.\n'
+                if step['null']:
+                    detail += 'History-only propagation; target files stay unchanged.\n'
+                self.store.save(op, 'prepared', 'version-pr-create-intent')
+                number = self.github.bot_pr(op['id'], branch, step['branch'], op['pr'], detail=detail)
+                require(step.get('pr', number) == number, 'Integration PR identity changed')
+                step.update(pr=number, review_head=head, head_branch=branch, pr_kind='version',
+                            pr_body=integration_body(op['id'], op['pr'], detail))
         self.store.save(op, 'prepared', 'integration-pr-linked')
 
     def test_chain(self, op, graph, indices):
@@ -350,15 +354,22 @@ class Coordinator:
                 'Integration PR changed; investigate before continuing')
         require(pr['base']['sha'] == step['base_sha'], 'Target advanced; repeat testing before merging')
         if index > 0:
-            require(pr.get('user', {}).get('id') == self.policy['bot_user_id']
-                    and pr['head']['repo']['full_name'] == self.policy['repository']
-                    and pr['head']['ref'] == f'merge/{step["stage_id"]}/{index}'
-                    and (pr.get('body') or '') == step['pr_body'],
-                    'Generated PR identity or body changed')
-            require(graph.parents(pr['head']['sha']) == step['parents']
+            require(graph.ancestor(step['input_head'], pr['head']['sha'])
                     and graph.merge_tree(step['base_sha'], pr['head']['sha']) == step['tree'],
                     'Integration PR differs from the tested candidate')
-            self.github.reviewed(pr, require_approval=False)
+            if step['pr_kind'] == 'version':
+                require(pr.get('user', {}).get('id') == self.policy['bot_user_id']
+                        and pr['head']['repo']['full_name'] == self.policy['repository']
+                        and pr['head']['ref'] == step['head_branch']
+                        and pr['head']['sha'] == step['input_head']
+                        and self.github.branch(step['head_branch']) == step['input_head']
+                        and (pr.get('body') or '') == step['pr_body'],
+                        'Version PR identity or body changed')
+                self.github.reviewed(pr, require_approval=False)
+            else:
+                require((pr.get('body') or '') == step['resolution']['body'], 'Resolution PR body changed')
+                self.github.oca(pr)
+                self.github.reviewed(pr)
         else:
             self.github.reviewed(pr)
         return pr
@@ -376,10 +387,6 @@ class Coordinator:
         if not changed and old[start].get('input_head') == previous:
             return
         needs_resolution = {i for i in range(start, len(old)) if changed and old[i].get('resolution')}
-        if changed:
-            for step in old[start:]:
-                if step.get('pr') and step['pr'] != op['pr']:
-                    data.setdefault('superseded_prs', []).append(step['pr'])
         steps = old[:start] + [{k: s[k] for k in ('branch', 'null', 'resolved_tree', 'resolution', 'message', 'test_request', 'test_attempt', 'fresh_tests') if k in s}
                               for s in old[start:]]
         for i in needs_resolution:
@@ -392,27 +399,19 @@ class Coordinator:
                         ([old[start - 1]['merged_sha']] if start else [op['head']]))
             for step in steps[start:]:
                 step['base_sha'] = heads[step['branch']]
-            self.candidates(op, graph, steps, previous, start=start, invalidated=needs_resolution, staging=True)
+            self.candidates(op, graph, steps, previous, start=start, invalidated=needs_resolution)
             data['generation'] = data.get('generation', 0) + 1
             data['steps'] = steps
             graph.export_candidates(self.prepared_steps(op), self.bundle(op))
         self.store.save(op, 'prepared', 'remaining-chain-preflight')
 
     def expose_conflict(self, op):
-        """Make the exact preflight input available for a contributor's resolution."""
+        """Expose the saved public bundle without publishing a Git branch."""
         data = op['data']
         index = data['conflict_index']
         step = data['steps'][index]
-        ref = f'refs/heads/merge-tests/{op["id"]}-preflight-r{data.get("generation", 0)}/{index}'
-        with self.graph(self.policy) as graph:
-            graph.restore_candidates(self.prepared_steps(op), self.bundle(op))
-            current = graph.remote_refs([ref]).get(ref)
-            require(current in (None, step['input_head']), 'Conflict input ref changed')
-            step['input_ref'] = ref
-            self.store.save(op, 'conflict', 'conflict-input-staging-intent')
-            if current is None:
-                graph.run('push', '--force-with-lease=' + ref + ':', graph.remote,
-                          step['input_head'] + ':' + ref, token=self.github.token())
+        step['input_bundle'] = self.bundle(op).name
+        self.store.save(op, 'conflict', 'conflict-input-bundled')
 
     def check_resolutions(self, op):
         for step in op['data']['steps']:
@@ -492,7 +491,7 @@ class Coordinator:
                 data['merge_intent'] = dict(index=index, pr=step['pr'], head=step['review_head'],
                                             base=step['base_sha'], tree=step['tree'],
                                             method='squash' if index == 0 else 'merge',
-                                            message=graph.run('show', '-s', '--format=%B', step['after']).replace('[skip ci]', ''))
+                                            message=graph.run('show', '-s', '--format=%B', step['after']))
                 data['intent'] = True
                 self.store.save(op, 'publishing', 'github-pr-merge-intent')
                 self.github.merge_pr(step['pr'], step['review_head'], data['merge_intent']['method'],
@@ -500,6 +499,10 @@ class Coordinator:
             self.reconcile(op)
         except PersistenceError:
             raise
+        except MergeConflict as error:
+            self.expose_conflict(op)
+            data['reason'] = str(error)
+            self.store.save(op, 'conflict', 'waiting-for-reviewed-resolution')
         except Blocked as error:
             data['reason'] = str(error)
             self.store.save(op, 'uncertain' if data['intent'] else 'blocked', 'blocked')
@@ -583,8 +586,9 @@ class Coordinator:
                 summary += f'  Reviewed resolution: [#{step["resolution"]["pr"]}]({url}/pull/{step["resolution"]["pr"]}).\n'
         if 'conflict_index' in data:
             step = data['steps'][data['conflict_index']]
-            if step.get('input_ref'):
-                summary += f'\nFetch conflict input: `git fetch origin {step["input_ref"]}`.\n'
+            if step.get('input_bundle'):
+                summary += (f'\nConflict input bundle: `journal/bundles/{step["input_bundle"]}` '
+                            f'on `{self.policy["state_branch"]}`.\n')
             summary += (f'\nConflict repair: merge exact input `{step["input_head"]}` and target '
                         f'`{step["base_sha"]}` in a resolution PR to `{step["branch"]}`. '
                         'After OCA and current-head approval, run `use-resolution` with the operation ID and resolution PR. '
@@ -618,7 +622,7 @@ class Coordinator:
 
     def work(self):
         operations = self.store.operations()
-        require(all(o['data'].get('protocol') == 'two-phase-v1' or o['state'] in ('complete', 'aborted')
+        require(all(o['data'].get('protocol') == 'direct-versions-v1' or o['state'] in ('complete', 'aborted')
                     for o in operations), 'Reconcile or abort legacy operations before cutover')
         owner = self.store.setting('merge-lock')
         if owner:

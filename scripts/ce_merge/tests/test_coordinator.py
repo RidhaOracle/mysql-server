@@ -120,9 +120,9 @@ class FakeGitHub:
     def advisory_label(self, *args):
         pass
 
-    def bot_pr(self, operation, index, base, original, detail=""):
-        head = self.branch(f"merge/{operation}/{index}")
-        key = (operation, index)
+    def bot_pr(self, operation, branch, base, original, detail=""):
+        head = self.branch(branch)
+        key = (operation, branch, base)
         if key not in self.bot_pulls:
             number = max(self.pulls) + 1
             self.add_pull(number, head, base, "example/ce")
@@ -130,7 +130,7 @@ class FakeGitHub:
             self.bot_pulls[key] = number
         number = self.bot_pulls[key]
         self.case.remote_git('update-ref', f'refs/pull/{number}/head', head)
-        self.pulls[number]['head'].update(sha=head, ref=f'merge/{operation}/{index}')
+        self.pulls[number]['head'].update(sha=head, ref=branch)
         self.pulls[number]['user'] = {'id': 42, 'login': 'merge-bot'}
         return number
 
@@ -242,6 +242,28 @@ class SerialTests(unittest.TestCase):
         self.assertIsNone(self.store.setting('merge-lock'))
         self.assertEqual(self.remote_git('tag', '--list', 'ce-integration/*'), '')
 
+    def test_clean_chain_never_pushes_any_candidate_or_integration_branch(self):
+        run = self.graph.run
+        def no_branch_push(graph, *args, **kwargs):
+            self.assertNotEqual(args[0], 'push', 'The graph must not publish a branch')
+            return run(graph, *args, **kwargs)
+        with patch.object(self.graph, 'run', new=no_branch_push):
+            self.finish()
+        self.assertEqual(self.remote_git('for-each-ref', '--format=%(refname)', 'refs/heads'),
+                         'refs/heads/lts\nrefs/heads/trunk')
+
+    def test_content_changing_null_merge_waits_for_resolution_before_first_merge(self):
+        self.api.pulls[1]['body'] = 'Merge-Through: lts'
+        op = self.op()
+        op['data']['body'] = self.api.pulls[1]['body']
+        self.store.save(op, 'queued', 'null-request')
+        self.coordinator.advance(self.op())
+        self.assertEqual(self.op()['state'], 'conflict')
+        self.assertEqual(self.op()['data']['conflict_index'], 1)
+        self.assertEqual(self.api.merges, [])
+        self.unchanged()
+        self.assertEqual(len(self.api.pulls), 1)
+
     def test_wait_for_source_ci_without_moving_any_target(self):
         self.prepare()
         self.assertEqual(self.api.merges, [])
@@ -310,7 +332,7 @@ class SerialTests(unittest.TestCase):
         self.api.pulls[2]['mergeable'] = True
         self.finish()
 
-    def test_integration_pr_starts_with_actual_lower_parent(self):
+    def test_integration_pr_uses_real_lower_branch_without_extra_commit(self):
         self.prepare()
         self.assertEqual(len(self.api.pulls), 1)
         self.ci_ok = True
@@ -319,9 +341,10 @@ class SerialTests(unittest.TestCase):
         self.assertEqual(len(self.api.pulls), 1)
         self.finish()
         step = self.op()['data']['steps'][1]
-        self.assertEqual(self.remote_git('show', '-s', '--format=%P', step['review_head']),
-                         self.repo.base + ' ' + actual)
-        self.assertIn('[skip ci]', self.remote_git('show', '-s', '--format=%B', step['review_head']))
+        self.assertEqual(step['review_head'], actual)
+        self.assertEqual(self.api.pulls[step['pr']]['head']['ref'], 'lts')
+        self.assertEqual(self.remote_git('for-each-ref', '--format=%(refname)', 'refs/heads'),
+                         'refs/heads/lts\nrefs/heads/trunk')
 
     def test_candidate_tests_revalidated_after_actual_lower_merge(self):
         observed = []
@@ -439,7 +462,7 @@ class SerialTests(unittest.TestCase):
         self.resolution(lower, tip)
         self.coordinator.repair(self.op(), 3)
         self.coordinator.store = Journal(self.root / 'journal')
-        self.finish()
+        self.finish_resolution()
         steps = self.op()['data']['steps']
         self.remote_git('merge-base', '--is-ancestor', steps[0]['merged_sha'], steps[1]['merged_sha'])
         self.assertEqual(self.remote_git('show', steps[1]['merged_sha'] + ':fix.cc'), 'int fix;')
@@ -487,10 +510,10 @@ class SerialTests(unittest.TestCase):
         step = op['data']['steps'][op['data']['conflict_index']]
         self.assertEqual(step['base_sha'], moved)
         self.assertNotIn('resolution', step)
-        self.assertTrue(step['input_ref'].startswith('refs/heads/merge-tests/'))
+        self.assertTrue(step['input_bundle'].endswith('.bundle'))
         self.resolution(step['input_head'], moved)
         self.coordinator.repair(self.op(), 3)
-        self.finish()
+        self.finish_resolution()
 
     def test_metadata_resolution_link_is_consumed_without_opening_an_integration_pr(self):
         self.api.pulls[1]['body'] += '\nResolution-PR: trunk https://github.com/example/ce/pull/3'
@@ -509,7 +532,7 @@ class SerialTests(unittest.TestCase):
         self.assertEqual(self.op()['data']['steps'][1]['resolution']['pr'], 3)
         self.assertEqual(self.api.merges, [])
         self.assertEqual(set(self.api.pulls), {1, 3})
-        self.finish()
+        self.finish_resolution()
 
     def test_authorization_revoked_after_first_merge_blocks_next(self):
         self.coordinator.advance(self.op())
@@ -593,6 +616,9 @@ class SerialTests(unittest.TestCase):
         self.assertTrue(self.api.pulls[1]['merged'])
 
     def test_null_suffix_preserves_target_tree_and_actual_lower_ancestry(self):
+        self.repo.git('checkout', 'trunk')
+        tip = self.repo.commit('fix.cc', 'int fix;\n')
+        self.repo.git('push', str(self.remote), tip + ':refs/heads/trunk')
         self.api.pulls[1]['body'] = 'Merge-Through: lts\nMerge-Reason: Already fixed on trunk'
         op = self.op()
         op['data']['body'] = self.api.pulls[1]['body']
@@ -600,7 +626,7 @@ class SerialTests(unittest.TestCase):
         steps = self.finish()['data']['steps']
         self.remote_git('merge-base', '--is-ancestor', steps[0]['merged_sha'], steps[1]['merged_sha'])
         self.assertEqual(self.remote_git('rev-parse', steps[1]['merged_sha'] + '^{tree}'),
-                         self.remote_git('rev-parse', self.repo.base + '^{tree}'))
+                         self.remote_git('rev-parse', tip + '^{tree}'))
 
     def backport_null_chain(self, base):
         # Different later-version implementations deliberately conflict with
@@ -624,13 +650,29 @@ class SerialTests(unittest.TestCase):
         op['data'].update(base=base, body=self.api.pulls[1]['body'])
         self.store.save(op, 'queued', 'backport-null-test')
         bases = {'lts': self.repo.base, 'middle': middle, 'trunk': trunk}
-        self.coordinator.advance(self.op())
-        self.assertEqual(len(self.api.merges), 1)
-        # Recreate the coordinator between hops to verify saved null intent.
-        self.store = Journal(self.store.path)
-        self.coordinator = Coordinator(self.coordinator.policy, self.store, self.api, self.graph)
-        self.coordinator.tests = lambda *a, **kw: (True, 'version test evidence')
-        steps = self.finish()['data']['steps']
+        for _ in range(12):
+            self.coordinator.advance(self.op())
+            op = self.op()
+            if op['state'] == 'complete':
+                break
+            if op['state'] == 'conflict':
+                index = op['data']['conflict_index']
+                step = op['data']['steps'][index]
+                self.repo.git('fetch', str(self.coordinator.bundle(op)),
+                              '+refs/ce-candidates/*:refs/ce-candidates/*')
+                tree = self.repo.git('rev-parse', step['base_sha'] + '^{tree}')
+                head = self.repo.git('commit-tree', tree, '-p', step['base_sha'], '-p', step['input_head'],
+                                     input=b'Reviewed history-only resolution\n')
+                number = 10 + index
+                self.repo.git('push', str(self.remote), '+' + head + f':refs/pull/{number}/head')
+                self.api.add_pull(number, head, step['branch'], 'contributor/ce')
+                self.coordinator.repair(self.op(), number)
+            # Replace the runner between passes, retaining the journal and bundles.
+            self.store = Journal(self.store.path)
+            self.coordinator = Coordinator(self.coordinator.policy, self.store, self.api, self.graph)
+            self.coordinator.tests = lambda *a, **kw: (True, 'version test evidence')
+        self.assertEqual(self.op()['state'], 'complete', str(self.op()))
+        steps = self.op()['data']['steps']
         self.assertEqual([s['null'] for s in steps], [False] + [True] * (len(steps) - 1))
         self.assertEqual(self.remote_git('show', steps[0]['merged_sha'] + ':fix.cc'), 'int fix;')
         for lower, upper in zip(steps, steps[1:]):
@@ -802,12 +844,28 @@ class SerialTests(unittest.TestCase):
         return self.op()["data"]["steps"][0]["after"], tip
 
     def resolution(self, lower, tip):
-        self.repo.git("fetch", str(self.remote), lower)
+        self.repo.git('fetch', str(self.coordinator.bundle(self.op())),
+                      '+refs/ce-candidates/*:refs/ce-candidates/*')
         tree = self.repo.git("rev-parse", lower + "^{tree}")
         head = self.repo.git("commit-tree", tree, "-p", tip, "-p", lower, input=b"Reviewed resolution\n")
         self.repo.git("push", str(self.remote), '+' + head + ":refs/pull/3/head")
         self.api.add_pull(3, head, "trunk", "contributor/ce")
         return head
+
+    def finish_resolution(self):
+        self.coordinator.advance(self.op())
+        self.coordinator.advance(self.op())
+        op = self.op()
+        self.assertEqual(op['state'], 'conflict')
+        step = op['data']['steps'][op['data']['conflict_index']]
+        self.assertEqual(step['input_head'], op['data']['steps'][0]['merged_sha'])
+        self.resolution(step['input_head'], step['base_sha'])
+        self.api.missing_review.add(3)
+        with self.assertRaises(Blocked):
+            self.coordinator.repair(self.op(), 3)
+        self.api.missing_review.remove(3)
+        self.coordinator.repair(self.op(), 3)
+        return self.finish()
 
     def test_policy_change_requires_new_authorization(self):
         self.prepare()
