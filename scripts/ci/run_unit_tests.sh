@@ -4,7 +4,7 @@ set -euo pipefail
 ctest_args=(
   --test-dir build
   --parallel "$(nproc)"
-  --test-timeout 120
+  --timeout 120
   --output-on-failure
   # Bug#39882117 and Bug#39980115: Temporarily quarantine persistent
   # trunk failures. Keep the retry path below for transient failures
