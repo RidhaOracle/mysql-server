@@ -1,4 +1,6 @@
 {
   "key": "hold",
-  "value": null
+  "value": {
+    "reason": "Pause new integrations while replacing all bot-created integration and test branches with direct version PRs and public state bundles at user request."
+  }
 }
