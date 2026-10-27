@@ -89,8 +89,7 @@ Optional `Resolution-PR: <version> <PR-link>` lines supply reviewed version-spec
 conflict resolutions. When the PR target equals `Merge-Through`, the bot infers a
 backport null merge: apply the fix there and preserve all later versions' files
 while connecting their history. No separate reason is needed. For an earlier
-content stop beyond the PR target, include `Merge-Reason:`. Legacy `Upmerge:` and
-`Upmerge-Till:` spellings remain accepted, including this equality rule.
+content stop beyond the PR target, include `Merge-Reason:`.
 
 The bot first prepares the whole chain and tests all versions in parallel,
 without opening generated integration PRs. Matching original/resolution PR CI

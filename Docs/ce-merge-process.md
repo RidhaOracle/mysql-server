@@ -30,14 +30,13 @@ Resolution-PR: codex/ce-test-innovation https://github.com/RidhaOracle/mysql-ser
 
 Each configured later version can have one resolution link. Numbers such as
 `#456` are accepted too; URLs must belong to this repository. Hidden examples in
-HTML comments are ignored. Legacy `Upmerge:` and `Upmerge-Till:` fields remain
-accepted, but combining old and new spellings is rejected. When the PR target
-equals `Merge-Through` (or `Upmerge-Till`), the bot infers **backport null merge**:
+HTML comments are ignored. When the PR target equals `Merge-Through`, the bot
+infers **backport null merge**:
 apply the fix only to that target, then merge its history through every later
 version without changing their files. No separate reason field is required.
-For example, a PR targeting `8.4` with `Upmerge-Till: 8.4` changes `8.4`, then
+For example, a PR targeting `8.4` with `Merge-Through: 8.4` changes `8.4`, then
 creates history-only merge PRs into `9.7` and `trunk`. A PR targeting `9.7` with
-`Upmerge-Till: 9.7` changes `9.7`, null-merges into `trunk`, and leaves `8.4` alone.
+`Merge-Through: 9.7` changes `9.7`, null-merges into `trunk`, and leaves `8.4` alone.
 Use the actual configured rehearsal branch names until production cutover.
 
 For a content stop beyond the PR target but before the newest version, include
@@ -113,8 +112,7 @@ When a merge conflicts, the progress comment gives a fetchable `merge-tests/*`
 input ref and exact target SHA. Merge those two inputs in a contributor branch,
 resolve the files, and open/reuse a resolution PR. A metadata link is consumed
 automatically; otherwise run **Use resolution PR** (`use-resolution`) with the
-operation ID and PR number or URL. `repair-upmerge` remains a CLI compatibility
-alias. Attaching a late PR this way avoids editing the already-authorized source
+operation ID and PR number or URL. Attaching a late PR this way avoids editing the already-authorized source
 body. The manual operation requires a current configured maintainer.
 
 The bot takes the reviewed file tree, prepares successors again, and reuses the

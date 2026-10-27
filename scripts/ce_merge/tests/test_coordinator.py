@@ -11,7 +11,7 @@ from scripts.ce_merge.coordinator import Coordinator
 from scripts.ce_merge.git import PublicGraph
 from scripts.ce_merge.github import GitHub, integration_body
 from scripts.ce_merge.journal import Journal
-from scripts.ce_merge.policy import Blocked, require, documentation_only, rulesets, upmerge_till
+from scripts.ce_merge.policy import Blocked, require, documentation_only, rulesets, merge_through
 
 
 POLICY = {
@@ -76,7 +76,7 @@ class FakeGitHub:
         self.add_pull(1, case.head, "lts", "contributor/ce")
 
     def add_pull(self, number, head, branch, repository):
-        self.pulls[number] = {"number": number, "state": "open", "draft": False, "body": "Upmerge: trunk",
+        self.pulls[number] = {"number": number, "state": "open", "draft": False, "body": "Merge-Through: trunk",
             "user": {"id": 9, "login": "contributor"}, "head": {"sha": head, "repo": {"full_name": repository}},
             "base": {"sha": self.branch(branch), "ref": branch, "repo": {"full_name": "example/ce"}}}
 
@@ -521,7 +521,7 @@ class SerialTests(unittest.TestCase):
 
     def test_changed_body_after_first_merge_blocks_next(self):
         self.coordinator.advance(self.op())
-        self.api.pulls[1]['body'] = 'Upmerge: lts\nUpmerge-Reason: changed'
+        self.api.pulls[1]['body'] = 'Merge-Through: lts\nMerge-Reason: changed'
         self.coordinator.advance(self.op())
         self.assertEqual(self.op()['state'], 'blocked')
         self.assertEqual(self.api.merges, [(1, 'squash')])
@@ -593,7 +593,7 @@ class SerialTests(unittest.TestCase):
         self.assertTrue(self.api.pulls[1]['merged'])
 
     def test_null_suffix_preserves_target_tree_and_actual_lower_ancestry(self):
-        self.api.pulls[1]['body'] = 'Upmerge: lts\nUpmerge-Reason: Already fixed on trunk'
+        self.api.pulls[1]['body'] = 'Merge-Through: lts\nMerge-Reason: Already fixed on trunk'
         op = self.op()
         op['data']['body'] = self.api.pulls[1]['body']
         self.store.save(op, 'queued', 'test')
@@ -618,7 +618,7 @@ class SerialTests(unittest.TestCase):
                           str(self.remote), 'HEAD:refs/pull/1/head')
             self.api.pulls[1]['head']['sha'] = self.head
         self.api.pulls[1]['base']['ref'] = base
-        self.api.pulls[1]['body'] = 'Upmerge-Till: ' + base
+        self.api.pulls[1]['body'] = 'Merge-Through: ' + base
         op = self.op()
         op['head'] = self.head
         op['data'].update(base=base, body=self.api.pulls[1]['body'])
@@ -819,39 +819,38 @@ class SerialTests(unittest.TestCase):
 
 class PolicyTests(unittest.TestCase):
     def test_malformed_or_backward_metadata_fails_closed(self):
-        for body in ("Upmerge-Till:\nUpmerge-Reason: example", "Upmerge-Till: trunk\nUpmerge-Till: trunk",
-                     "Backport-To: lts", "Upmerge-Till: lts\nUpmerge-Reason: \nNext section"):
+        for body in ("Merge-Through:\nMerge-Reason: example", "Merge-Through: trunk\nMerge-Through: trunk",
+                     "Backport-To: lts", "Merge-Through: lts\nMerge-Reason: \nNext section"):
             with self.subTest(body=body), self.assertRaises(Blocked):
-                upmerge_till(body, "lts", POLICY["branches"])
+                merge_through(body, "lts", POLICY["branches"])
 
     def test_unknown_base_fails_with_public_reason(self):
         with self.assertRaises(Blocked):
-            upmerge_till("", "unknown", POLICY["branches"])
-    def test_explicit_upmerge_field_is_required(self):
+            merge_through("", "unknown", POLICY["branches"])
+    def test_explicit_merge_through_field_is_required(self):
         with self.assertRaises(Blocked):
-            upmerge_till('', 'lts', POLICY['branches'])
-        self.assertEqual(upmerge_till('Upmerge: trunk', 'lts', POLICY['branches']), 'trunk')
+            merge_through('', 'lts', POLICY['branches'])
+        self.assertEqual(merge_through('Merge-Through: trunk', 'lts', POLICY['branches']), 'trunk')
 
     def test_hidden_template_example_is_not_an_instruction(self):
         with self.assertRaises(Blocked):
-            upmerge_till("<!--\nUpmerge: trunk\n-->", "lts", POLICY["branches"])
+            merge_through("<!--\nMerge-Through: trunk\n-->", "lts", POLICY["branches"])
 
     def test_target_equal_to_stop_selects_backport_null_without_reason(self):
         branches = ['8.4', '9.7', 'trunk']
-        for field in ('Merge-Through', 'Upmerge', 'Upmerge-Till'):
-            for base in branches:
-                with self.subTest(field=field, base=base):
-                    self.assertEqual(upmerge_till(f'{field}: {base}', base, branches), base)
+        for base in branches:
+            with self.subTest(base=base):
+                self.assertEqual(merge_through(f'Merge-Through: {base}', base, branches), base)
 
     def test_intermediate_early_stop_requires_reason(self):
         with self.assertRaises(Blocked):
-            upmerge_till('Upmerge-Till: 9.7', '8.4', ['8.4', '9.7', 'trunk'])
-        self.assertEqual(upmerge_till('Upmerge-Till: 9.7\nUpmerge-Reason: Already fixed on trunk',
+            merge_through('Merge-Through: 9.7', '8.4', ['8.4', '9.7', 'trunk'])
+        self.assertEqual(merge_through('Merge-Through: 9.7\nMerge-Reason: Already fixed on trunk',
                                      '8.4', ['8.4', '9.7', 'trunk']), '9.7')
 
-    def test_no_backward_upmerge(self):
+    def test_no_backward_merge(self):
         with self.assertRaises(Blocked):
-            upmerge_till("Upmerge-Till: lts\nUpmerge-Reason: test", "trunk", POLICY["branches"])
+            merge_through("Merge-Through: lts\nMerge-Reason: test", "trunk", POLICY["branches"])
 
     def test_docs_exemption_is_narrow(self):
         self.assertTrue(documentation_only(["Docs/test.md"]))
