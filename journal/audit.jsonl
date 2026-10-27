@@ -80,3 +80,4 @@
 {"data": {"operator": "coordinator", "value": "ee033319a1686921fbebe4045a80ef21df488c6247afb5c36878a2e652a1385f"}, "event": "setting:operation-report:45aee340cb1250a6902fec31f3f1d7e1", "operation": null, "timestamp": 1793093722.9371011}
 {"data": {"state": "prepared"}, "event": "remaining-chain-preflight", "operation": "45aee340cb1250a6902fec31f3f1d7e1", "timestamp": 1793093799.426865}
 {"data": {"state": "prepared"}, "event": "candidate-tests-checked", "operation": "45aee340cb1250a6902fec31f3f1d7e1", "timestamp": 1793093801.1990898}
+{"data": {"state": "prepared"}, "event": "integration-pr-staging-intent", "operation": "45aee340cb1250a6902fec31f3f1d7e1", "timestamp": 1793093802.7182372}
