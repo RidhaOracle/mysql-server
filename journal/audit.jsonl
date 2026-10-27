@@ -85,3 +85,4 @@
 {"data": {"state": "prepared"}, "event": "candidate-tests-checked", "operation": "45aee340cb1250a6902fec31f3f1d7e1", "timestamp": 1793093815.230576}
 {"data": {"state": "publishing"}, "event": "github-pr-merge-intent", "operation": "45aee340cb1250a6902fec31f3f1d7e1", "timestamp": 1793093824.0197072}
 {"data": {"state": "complete"}, "event": "github-merge-confirmed", "operation": "45aee340cb1250a6902fec31f3f1d7e1", "timestamp": 1793093832.6403794}
+{"data": {"operator": "RidhaOracle", "value": null}, "event": "setting:merge-lock", "operation": null, "timestamp": 1793093834.5910108}
