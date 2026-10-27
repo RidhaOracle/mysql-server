@@ -1,0 +1,3 @@
+CE Merge Bot live rehearsal fixture.
+Apply first to 9.7 and trunk, then backport to 8.4.
+Forward null merges must preserve the 9.7 and trunk file trees.
