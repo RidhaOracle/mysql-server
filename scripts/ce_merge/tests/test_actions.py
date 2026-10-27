@@ -134,7 +134,8 @@ class AuthorizationTests(unittest.TestCase):
 class PolicyAndWorkflowTests(unittest.TestCase):
     def test_public_metadata_and_legacy_aliases(self):
         self.assertEqual(upmerge_till('Merge-Through: trunk', 'lts', POLICY['branches']), 'trunk')
-        for body in ('Merge-Through: trunk\nUpmerge: trunk', 'Merge-Through: lts',
+        self.assertEqual(upmerge_till('Merge-Through: lts', 'lts', POLICY['branches']), 'lts')
+        for body in ('Merge-Through: trunk\nUpmerge: trunk',
                      'Merge-Through: trunk\nMerge-Through: trunk'):
             with self.subTest(body=body), self.assertRaises(Blocked):
                 upmerge_till(body, 'lts', POLICY['branches'])

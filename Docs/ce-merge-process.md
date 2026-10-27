@@ -31,10 +31,23 @@ Resolution-PR: codex/ce-test-innovation https://github.com/RidhaOracle/mysql-ser
 Each configured later version can have one resolution link. Numbers such as
 `#456` are accepted too; URLs must belong to this repository. Hidden examples in
 HTML comments are ignored. Legacy `Upmerge:` and `Upmerge-Till:` fields remain
-accepted, but combining old and new spellings is rejected. To stop content before
-the newest version, add `Merge-Reason:` with a reviewed applicability explanation.
-Later versions receive history-only merges with unchanged files. A conflict never
-means that a fix should be silently discarded. Backport instructions are rejected.
+accepted, but combining old and new spellings is rejected. When the PR target
+equals `Merge-Through` (or `Upmerge-Till`), the bot infers **backport null merge**:
+apply the fix only to that target, then merge its history through every later
+version without changing their files. No separate reason field is required.
+For example, a PR targeting `8.4` with `Upmerge-Till: 8.4` changes `8.4`, then
+creates history-only merge PRs into `9.7` and `trunk`. A PR targeting `9.7` with
+`Upmerge-Till: 9.7` changes `9.7`, null-merges into `trunk`, and leaves `8.4` alone.
+Use the actual configured rehearsal branch names until production cutover.
+
+For a content stop beyond the PR target but before the newest version, include
+`Merge-Reason:` with a reviewed applicability explanation. Supplied reason fields
+must be non-empty. Later versions receive history-only merges with unchanged
+files, even when a normal content merge would conflict. A conflict within the
+content-carrying part of the chain still needs a reviewed resolution PR. Backport
+patches must be submitted to the desired older target; the bot does not create
+backward cherry-picks from a PR targeting a newer version, and `Backport-To:`
+instructions remain unsupported.
 
 The original PR needs trusted OCA verification, current-head approval by a
 reviewer with Write, Maintain, or Admin access, resolved conversations, and passing

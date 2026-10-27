@@ -91,8 +91,10 @@ def upmerge_till(body, base, branches):
             "Invalid Merge-Through target")
     if target != branches[-1]:
         reasons = re.findall(r"^[ \t]*(?:Merge-Reason|Upmerge-Reason):[ \t]*(.*)$", body, re.M)
-        require(len(reasons) == 1 and reasons[0].strip(),
-                "Early content stop requires Merge-Reason and reviewed applicability")
+        # Stopping at the PR base explicitly selects a backport-only change;
+        # every later version receives an ancestry-only merge.
+        require((target == base and not reasons) or (len(reasons) == 1 and reasons[0].strip()),
+                "Early content stop beyond the PR target requires Merge-Reason; supplied reasons must be non-empty")
     return target
 
 

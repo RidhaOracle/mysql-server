@@ -16,9 +16,11 @@
      integration PRs one at a time. Source and resolution PRs need human review;
      verified generated PRs do not need an additional approval.
 
-     Replace Merge-Through below with the last version needing the fix. For an
-     earlier stop, add Merge-Reason explaining why newer versions need no content.
-     History-only merges still continue through the last configured version.
+     Replace Merge-Through below with the last version needing the fix. For a
+     backport-only fix, set it equal to this PR's target: later versions receive
+     null merges (history only, unchanged files), with no separate reason needed.
+     For an earlier stop beyond the PR target, add Merge-Reason explaining why
+     newer versions need no content. History continues through the last version.
 
      Optional reviewed conflict resolutions (one per target version):
      Resolution-PR: codex/ce-test-lts-new https://github.com/RidhaOracle/mysql-server/pull/456

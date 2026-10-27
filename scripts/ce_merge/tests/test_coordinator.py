@@ -602,6 +602,53 @@ class SerialTests(unittest.TestCase):
         self.assertEqual(self.remote_git('rev-parse', steps[1]['merged_sha'] + '^{tree}'),
                          self.remote_git('rev-parse', self.repo.base + '^{tree}'))
 
+    def backport_null_chain(self, base):
+        # Different later-version implementations deliberately conflict with
+        # the source patch. Null merges must preserve those versions verbatim.
+        self.repo.git('checkout', 'trunk')
+        middle = self.repo.commit('fix.cc', 'int version97;\n')
+        self.repo.git('push', str(self.remote), middle + ':refs/heads/middle')
+        trunk = self.repo.commit('fix.cc', 'int trunk_version;\n')
+        self.repo.git('push', str(self.remote), trunk + ':refs/heads/trunk')
+        self.coordinator.policy = dict(POLICY, branches=['lts', 'middle', 'trunk'])
+        if base == 'middle':
+            self.repo.git('checkout', '-b', 'backport-fix', middle)
+            self.head = self.repo.commit('fix.cc', 'int fix;\n')
+            self.repo.git('push', '--force-with-lease=refs/pull/1/head:' + self.api.pulls[1]['head']['sha'],
+                          str(self.remote), 'HEAD:refs/pull/1/head')
+            self.api.pulls[1]['head']['sha'] = self.head
+        self.api.pulls[1]['base']['ref'] = base
+        self.api.pulls[1]['body'] = 'Upmerge-Till: ' + base
+        op = self.op()
+        op['head'] = self.head
+        op['data'].update(base=base, body=self.api.pulls[1]['body'])
+        self.store.save(op, 'queued', 'backport-null-test')
+        bases = {'lts': self.repo.base, 'middle': middle, 'trunk': trunk}
+        self.coordinator.advance(self.op())
+        self.assertEqual(len(self.api.merges), 1)
+        # Recreate the coordinator between hops to verify saved null intent.
+        self.store = Journal(self.store.path)
+        self.coordinator = Coordinator(self.coordinator.policy, self.store, self.api, self.graph)
+        self.coordinator.tests = lambda *a, **kw: (True, 'version test evidence')
+        steps = self.finish()['data']['steps']
+        self.assertEqual([s['null'] for s in steps], [False] + [True] * (len(steps) - 1))
+        self.assertEqual(self.remote_git('show', steps[0]['merged_sha'] + ':fix.cc'), 'int fix;')
+        for lower, upper in zip(steps, steps[1:]):
+            self.remote_git('merge-base', '--is-ancestor', lower['merged_sha'], upper['merged_sha'])
+            self.assertEqual(self.remote_git('rev-parse', upper['merged_sha'] + '^{tree}'),
+                             self.remote_git('rev-parse', bases[upper['branch']] + '^{tree}'))
+            self.assertTrue(self.api.pulls[upper['pr']]['merged'])
+        self.assertTrue(self.api.pulls[1]['merged'])
+        self.assertIsNone(self.store.setting('merge-lock'))
+        return steps
+
+    def test_backport_to_oldest_null_merges_all_later_versions(self):
+        self.assertEqual(len(self.backport_null_chain('lts')), 3)
+
+    def test_backport_to_middle_leaves_older_version_untouched(self):
+        self.assertEqual(len(self.backport_null_chain('middle')), 2)
+        self.assertEqual(self.api.branch('lts'), self.repo.base)
+
     def test_three_branch_chain_preserves_each_actual_merge(self):
         self.remote_git('update-ref', 'refs/heads/middle', self.repo.base)
         self.coordinator.policy = dict(POLICY, branches=['lts', 'middle', 'trunk'])
@@ -789,9 +836,18 @@ class PolicyTests(unittest.TestCase):
         with self.assertRaises(Blocked):
             upmerge_till("<!--\nUpmerge: trunk\n-->", "lts", POLICY["branches"])
 
-    def test_early_stop_requires_reason(self):
+    def test_target_equal_to_stop_selects_backport_null_without_reason(self):
+        branches = ['8.4', '9.7', 'trunk']
+        for field in ('Merge-Through', 'Upmerge', 'Upmerge-Till'):
+            for base in branches:
+                with self.subTest(field=field, base=base):
+                    self.assertEqual(upmerge_till(f'{field}: {base}', base, branches), base)
+
+    def test_intermediate_early_stop_requires_reason(self):
         with self.assertRaises(Blocked):
-            upmerge_till("Upmerge-Till: lts", "lts", POLICY["branches"])
+            upmerge_till('Upmerge-Till: 9.7', '8.4', ['8.4', '9.7', 'trunk'])
+        self.assertEqual(upmerge_till('Upmerge-Till: 9.7\nUpmerge-Reason: Already fixed on trunk',
+                                     '8.4', ['8.4', '9.7', 'trunk']), '9.7')
 
     def test_no_backward_upmerge(self):
         with self.assertRaises(Blocked):
