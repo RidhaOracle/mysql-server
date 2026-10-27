@@ -20,6 +20,7 @@
           "318f8b4d9335832c286276f78a40d9989e27ec77"
         ],
         "squash": true,
+        "test_summary": "Documentation-only exemption",
         "tree": "f36205281f087e6698d95d56997eea0fe81c48c3"
       },
       {
@@ -33,6 +34,7 @@
           "8f47db602ae555c9e2747a7a16754162e7309456"
         ],
         "squash": false,
+        "test_summary": "Documentation-only exemption",
         "tree": "a608aa1b5b3ba26ceea4cc46bdce2b5e6b5acea4"
       }
     ]
