@@ -212,7 +212,7 @@ class IdentityAndReportingTests(unittest.TestCase):
         self.api.comment(self.pr, "operation:test", "Complete")
         self.api.repo.assert_not_called()
 
-    def test_native_merge_uses_exact_head_and_explicit_method_without_bypass(self):
+    def test_native_merge_uses_exact_head_and_configured_pr_permissions(self):
         self.api.token = lambda: 'test-secret'
         for method in ('squash', 'merge'):
             with self.subTest(method=method), patch('scripts.ce_merge.github.subprocess.run') as run:
@@ -223,7 +223,7 @@ class IdentityAndReportingTests(unittest.TestCase):
                 self.assertIn('--' + method, command)
                 self.assertIn('--match-head-commit', command)
                 self.assertIn('b' * 40, command)
-                self.assertNotIn('--admin', command)
+                self.assertIn('--admin', command)
                 self.assertNotIn('--auto', command)
                 self.assertNotIn('test-secret', command)
                 self.assertEqual(run.call_args.kwargs['env']['GH_TOKEN'], 'test-secret')
@@ -241,7 +241,7 @@ class IdentityAndReportingTests(unittest.TestCase):
                     self.api.merge_pr(12, 'b' * 40, 'merge', 'Reviewed title')
                 run.assert_called_once()
 
-    def test_only_generated_merge_prs_use_the_explicit_review_exception(self):
+    def test_generated_prs_require_merge_commits_and_exact_heads(self):
         self.api.token = lambda: 'test-secret'
         with patch('scripts.ce_merge.github.subprocess.run') as run:
             run.return_value.returncode = 0

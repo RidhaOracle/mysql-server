@@ -160,11 +160,13 @@ manual actions by `RidhaOracle`; it is not restricted to Actions runs. PRs,
 comments, and statuses produced by automation appear under that account. Source
 and resolution PRs authored by `RidhaOracle` need another collaborator's approval.
 
-Generated merges use the CLI's `--admin` switch to suppress its local refusal of a
-review-blocked PR. That flag grants no permissions at GitHub: only the configured
-review exception is available. It is never used for the source squash. The account
-must have repository Write access, not administrator privileges. Extra organization
-rules and required checks are never presumed bypassable. See GitHub's
+Native merges use the CLI's `--admin` switch to suppress its local refusal when
+the update or review restriction reports a PR as blocked. GitHub still evaluates
+the account's configured permissions. The coordinator independently requires
+current-head human approval for every source and resolution, including retries;
+only verified generated PRs waive separate approval. Quality and history rules
+have no bot exception. Extra organization rules and required checks are never
+presumed bypassable. See GitHub's
 [ruleset actor and PR-only bypass API](https://docs.github.com/en/rest/repos/rules#create-a-repository-ruleset).
 
 Content-based tests may be reused across different merge SHAs only after matching
