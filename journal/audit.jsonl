@@ -77,3 +77,4 @@
 {"data": {"state": "prepared"}, "event": "candidate-tests-checked", "operation": "45aee340cb1250a6902fec31f3f1d7e1", "timestamp": 1793093699.82781}
 {"data": {"state": "publishing"}, "event": "github-pr-merge-intent", "operation": "45aee340cb1250a6902fec31f3f1d7e1", "timestamp": 1793093708.2558768}
 {"data": {"state": "prepared"}, "event": "github-merge-confirmed", "operation": "45aee340cb1250a6902fec31f3f1d7e1", "timestamp": 1793093718.2231946}
+{"data": {"operator": "coordinator", "value": "ee033319a1686921fbebe4045a80ef21df488c6247afb5c36878a2e652a1385f"}, "event": "setting:operation-report:45aee340cb1250a6902fec31f3f1d7e1", "operation": null, "timestamp": 1793093722.9371011}
