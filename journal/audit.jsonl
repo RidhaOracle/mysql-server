@@ -46,3 +46,4 @@
 {"data": {"state": "prepared"}, "event": "candidates-prepared", "operation": "45aee340cb1250a6902fec31f3f1d7e1", "timestamp": 1793093016.0028627}
 {"data": {"state": "prepared"}, "event": "candidate-tests-checked", "operation": "45aee340cb1250a6902fec31f3f1d7e1", "timestamp": 1793093018.9162161}
 {"data": {"state": "prepared"}, "event": "integration-pr-linked", "operation": "45aee340cb1250a6902fec31f3f1d7e1", "timestamp": 1793093020.4007897}
+{"data": {"state": "prepared"}, "event": "candidate-tests-checked", "operation": "45aee340cb1250a6902fec31f3f1d7e1", "timestamp": 1793093026.7607772}
