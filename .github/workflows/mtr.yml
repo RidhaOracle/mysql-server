@@ -4,11 +4,14 @@ run-name: "pr:${{ github.event.pull_request.number }}:${{ github.event.pull_requ
 on:
   pull_request:
     paths-ignore: ["Docs/**", "README", "README.md", "CONTRIBUTING.md"]
+  # Use Actions → MTR → Run workflow to test a pipeline revision before a
+  # subsequent PR update creates its normal pull_request run.
+  workflow_dispatch:
 
 permissions: {}
 
 concurrency:
-  group: mtr-${{ github.event.pull_request.number }}
+  group: mtr-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 # Run MTR's normal default test selection on every PR, split by suite so each
@@ -20,7 +23,6 @@ jobs:
     # A full default MTR selection needs substantially more time than the
     # retired smoke check. 360 minutes is GitHub-hosted runners' job maximum.
     timeout-minutes: 360
-    needs: []
     strategy:
       fail-fast: false
       matrix:
@@ -56,7 +58,9 @@ jobs:
       - name: Check out trusted CI scripts
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ github.event.pull_request.base.sha }}
+          # Manual runs always use the current trusted trunk scripts. PR runs
+          # pin the scripts to the PR base commit to retain their trust model.
+          ref: ${{ github.event.pull_request.base.sha || 'trunk' }}
           fetch-depth: 1
           persist-credentials: false
           sparse-checkout: |
@@ -64,6 +68,7 @@ jobs:
             scripts/ce_merge
           path: trusted
       - name: Verify PR merge commit
+        if: ${{ github.event_name == 'pull_request' }}
         working-directory: source
         env:
           EXPECTED_BASE: ${{ github.event.pull_request.base.sha }}
@@ -74,6 +79,11 @@ jobs:
           test "$(git rev-parse HEAD^1)" = "$EXPECTED_BASE"
           test "$(git rev-parse HEAD^2)" = "$EXPECTED_HEAD"
           test "$(git -C ../trusted rev-parse HEAD)" = "$EXPECTED_BASE"
+      - name: Verify MTR suites
+        working-directory: source
+        env:
+          MTR_SUITES: ${{ matrix.suites }}
+        run: python3 ../trusted/scripts/ci/verify_suites.py --suites="$MTR_SUITES"
       - name: Verify rehearsal test
         if: ${{ env.CE_MTR_TEST != '' }}
         working-directory: source
@@ -84,17 +94,17 @@ jobs:
       # Fork revisions can poison PR-scoped caches. Restore only for trusted,
       # same-repository branches, and never save data from this PR workflow.
       - name: Restore Boost cache
-        if: ${{ github.event.pull_request.head.repo.id == github.event.repository.id }}
+        if: ${{ github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.id == github.event.repository.id }}
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/mysql-boost
           key: boost-${{ hashFiles('source/cmake/boost.cmake') }}
       - name: Restore ccache
-        if: ${{ github.event.pull_request.head.repo.id == github.event.repository.id }}
+        if: ${{ github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.id == github.event.repository.id }}
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/ccache
-          key: ccache-gcc-${{ github.event.pull_request.head.sha }}
+          key: ccache-gcc-${{ github.event.pull_request.head.sha || github.sha }}
           restore-keys: ccache-gcc-
       - name: Show runner resources
         working-directory: source
@@ -114,17 +124,7 @@ jobs:
         working-directory: source
         env:
           MTR_SUITES: ${{ matrix.suites }}
-        run: |
-          args=(
-            --parallel=auto
-            --force
-            --report-unstable-tests
-            --retry=3
-            --retry-failure=2
-            --max-test-fail=50
-            "--suite=${MTR_SUITES}"
-          )
-          ../trusted/scripts/ci/mtr.sh "${args[@]}"
+        run: ../trusted/scripts/ci/run_mtr.sh
       - name: Run MTR rehearsal (${{ env.CE_MTR_TEST }})
         if: ${{ env.CE_MTR_TEST != '' }}
         working-directory: source
@@ -132,79 +132,7 @@ jobs:
       - name: Run unit tests
         if: ${{ matrix.run_unit_tests }}
         working-directory: source
-        run: |
-          ctest_args=(
-            --test-dir build
-            --parallel "$(nproc)"
-            --test-timeout 120
-            --output-on-failure
-            # Bug#39882117 and Bug#39980115: Temporarily quarantine persistent
-            # trunk failures. Keep the retry path below for transient failures
-            # in all other CTest cases.
-            --exclude-regex '^(routertest_integration_routing_splitting|testSecureSocket-t)$'
-          )
-
-          set +e
-          ctest "${ctest_args[@]}" \
-            --output-log build/mysql-test/var/ctest.log
-          ctest_result=$?
-          set -e
-
-          if (( ctest_result == 0 )); then
-            exit 0
-          fi
-
-          failed_tests=build/Testing/Temporary/LastTestsFailed.log
-          if [[ ! -s "$failed_tests" ]]; then
-            echo "CTest failed without a failed-test list; not retrying." >&2
-            exit "$ctest_result"
-          fi
-
-          initial_failures=build/mysql-test/var/ctest-initial-failures.log
-          cp "$failed_tests" "$initial_failures"
-          initial_names=build/mysql-test/var/ctest-initial-failure-names.log
-          sed 's/^[^:]*://' "$initial_failures" | sort -u > "$initial_names"
-          echo "::warning::Retrying only the CTest failures from the initial run"
-          set +e
-          ctest "${ctest_args[@]}" \
-            --rerun-failed \
-            --repeat until-pass:2 \
-            --output-log build/mysql-test/var/ctest-rerun.log
-          rerun_result=$?
-          set -e
-
-          persistent_names=build/mysql-test/var/ctest-persistent-failures.log
-          recovered_names=build/mysql-test/var/ctest-recovered-failures.log
-          : > "$persistent_names"
-          if (( rerun_result != 0 )) && [[ -s "$failed_tests" ]]; then
-            sed 's/^[^:]*://' "$failed_tests" | sort -u > "$persistent_names"
-          fi
-          comm -23 "$initial_names" "$persistent_names" > "$recovered_names"
-
-          {
-            echo "### CTest retry summary (${{ matrix.shard }})"
-            echo
-            echo "Initial failures:"
-            sed 's/^/- /' "$initial_names"
-            echo
-            echo "Recovered on retry:"
-            if [[ -s "$recovered_names" ]]; then
-              sed 's/^/- /' "$recovered_names"
-            else
-              echo "- None"
-            fi
-            echo
-            echo "Persistent failures:"
-            if [[ -s "$persistent_names" ]]; then
-              sed 's/^/- /' "$persistent_names"
-            elif (( rerun_result == 0 )); then
-              echo "- None"
-            else
-              echo "- CTest did not produce a persistent-failure list."
-            fi
-          } >> "$GITHUB_STEP_SUMMARY"
-
-          exit "$rerun_result"
+        run: ../trusted/scripts/ci/run_unit_tests.sh
       - name: Publish test report
         if: ${{ always() }}
         # The privileged reporter never downloads or executes this untrusted artifact.

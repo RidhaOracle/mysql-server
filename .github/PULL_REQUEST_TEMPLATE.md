@@ -9,20 +9,27 @@
 
 ### Why is it needed?
 
-### LTS propagation
+### Merge across versions
 
-<!-- In GitHub's base dropdown, select the OLDEST applicable supported branch.
-     Example: for a fix needed in 8.4 and trunk, base = 8.4 (if configured).
-     The bot opens PRs to carry the fix forward; all targets publish together
-     after every PR is reviewed and tested. Do not open against trunk for backporting.
+<!-- Target the OLDEST applicable configured version. The bot tests candidates
+     across all versions first, then squashes this PR and creates/merges forward
+     integration PRs one at a time. Source and resolution PRs need human review;
+     verified generated PRs do not need an additional approval.
 
-     Usually leave the fields below commented: propagation defaults to Innovation.
-     To stop CONTENT earlier, uncomment both lines, use an actual configured branch,
-     and explain why newer branches do not need the fix. Reviewed ancestry-only
-     merges still continue through Innovation. The fields do not select the PR base.
-Upmerge-Till: <last-branch-needing-content>
-Upmerge-Reason: <why-newer-branches-do-not-need-the-fix>
--->
+     Replace Merge-Through below with the last version needing the fix. For a
+     backport-only fix, set it equal to this PR's target: later versions receive
+     null merges (history only, unchanged files), with no separate reason needed.
+     For an earlier stop beyond the PR target, add Merge-Reason explaining why
+     newer versions need no content. History continues through the last version.
+
+     Optional reviewed conflict resolutions (one per target version):
+     Resolution-PR: codex/ce-test-lts-new https://github.com/RidhaOracle/mysql-server/pull/456
+     Resolution-PR: codex/ce-test-innovation https://github.com/RidhaOracle/mysql-server/pull/457
+     Resolutions must include the exact candidate and target inputs published by
+     the bot. Matching CI is reused; missing tests run independently of PR creation.
+     Earlier merges remain if a later version blocks. No backports from trunk. -->
+
+Merge-Through: codex/ce-test-innovation
 
 ### How was it tested?
 

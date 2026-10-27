@@ -2,7 +2,6 @@
 """Inspect public Git objects without checking out or executing contributor code."""
 import base64
 import hashlib
-import json
 import logging
 import os
 import signal
@@ -153,7 +152,7 @@ class PublicGraph:
             step["input_head"] = previous
             # Inspect original history even when the resulting commit is squashed.
             self.inspect(base, previous)
-            tree = self.tree(base) if step["null"] else self.merge_tree(base, previous)
+            tree = step.get("resolved_tree") or (self.tree(base) if step["null"] else self.merge_tree(base, previous))
             squash = step.get("squash", index == 0)
             step["parents"] = [base] if squash else [base, previous]
             step["tree"] = tree
@@ -168,43 +167,9 @@ class PublicGraph:
             self.inspect(base, previous)
         return steps
 
-    def receipt(self, operation, steps, actor):
-        name = "ce-integration/" + operation
-        payload = {"operation": operation, "authorized_by": actor,
-                   "branches": [{"branch": s["branch"], "before": s["base_sha"],
-                                 "after": s["after"], "pr": s["pr"]} for s in steps]}
-        raw = (f'object {steps[-1]["after"]}\ntype commit\ntag {name}\n'
-               'tagger CE Merge Coordinator <ce-merge@localhost> 0 +0000\n\n' +
-               json.dumps(payload, sort_keys=True) + "\n")
-        oid = self.run("hash-object", "-t", "tag", "-w", "--stdin", input=raw.encode())
-        return {"ref": "refs/tags/" + name, "sha": oid, "raw": raw}
-
     def remote_refs(self, refs):
         return {line.split()[1]: line.split()[0] for line in
                 self.run("ls-remote", "--refs", self.remote, *refs).splitlines()}
-
-    def atomic_publish(self, steps, receipt, token=None):
-        """No fallback, no individual ref retry, and no non-fast-forward updates."""
-        require(steps and len({s["branch"] for s in steps}) == len(steps), "Invalid publication targets")
-        require(receipt["ref"].startswith("refs/tags/ce-integration/"), "Invalid receipt namespace")
-        current = self.remote_refs(["refs/heads/" + s["branch"] for s in steps] + [receipt["ref"]])
-        require(receipt["ref"] not in current and all(
-            current.get("refs/heads/" + s["branch"]) == s["base_sha"] for s in steps),
-            "Publication snapshot changed; reconcile before retrying")
-        leases, refs = [], []
-        for step in steps:
-            ref = "refs/heads/" + step["branch"]
-            self.run("check-ref-format", ref)
-            require(step["base_sha"] != step["after"] and
-                    self.ancestor(step["base_sha"], step["after"]), "Publication must advance every branch without rewriting")
-            leases.append("--force-with-lease=" + ref + ":" + sha(step["base_sha"]))
-            refs.append(sha(step["after"]) + ":" + ref)
-        self.run("check-ref-format", receipt["ref"])
-        require(self.run("hash-object", "-t", "tag", "-w", "--stdin", input=receipt["raw"].encode()) == receipt["sha"],
-                "Receipt object changed")
-        leases.append("--force-with-lease=" + receipt["ref"] + ":")
-        refs.append(sha(receipt["sha"]) + ":" + receipt["ref"])
-        self.run("push", "--atomic", *leases, self.remote, *refs, token=token)
 
     def export_candidates(self, steps, path):
         refs = []

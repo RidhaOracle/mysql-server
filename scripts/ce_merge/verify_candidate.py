@@ -1,29 +1,41 @@
 # Copyright (c) 2026, Oracle and/or its affiliates.
-"""Executed from the trusted workflow checkout, before running contributor code."""
+"""Read-only runner verification before executing any candidate build code."""
 import json
 import os
 import re
 import subprocess
 
 
-def git(*args):
-    return subprocess.check_output(["git", *args], text=True).strip()
+def verify():
+    def env(name, pattern):
+        value = os.environ[name]
+        if not re.fullmatch(pattern, value):
+            raise ValueError('Invalid ' + name)
+        return value
+
+    def git(*args):
+        return subprocess.check_output(['git', '-c', 'core.hooksPath=/dev/null', *args],
+                                       env=dict(os.environ, GIT_NO_REPLACE_OBJECTS='1')).decode().strip()
+
+    env('MERGE_REQUEST', r'[0-9a-f]{64}')
+    candidate = env('MERGE_CANDIDATE', r'[0-9a-f]{40}')
+    base = env('MERGE_BASE', r'[0-9a-f]{40}')
+    tree = env('MERGE_TREE', r'[0-9a-f]{40}')
+    env('MERGE_MTR_TEST', r'(?:main\.[A-Za-z0-9_-]+)?')
+    checks = json.loads(os.environ['MERGE_CHECKS'])
+    if not isinstance(checks, list) or not checks or len(checks) != len(set(checks)) or not set(checks) <= {
+            'pr-build.yml', 'mtr.yml', 'clang-format.yml'}:
+        raise ValueError('Invalid requested checks')
+    suites = json.loads(os.environ['MERGE_SUITES'])
+    if not isinstance(suites, dict) or set(suites) != {'replication', 'storage', 'core', 'services'} or not all(
+            isinstance(v, str) and re.fullmatch(r'[A-Za-z0-9_-]+(?:,[A-Za-z0-9_-]+)*', v) for v in suites.values()):
+        raise ValueError('Invalid suite profile')
+    if git('rev-parse', 'HEAD') != candidate or git('rev-parse', 'HEAD^{tree}') != tree:
+        raise ValueError('Candidate identity or file tree changed')
+    git('merge-base', '--is-ancestor', base, candidate)
+    if git('-C', '../trusted', 'rev-parse', 'HEAD') != base:
+        raise ValueError('Version test scripts do not match target snapshot')
 
 
-if __name__ == "__main__":
-    if (not re.fullmatch(r"[0-9a-f]{40}", os.environ["EXPECTED_WORKFLOW"]) or
-            os.environ["ACTUAL_WORKFLOW"] != os.environ["EXPECTED_WORKFLOW"]):
-        raise SystemExit("Trusted CI ref moved during dispatch; wait for coordinator redispatch")
-    for name in ("EXPECTED_BASE", "EXPECTED_MERGE"):
-        if not re.fullmatch(r"[0-9a-f]{40}", os.environ[name]):
-            raise SystemExit("Invalid candidate identity")
-    expected = json.loads(os.environ["EXPECTED_PARENTS"])
-    if (not isinstance(expected, list) or len(expected) not in (1, 2, 3) or
-            any(not isinstance(p, str) or not re.fullmatch(r"[0-9a-f]{40}", p) for p in expected) or
-            expected[0] != os.environ["EXPECTED_BASE"]):
-        raise SystemExit("Invalid candidate parents")
-    if git("rev-parse", "HEAD") != os.environ["EXPECTED_MERGE"]:
-        raise SystemExit("Candidate SHA changed")
-    if git("show", "-s", "--format=%P", "HEAD").split() != expected:
-        raise SystemExit("Candidate base/head changed")
-    print("Verified exact prepared candidate and every parent")
+if __name__ == '__main__':
+    verify()

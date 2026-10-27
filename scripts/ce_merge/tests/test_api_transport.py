@@ -13,7 +13,7 @@ from scripts.ce_merge.policy import Blocked
 class TransportTests(unittest.TestCase):
     def setUp(self):
         self.api = GitHub({'repository': 'example/ce', 'maintainers': ['owner']})
-        self.api.token = lambda fork=False: 'test-token'
+        self.api.token = lambda: 'test-token'
         self.sleep = patch('scripts.ce_merge.github.time.sleep').start()
         self.addCleanup(patch.stopall)
 

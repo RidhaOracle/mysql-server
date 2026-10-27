@@ -67,9 +67,9 @@ scripts/ci/mtr.sh --suite=innodb     # pass MTR args straight through
 
 Push your branch to a personal fork or, if you have push access, to this repository.
 Both use the same contribution checks. Select the oldest applicable supported
-branch as the PR **base**. The prototype currently configures only `trunk`; at
-cutover the published CE branch policy lists any supported LTS targets. A fix
-needed in an LTS and Innovation starts at that LTS. The
+branch as the PR **base**. The published CE policy lists supported targets; the
+checked-in configuration uses three rehearsal branches. A fix needed in an LTS
+and Innovation starts at that LTS. The
 [pull request template](.github/PULL_REQUEST_TEMPLATE.md) prompts for the few
 things reviewers always need. On open, CI automatically:
 
@@ -80,29 +80,41 @@ things reviewers always need. On open, CI automatically:
 
 CI reports completion or actionable failures after the build and MTR run finish.
 
-## CE merge-process rollout
+## Merge changes across versions
 
-The CE merge coordinator is introduced in shadow mode. After a repository's
-administrator completes its cutover, an authorized maintainer requests integration
-using the **Integrate** check action. The GitHub App prepares the original squash
-and forward upmerge PRs after OCA verification and public CI. All affected CE branches publish together only
-after every candidate has passed review and CI. Approval must come from someone with the repository Write, Maintain, or Admin role,
-on the current PR head. CODEOWNERS membership is not required. Unresolved review conversations
-and outstanding change requests from reviewers with those roles still block integration.
-The `Integrate` label is informational.
+After administrator provisioning, a configured maintainer requests integration
+with `/integrate` on an approved, OCA-verified PR with successful **Merge check**.
+Target the oldest applicable version and include `Merge-Through: <last-version>`.
+Optional `Resolution-PR: <version> <PR-link>` lines supply reviewed version-specific
+conflict resolutions. When the PR target equals `Merge-Through`, the bot infers a
+backport null merge: apply the fix there and preserve all later versions' files
+while connecting their history. No separate reason is needed. For an earlier
+content stop beyond the PR target, include `Merge-Reason:`. Legacy `Upmerge:` and
+`Upmerge-Till:` spellings remain accepted, including this equality rule.
 
-For LTS fixes, target the oldest applicable supported branch. `Upmerge-Till:`
-defaults to the configured Innovation branch. An earlier content stop also requires
-`Upmerge-Reason:` and review; the bot preserves ancestry through the newer branches.
-Generated upmerge PRs require the same reviewer roles and CI. The original PR
-remains unintegrated until the whole batch is ready. `CE / operation` reports
-progress and the atomic integration receipt; the squash-integrated original PR
-is then closed. There is no automatic backport from `trunk`. Undisclosed security
-code and tests must remain private, including in forks and PR descriptions.
+The bot first prepares the whole chain and tests all versions in parallel,
+without opening generated integration PRs. Matching original/resolution PR CI
+can satisfy individual checks; only missing checks launch **Merge Version Tests**.
+Source and resolution PRs require current-head human approval and trusted OCA
+verification. Unresolved conversations and change requests block integration.
 
-See the [CE merge process and operator runbook](Docs/ce-merge-process.md) for
-configuration, diagrams, release handling, and recovery. Until cutover is complete,
-the repository's existing integration process remains in effect.
+Once all tests pass, it squashes the original PR with `gh pr merge --squash`, then
+creates and merges one integration PR at a time with `gh pr merge --merge`.
+Each includes the actual preceding merge commit and reviewed version resolution.
+Verified generated PRs do not require another human approval under the configured
+bot review exception. Required tests, PR use, and history protections remain.
+Changed targets or file trees need fresh evidence. Earlier merges remain published
+if a later version blocks; the persistent lock stays held until completion.
+
+Authorization binds the original head, base, and body to readiness published
+before a new, unedited `/integrate` comment. The `Integrate` label is informational.
+Progress comments link test evidence, PRs, and actual merge commits. There is no
+automatic backport from `trunk`. Undisclosed security code and tests must remain
+private, including in forks and PR descriptions.
+
+See the [Merge Bot process and operator runbook](Docs/ce-merge-process.md) for
+configuration, deployment, conflict resolution, and recovery. Until cutover is
+complete, the existing repository integration process remains in effect.
 
 ## What to expect from us (triage SLAs)
 

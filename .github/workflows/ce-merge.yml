@@ -1,0 +1,114 @@
+# Copyright (c) 2026, Oracle and/or its affiliates.
+name: Merge Bot
+
+on:
+  issue_comment:
+    types: [created]
+  pull_request_target:
+    types: [opened, reopened, synchronize, edited, closed, ready_for_review, converted_to_draft, labeled, unlabeled]
+  workflow_run:
+    workflows: [PR Build, MTR, Format Check, Merge Version Tests]
+    types: [completed]
+  schedule:
+    - cron: '2-59/5 * * * *'
+  workflow_dispatch:
+    inputs:
+      command:
+        description: Public merger operation (use the default branch)
+        type: choice
+        default: once
+        options:
+          - once
+          - init-state
+          - status
+          - audit
+          - snapshot
+          - rulesets
+          - verify-deployment
+          - attest-deployment
+          - resume
+          - abort
+          - reconcile
+          - retry
+          - use-resolution
+          - refresh-checks
+          - hold
+          - unhold
+      operation:
+        description: Operation ID for recovery commands
+        type: string
+        default: ''
+      pr:
+        description: Resolution PR number or link for use-resolution
+        type: string
+        default: ''
+      record:
+        description: Public evidence or reason for hold or unhold
+        type: string
+        default: ''
+
+permissions: {}
+
+# Every event and manual recovery shares the same single writer. Git leases also
+# reject stale writers. Never cancel a run that might have submitted a GitHub PR merge.
+concurrency:
+  group: ce-merge-${{ github.repository }}
+  cancel-in-progress: false
+  queue: max
+
+jobs:
+  reconcile:
+    if: >-
+      (github.event_name != 'issue_comment' ||
+       (github.event.issue.pull_request != null && github.event.comment.body == '/integrate')) &&
+      (github.event_name != 'workflow_run' ||
+       github.event.workflow_run.event == 'pull_request' ||
+       github.event.workflow_run.name == 'Merge Version Tests') &&
+      (github.event_name != 'workflow_dispatch' ||
+       github.ref == format('refs/heads/{0}', github.event.repository.default_branch))
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    permissions:
+      contents: read
+    steps:
+      # No contributor checkout, artifact, cache, or script enters this job.
+      - name: Check out trusted default-branch automation
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+          sparse-checkout: |
+            scripts/ce_merge
+            .github/ce-merge-policy.json
+            .github/ce-merge-rulesets.json
+          sparse-checkout-cone-mode: false
+      - name: Select daily public cache
+        id: cache-key
+        run: |
+          echo "CE_GIT_CACHE=$RUNNER_TEMP/ce-merge-public.git" >> "$GITHUB_ENV"
+          echo "day=$(date -u +%F)" >> "$GITHUB_OUTPUT"
+      - name: Restore public Git objects
+        id: cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ env.CE_GIT_CACHE }}
+          key: ce-merge-public-v1-${{ github.repository_id }}-${{ steps.cache-key.outputs.day }}
+          restore-keys: ce-merge-public-v1-${{ github.repository_id }}-
+      - name: Reconcile public merger
+        env:
+          CE_MERGE_TOKEN: ${{ secrets.CE_MERGE_TOKEN }}
+        run: |
+          gh --version
+          python3 -m scripts.ce_merge
+      - name: Check public object cache
+        id: public-cache
+        run: |
+          if test -f "$CE_GIT_CACHE/HEAD"; then
+            echo 'exists=true' >> "$GITHUB_OUTPUT"
+          fi
+      - name: Save public Git objects
+        if: ${{ success() && steps.cache.outputs.cache-hit != 'true' && steps.public-cache.outputs.exists == 'true' }}
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ env.CE_GIT_CACHE }}
+          key: ce-merge-public-v1-${{ github.repository_id }}-${{ steps.cache-key.outputs.day }}

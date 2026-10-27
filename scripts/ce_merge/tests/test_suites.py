@@ -6,7 +6,7 @@ import sys
 import tempfile
 import unittest
 
-from scripts.ce_merge.verify_suites import verify_suites
+from scripts.ci.verify_suites import verify_suites
 
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -57,7 +57,7 @@ class SuiteTests(unittest.TestCase):
 
     def test_cli_fails_before_build_for_missing_suite(self):
         with tempfile.TemporaryDirectory() as directory:
-            result = subprocess.run([sys.executable, str(ROOT / "scripts/ce_merge/verify_suites.py"),
+            result = subprocess.run([sys.executable, str(ROOT / "scripts/ci/verify_suites.py"),
                                      "--source", directory, "--suites", "component_mysql_rest_service"],
                                     capture_output=True, text=True)
         self.assertEqual(result.returncode, 1)

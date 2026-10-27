@@ -1,18 +1,22 @@
 {
-  "mode": "shadow",
-  "strategy": "forward",
   "repository": "RidhaOracle/mysql-server",
-  "bot_fork": "mysql-upmerge-bot/mysql-server",
-  "branches": ["trunk"],
-  "release_branches": [],
-  "maintainers": ["seemasundara", "gopshank", "RidhaOracle"],
-  "app_id": 5197385,
-  "installation_id": 168144361,
-  "fork_installation_id": 0,
-  "release_app_id": 0,
-  "app_slug": "ridhaoracle-ce-upmerge-test",
+  "branches": [
+    "codex/ce-test-lts-old",
+    "codex/ce-test-lts-new",
+    "codex/ce-test-innovation"
+  ],
+  "maintainers": [
+    "seemasundara",
+    "gopshank",
+    "RidhaOracle"
+  ],
+  "ci_mtr_test": "main.1st",
   "oca_label": "OCA Verified",
-  "forbidden_paths": ["internal", "internal-sec"],
+  "forbidden_paths": [
+    "internal",
+    "internal-sec"
+  ],
   "forbidden_metadata_patterns": [],
-  "poll_seconds": 60
+  "bot_user_id": 91072007,
+  "state_branch": "ce-merge-state"
 }

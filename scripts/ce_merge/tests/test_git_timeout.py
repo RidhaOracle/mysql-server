@@ -71,7 +71,7 @@ class GitTimeoutTests(unittest.TestCase):
                     patch("scripts.ce_merge.git.subprocess.Popen", return_value=process), \
                     patch("scripts.ce_merge.git.os.killpg") as terminate, \
                     self.assertRaises(type(error)) as caught:
-                self.graph.run("push", "--atomic")
+                self.graph.run("push")
             self.assertIs(caught.exception, error)
             terminate.assert_called_once_with(123, signal.SIGKILL)
 

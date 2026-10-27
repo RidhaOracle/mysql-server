@@ -1,16 +1,25 @@
 # Copyright (c) 2026, Oracle and/or its affiliates.
 """Single-writer public integration state machine."""
+from datetime import datetime
 import hashlib
 import json
 
-from .validation import candidate_ci, validation_head
+from .ci import WORKFLOWS, existing_pr_ci, validation_head
+from .github import authorization_identity, integration_body
+from .testing import candidate_tests
+from .journal import PersistenceError
 from .git import MergeConflict, PublicGraph
-from .policy import Blocked, check_content, documentation_only, matches, require, rulesets, sha, upmerge_till, rehearsal_test
-from .release import validate_source
+from .policy import Blocked, check_content, documentation_only, matches, require, rulesets, sha, upmerge_till, rehearsal_test, resolution_prs
 
 
-class TargetMoved(Blocked):
-    """An unpublished snapshot needs refresh on the next coordinator poll."""
+def ruleset_revision(value):
+    # GitHub formats dates using the authenticated viewer's timezone.
+    try:
+        stamp = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        require(stamp.tzinfo is not None, "Ruleset revision must include a timezone")
+        return stamp
+    except (AttributeError, TypeError, ValueError):
+        raise Blocked("Ruleset changed since administrator verification; invalid revision") from None
 
 
 class Coordinator:
@@ -18,7 +27,7 @@ class Coordinator:
         self.policy, self.store, self.github, self.graph = policy, store, github, graph
 
     def policy_identity(self):
-        return hashlib.sha256(json.dumps(self.policy, sort_keys=True).encode()).hexdigest()
+        return hashlib.sha256(json.dumps({"protocol": "two-phase-v1", "policy": self.policy}, sort_keys=True).encode()).hexdigest()
 
     def bundle(self, op):
         return self.store.bundle(op["id"], op["data"].get("generation", 0))
@@ -28,26 +37,53 @@ class Coordinator:
 
     def check_prepared_policy(self, op):
         require(op["data"].get("policy") == self.policy_identity(),
-                "Deployment policy changed; abort unpublished work and authorize a new batch")
+                "Deployment policy changed; restore the authorized policy before continuing")
 
-    def deployment(self):
-        """Fail closed if protections drift. The App never changes its own protections."""
-        require(self.policy["mode"] == "active", "Shadow mode cannot execute integration")
+    def attest_deployment(self, snapshot, operator):
+        """Operator supplies a full ruleset export made with administrator access."""
+        require(snapshot.get("repository") == self.policy["repository"],
+                "Ruleset snapshot belongs to another repository")
+        attestation = dict(snapshot, policy=self.policy_identity())
+        self.deployment(attestation)
+        self.store.set_setting("deployment-attestation", attestation, operator)
+
+    def deployment(self, attestation=None):
+        """Fail closed if protections drift. The workflow never changes its own protections."""
         repository = self.github.repo("")
         require(not repository["allow_rebase_merge"] and not repository.get("allow_auto_merge", False)
                 and repository["allow_merge_commit"] and repository["allow_squash_merge"],
                 "Repository merge settings differ from approved policy")
         actual = {r["name"]: r for r in self.github.pages("/rulesets?includes_parents=false")}
+        attestation = attestation or self.store.setting("deployment-attestation")
         for expected in rulesets(self.policy):
             require(expected["name"] in actual, "Required CE ruleset is missing")
             found = self.github.repo(f'/rulesets/{actual[expected["name"]]["id"]}')
+            if "bypass_actors" not in found:
+                # GitHub hides this field unless the caller can WRITE rulesets.
+                # Retain read-only administration permissions and bind the operator's full
+                # export to this policy and the live ruleset's identity/revision.
+                require(attestation and attestation.get("policy") == self.policy_identity()
+                        and attestation.get("repository") == self.policy["repository"],
+                        "Ruleset bypasses are hidden; administrator must attest this deployment")
+                snapshots = [r for r in attestation.get("rulesets", [])
+                             if r.get("name") == expected["name"]]
+                require(len(snapshots) == 1, "Administrator ruleset snapshot is missing or ambiguous")
+                snapshot = snapshots[0]
+                require(found.get("id") and found.get("updated_at")
+                        and snapshot.get("id") == found["id"]
+                        and ruleset_revision(snapshot.get("updated_at")) == ruleset_revision(found["updated_at"])
+                        and found.get("source_type") == snapshot.get("source_type") == "Repository"
+                        and found.get("source") == snapshot.get("source") == self.policy["repository"],
+                        "Ruleset changed since administrator verification; attest deployment again")
+                require(matches(expected, snapshot), "Administrator ruleset snapshot differs from approved policy")
+                found = dict(found, bypass_actors=snapshot["bypass_actors"])
             for key, value in expected.items():
                 require(matches(value, found.get(key)), "CE ruleset differs from approved policy")
 
     def basic(self, pr):
         require(pr["state"] == "open" and not pr["draft"], "PR must be open and ready")
         require(pr["base"]["repo"]["full_name"] == self.policy["repository"], "Wrong PR repository")
-        require(pr["base"]["ref"] in self.policy["branches"] + self.policy.get("release_branches", []),
+        require(pr["base"]["ref"] in self.policy["branches"],
                 "Target branch is not configured")
         require(pr["head"].get("repo"), "PR source repository is unavailable")
         sha(pr["base"]["sha"])
@@ -56,8 +92,7 @@ class Coordinator:
     def graph_for(self, pr):
         graph = self.graph(self.policy)
         try:
-            graph.fetch(["refs/heads/" + b for b in self.policy["branches"] +
-                         self.policy.get("release_branches", [])] +
+            graph.fetch(["refs/heads/" + b for b in self.policy["branches"]] +
                         [f'refs/pull/{pr["number"]}/head'])
             return graph
         except Exception:
@@ -75,205 +110,132 @@ class Coordinator:
         check_content(paths, "", self.policy)
         return merge, paths, commits
 
-    def ci(self, pr, merge, paths, parents=None, staged=False, graph=None):
+    def ci(self, pr, merge, paths, graph=None):
         require(graph is not None, "Candidate validation needs its Git graph")
-        if staged:
-            require(graph.parents(merge) == parents, "Prepared candidate parents changed")
-            require(parents and parents[0] == pr["base"]["sha"],
-                    "Prepared target changed; rebuild the unpublished batch")
-            graph.fetch([f'refs/pull/{pr["number"]}/head'])
-            require(graph.merge_tree(pr["base"]["sha"], pr["head"]["sha"]) == graph.tree(merge),
-                    "Prepared candidate differs from the reviewed source tree")
         if documentation_only(paths):
             return True, "Builds not applicable: documentation-only allowlist"
-        return candidate_ci(self, pr, graph, graph.tree(merge), paths)
+        require(not any('.github/workflows/' + name in paths for name in WORKFLOWS),
+                'PR changes a required CI workflow; bootstrap its reviewed update before trusting it')
+        require(graph.merge_tree(pr['base']['sha'], pr['head']['sha']) == graph.tree(merge),
+                'Candidate differs from the current clean merge of the reviewed PR')
+        return existing_pr_ci(self.github, self.policy, pr, pr.get('merge_commit_sha'), paths, graph=graph)
 
-    def publish(self, pr, ci_ok, summary, eligible=False):
+    def publish(self, pr, eligible, summary):
         key = f'published:{pr["number"]}'
-        fingerprint = ["Merge check", self.policy["mode"], pr["head"]["sha"], pr["base"]["sha"], pr.get("body"),
-                       ci_ok, summary, bool(eligible), rehearsal_test(self.policy)]
+        fingerprint = [self.policy_identity(), authorization_identity(pr), pr["base"]["sha"],
+                       summary, bool(eligible)]
         if self.store.setting(key) == fingerprint:
             return
-        if self.policy["mode"] == "active":
-            self.github.advisory_label(pr, eligible)
-        check_id = self.github.check(pr, "Merge check", "success" if eligible else "failure",
-                                     ("Ready for maintainer authorization" +
-                                      (" — REHEARSAL: " + rehearsal_test(self.policy) + " only per MTR shard"
-                                       if rehearsal_test(self.policy) else "") + "\n\n" + summary) if eligible else summary,
-                                     action=eligible and self.policy["mode"] == "active")
+        self.store.checkpoint()
+        self.github.advisory_label(pr, eligible)
+        heading = "Ready: an authorized maintainer may comment `/integrate`." if eligible else "Integration blocked."
+        if rehearsal_test(self.policy):
+            heading += f' REHEARSAL: {rehearsal_test(self.policy)} only per MTR shard.'
+        revision = hashlib.sha256(json.dumps(fingerprint).encode()).hexdigest()
+        description = f'Ready for /integrate [{revision}]' if eligible else heading
+        result = self.github.status(pr, "Merge check", "success" if eligible else "failure", description)
+        self.github.comment(pr, "readiness", heading + "\n\n" + summary)
+        # GitHub's timestamp, not the runner clock, orders readiness and commands.
+        self.store.set_setting(f'ready:{pr["number"]}', {
+            "identity": authorization_identity(pr), "policy": self.policy_identity(),
+            "eligible": bool(eligible), "created_at": result["created_at"]}, "coordinator")
         self.store.set_setting(key, fingerprint, "coordinator")
 
-    def promotion(self, pr):
-        value = self.store.setting(f'promotion:{pr["number"]}')
-        if value:
-            require(value in self.store.active_promotions(value["release_tag"]),
-                    "Promotion manifest has been superseded; use the active replacement PR")
-            require(value["head"] == pr["head"]["sha"] and value["base"] == pr["base"]["ref"],
-                    "Promotion manifest does not match PR")
-            release = self.github.request("GET", "/repos/" + self.policy["repository"] +
-                                          f'/releases/{int(value["release_id"])}')
-            require(not release["draft"] and release.get("published_at")
-                    and release["tag_name"] == value["release_tag"],
-                    "Corresponding release is not public")
-        return value
+    def publish_unmanaged(self, pr):
+        key = f'published:{pr["number"]}'
+        if not self.store.setting(key):
+            return
+        self.store.checkpoint()
+        self.github.advisory_label(pr, False)
+        self.github.status(pr, "Merge check", "success", "Target is outside the configured CE branch chain.")
+        self.github.comment(pr, "readiness", "Target is outside the configured CE branch chain; integration is disabled.")
+        self.store.set_setting(f'ready:{pr["number"]}', None, "coordinator")
+        self.store.set_setting(key, None, "coordinator")
 
     def evaluate(self, pr):
         try:
-            self.basic(pr)
-            promotion = self.promotion(pr)
-            if not promotion:
-                require(pr["base"]["ref"] in self.policy["branches"], "Release branches require promotion")
-                self.github.oca(pr)
-                upmerge_till(pr.get("body"), pr["base"]["ref"], self.policy["branches"])
-            self.github.reviewed(pr)
+            self.source(pr)
+            upmerge_till(pr.get("body"), pr["base"]["ref"], self.policy["branches"])
             with self.graph_for(pr) as graph:
-                merge, paths, commits = self.evidence(pr, graph)
-                if promotion:
-                    self.check_promotion(graph, pr, promotion, commits)
+                merge, paths, _ = self.evidence(pr, graph)
                 ok, summary = self.ci(pr, merge, paths, graph=graph)
-            hold = self.store.setting("hold")
-            permitted = not hold or (promotion and hold.get("release_tag") == promotion["release_tag"])
-            self.publish(pr, ok, summary, ok and permitted)
+            self.publish(pr, ok, summary)
         except Blocked as error:
             self.publish(pr, False, str(error))
 
-    def check_promotion(self, graph, pr, manifest, commits):
-        require(pr["head"]["repo"]["full_name"] == self.policy["bot_fork"],
-                "Promotion must use the controlled public fork")
-        validate_source(graph, manifest, pr["head"]["sha"], commits)
-        require(graph.ancestor(manifest["base_sha"], pr["base"]["sha"]), "Promotion base is unrelated")
-
     def source(self, pr, op=None):
-        self.basic(pr)
+        merged = bool(op and op['data']['steps'] and op['data']['steps'][0].get('merged_sha'))
+        if merged:
+            require(pr.get('merged') and pr.get('merge_commit_sha') == op['data']['steps'][0]['merged_sha'],
+                    'Original squash merge changed')
+        else:
+            self.basic(pr)
+        upmerge_till(pr.get('body'), pr['base']['ref'], self.policy['branches'])
+        resolution_prs(pr.get('body'), pr['base']['ref'], self.policy)
         if op:
             require(pr["head"]["sha"] == op["head"] and
                     (pr.get("body") or "") == op["data"]["body"] and
                     pr["base"]["ref"] == op["data"]["base"], "PR changed after authorization")
             require(self.github.can_integrate(op["data"]["actor"]), "Integration authorization revoked")
-        promotion = self.promotion(pr)
-        hold = self.store.setting("hold")
-        if promotion and op and op["data"]["steps"]:
-            # Prepared steps are the durable target snapshot, including for old
-            # journals. Recheck it on advance, before publication, and on retry.
-            steps = op["data"]["steps"]
-            require(hold and hold.get("release_tag") == promotion["release_tag"] and
-                    set(hold.get("targets", [])) == {s["branch"] for s in steps} and
-                    all(s.get("promotion", {}).get("release_tag") == promotion["release_tag"] for s in steps),
-                    "Promotion target set changed; abort unpublished batch and authorize a new batch")
-        require(not hold or (promotion and hold.get("release_tag") == promotion["release_tag"]), "CE is on hold")
-        if not promotion:
-            require(pr["base"]["ref"] in self.policy["branches"], "Release targets require promotion")
-            self.github.oca(pr)
+        require(self.store.setting('merge-lock') in (None, op['id'] if op else None),
+                'CE soft merge lock is held by another operation')
+        require(not self.store.setting("hold"), "CE is on hold")
+        self.github.oca(pr)
         self.github.reviewed(pr)
-        return promotion
+
+    def candidates(self, op, graph, steps, previous, start=0, invalidated=(), staging=False):
+        """Build a suffix until its first conflict, using one path for every rehearsal."""
+        data = op['data']
+        data.pop('conflict_index', None)
+        for index in range(start, len(steps)):
+            step = steps[index]
+            step['squash'] = index == 0
+            try:
+                # A moved target must get a fresh reviewed resolution even if
+                # its old resolved tree would still apply without a Git conflict.
+                if index in invalidated:
+                    step['input_head'] = previous
+                    raise MergeConflict('Reviewed resolution target moved')
+                graph.candidates([step], previous, op['id'])
+            except MergeConflict:
+                require(index > 0, 'Original PR conflicts with its target; update the PR and authorize a new operation')
+                data['conflict_index'] = index
+                break
+            if staging and index > 0:
+                step['after'] = graph.commit(step['tree'], step['parents'],
+                    f'Merge #{op["pr"]} into {step["branch"]} [skip ci]')
+            previous = step['after']
 
     def prepare(self, op):
         root = self.github.pull(op["pr"])
-        promotion = self.source(root, op)
+        self.source(root, op)
         chain = self.policy["branches"]
-        branches = chain[chain.index(root["base"]["ref"]):] if not promotion else []
-        sources = [root]
-        if promotion:
-            hold = self.store.setting("hold")
-            require(hold and hold.get("release_tag") == promotion["release_tag"] and hold.get("targets"),
-                    "Release requires a hold declaring every atomic promotion target")
-            manifests = self.store.active_promotions(promotion["release_tag"])
-            require(len(manifests) == len(hold["targets"]) and
-                    {m["base"] for m in manifests} == set(hold["targets"]),
-                    "Register exactly one approved promotion per declared target before integration")
-            branches = [b for b in chain + self.policy.get("release_branches", []) if b in hold["targets"]]
-            development = [b for b in branches if b in chain]
-            require(not development or development == chain[chain.index(development[0]):],
-                    "Promotion must include every successor through Innovation")
-            sources = [self.github.pull(next(m["pr"] for m in manifests if m["base"] == b)) for b in branches]
-            require(root["number"] == sources[0]["number"], "Authorize the oldest target to publish the release batch")
-        else:
-            stop = upmerge_till(root.get("body"), root["base"]["ref"], chain)
+        op['data']['resolution_prs'] = resolution_prs(root.get('body'), root['base']['ref'], self.policy)
+        branches = chain[chain.index(root["base"]["ref"]):]
+        stop = upmerge_till(root.get("body"), root["base"]["ref"], chain)
         with self.graph(self.policy) as graph:
-            refs = ["refs/heads/" + b for b in chain + self.policy.get("release_branches", [])]
+            refs = ["refs/heads/" + b for b in chain]
             advertised = graph.remote_refs(refs)
-            heads = {b: sha(advertised.get("refs/heads/" + b)) for b in chain + self.policy.get("release_branches", [])}
-            graph.fetch(list(heads.values()) + [f'refs/pull/{p["number"]}/head' for p in sources])
+            heads = {b: sha(advertised.get("refs/heads/" + b)) for b in chain}
+            graph.fetch(list(heads.values()) + [f'refs/pull/{root["number"]}/head'])
             for lower, higher in zip(chain, chain[1:]):
                 require(graph.ancestor(heads[lower], heads[higher]), "CE ancestry needs reconciliation before cutover")
-            steps = []
-            if promotion:
-                previous = None
-                for branch, pr in zip(branches, sources):
-                    manifest = self.source(pr)
-                    require(manifest and manifest["release_tag"] == promotion["release_tag"], "Unapproved promotion source")
-                    _, commits = graph.inspect(manifest["base_sha"], pr["head"]["sha"])
-                    self.check_promotion(graph, pr, manifest, commits)
-                    base = heads[branch]
-                    parents = [base, pr["head"]["sha"]]
-                    # Branch-specific SC content is already reviewed. Carry lower
-                    # ancestry with an explicitly approved null content merge.
-                    if previous and branch in chain:
-                        require(manifest.get("ancestry_reason"), "Release ancestry-only merge needs a reviewed explanation")
-                        parents.append(previous)
-                    tree = graph.merge_tree(base, pr["head"]["sha"])
-                    after = graph.commit(tree, parents, f'Released SC: CE integration {op["id"]} into {branch}')
-                    graph.inspect(base, after)
-                    steps.append({"branch": branch, "base_sha": base, "after": after, "tree": tree,
-                                  "parents": parents, "null": len(parents) > 2,
-                                  "source_pr": pr["number"], "source_head": pr["head"]["sha"],
-                                  "source_body": pr.get("body") or "", "promotion": manifest})
-                    previous = after if branch in chain else None
-            else:
-                steps = [{"branch": b, "base_sha": heads[b], "null": chain.index(b) > chain.index(stop)}
-                         for b in branches]
-                steps[0]["message"] = root.get("title", "CE contribution") + f' (#{root["number"]})'
-                try:
-                    graph.candidates(steps, op["head"], op["id"])
-                except MergeConflict:
-                    index = next(i for i, step in enumerate(steps) if "after" not in step)
-                    require(index > 0, "Original PR conflicts with its target; update the PR and authorize a new batch")
-                    steps[index]["conflict"] = True
-                    op["data"]["conflict_index"] = index
-                    op["data"]["reason"] = f'Upmerge into {steps[index]["branch"]} needs a reviewed resolution PR'
-                require(steps[0]["tree"] != graph.tree(steps[0]["base_sha"]),
-                        "Contribution is already present or has no changes on the current target")
-                steps[0].update(source_pr=root["number"], source_head=op["head"])
+            steps = [{"branch": b, "base_sha": heads[b], "null": chain.index(b) > chain.index(stop)}
+                     for b in branches]
+            steps[0]["message"] = root.get("title", "CE contribution") + f' (#{root["number"]})'
+            self.candidates(op, graph, steps, op["head"])
+            require(steps[0]["tree"] != graph.tree(steps[0]["base_sha"]),
+                    "Contribution is already present or has no changes on the current target")
             graph.export_candidates([s for s in steps if "after" in s], self.bundle(op))
         op["data"]["steps"] = steps
         op["data"]["policy"] = self.policy_identity()
         self.store.save(op, "prepared", "candidates-prepared")
 
-    def stage(self, op, graph):
-        steps = [s for s in op["data"]["steps"] if "after" in s or s.get("conflict")]
-        remote = "https://github.com/" + self.policy["bot_fork"] + ".git"
-        for step in steps:
-            step.setdefault("stage_id", op["id"] + (f'-r{op["data"]["generation"]}' if op["data"].get("generation") else ""))
-        refs = [f'refs/heads/upmerge/{s["stage_id"]}/{i}' for i, s in enumerate(steps)]
-        heads = [s.get("after", s.get("input_head")) for s in steps]
-        current = {line.split()[1]: line.split()[0] for line in
-                   graph.run("ls-remote", "--refs", remote, *refs).splitlines()}
-        pending = [(ref, head) for ref, head in zip(refs, heads) if ref not in current]
-        require(all(current.get(ref, head) == head for ref, head in zip(refs, heads)),
-                "Staging branch changed unexpectedly")
-        if pending:
-            graph.run("push", "--atomic", *["--force-with-lease=" + ref + ":" for ref, _ in pending],
-                      remote, *[head + ":" + ref for ref, head in pending], token=self.github.token(fork=True))
-        for index, (step, head) in enumerate(zip(steps, heads)):
-            if "pr" not in step:
-                # The first ordinary PR remains the contributor's PR. Additional
-                # PRs review the exact candidate, including any null merge.
-                if index == 0 and not step.get("promotion"):
-                    step.update(pr=op["pr"], review_head=op["head"])
-                else:
-                    detail = ("Ancestry-only propagation: the target tree must remain unchanged. "
-                              "Review the original PR's applicability explanation.\n" if step["null"] else "Forward content propagation.\n")
-                    if step.get("conflict"):
-                        detail += "This input conflicts with the target. Supply a reviewed resolution PR; no CE branch has moved.\n"
-                    detail += f'Input `{head}`; recorded target `{step["base_sha"]}`.'
-                    step.update(pr=self.github.bot_pr(step["stage_id"], index, head, step["branch"], op["pr"], detail=detail),
-                                review_head=head)
-                self.store.save(op, "prepared", "candidate-review-linked")
-
     def repair(self, op, number):
-        """Accept a reviewed resolution while every CE target is still unchanged."""
+        """Accept a reviewed resolution before merging the conflicting hop."""
         data = op["data"]
-        require(not data["intent"] and "conflict_index" in data, "No unpublished upmerge conflict to repair")
+        self.acquire(op)
+        require(not data["intent"] and "conflict_index" in data, "No unpublished version conflict to resolve")
         self.deployment()
         self.check_prepared_policy(op)
         self.source(self.github.pull(op["pr"]), op)
@@ -292,8 +254,8 @@ class Coordinator:
             graph.fetch([f'refs/pull/{number}/head'] +
                         [s["base_sha"] for s in data["steps"][index:]])
             heads = graph.remote_refs(["refs/heads/" + s["branch"] for s in data["steps"]])
-            require(all(heads.get("refs/heads/" + s["branch"]) == s["base_sha"] for s in data["steps"]),
-                    "A target moved; abort and authorize a new batch")
+            require(all(heads.get("refs/heads/" + s["branch"]) == s.get("merged_sha", s["base_sha"]) for s in data["steps"]),
+                    "A target moved; refresh preflight before accepting the resolution")
             head = pr["head"]["sha"]
             require(graph.ancestor(step["input_head"], head) and graph.ancestor(step["base_sha"], head),
                     "Resolution must merge the exact lower candidate and recorded target base")
@@ -302,23 +264,12 @@ class Coordinator:
             require(not step["null"] or tree == graph.tree(step["base_sha"]), "Null merge must preserve the target tree")
             replacement = {"branch": step["branch"], "base_sha": step["base_sha"], "null": step["null"],
                            "parents": [step["base_sha"], head], "tree": tree, "input_head": step["input_head"],
-                           "pr": number, "review_head": head, "repair_body": pr.get("body") or ""}
+                           "resolved_tree": tree, "resolution": {"pr": number, "head": head, "body": pr.get("body") or ""}}
             replacement["after"] = graph.commit(tree, replacement["parents"], f'Reviewed resolution #{number} for CE {op["id"]}')
             steps = data["steps"][:index] + [replacement] + [
                 {k: s[k] for k in ("branch", "base_sha", "null")} for s in data["steps"][index + 1:]]
-            data.pop("conflict_index")
             data.pop("reason", None)
-            previous = replacement["after"]
-            for next_index in range(index + 1, len(steps)):
-                steps[next_index]["squash"] = False
-                try:
-                    graph.candidates([steps[next_index]], previous, op["id"])
-                except MergeConflict:
-                    steps[next_index]["conflict"] = True
-                    data["conflict_index"] = next_index
-                    data["reason"] = f'Upmerge into {steps[next_index]["branch"]} needs a reviewed resolution PR'
-                    break
-                previous = steps[next_index]["after"]
+            self.candidates(op, graph, steps, replacement["after"], start=index + 1)
             data["generation"] = data.get("generation", 0) + 1
             graph.export_candidates([s for s in steps if "after" in s], self.bundle(op))
             if step.get("pr") and step["pr"] != number:
@@ -326,144 +277,283 @@ class Coordinator:
             data["steps"] = steps
             self.store.save(op, "prepared", "reviewed-resolution-accepted")
 
-    def verify_step(self, step, graph):
-        pr = self.github.pull(step["pr"])
+    def acquire(self, op):
+        require(op['data'].get('protocol') == 'two-phase-v1',
+                'Legacy operation: reconcile or abort it with the previous coordinator before cutover')
+        owner = self.store.setting('merge-lock')
+        require(owner in (None, op['id']), 'CE soft merge lock belongs to another operation')
+        if owner is None:
+            self.store.set_setting('merge-lock', op['id'], op['data']['actor'])
+        self.store.checkpoint()
+
+    def release(self, op):
+        if self.store.setting('merge-lock') == op['id']:
+            self.store.set_setting('merge-lock', None, op['data']['actor'])
+
+    def stage(self, op, graph, index):
+        """Create only the next integration PR, after all versions passed testing."""
+        step = op['data']['steps'][index]
+        if index == 0:
+            step.update(pr=op['pr'], review_head=op['head'])
+        else:
+            # One immutable branch for each actual candidate; a moved target gets
+            # a new generation rather than rewriting a public PR branch.
+            stage_id = f'pr-{op["pr"]}/{step["branch"]}/{op["id"]}-r{op["data"].get("generation", 0)}'
+            step.setdefault('stage_id', stage_id)
+            ref = f'refs/heads/merge/{step["stage_id"]}/{index}'
+            head = step['after']
+            self.store.save(op, 'prepared', 'integration-pr-staging-intent')
+            current = graph.remote_refs([ref]).get(ref)
+            require(current in (None, head), 'Integration branch changed unexpectedly')
+            if current is None:
+                graph.run('push', '--force-with-lease=' + ref + ':', graph.remote,
+                          head + ':' + ref, token=self.github.token())
+            detail = f'Tested file tree: `{step["tree"]}`\n'
+            if step['null']:
+                detail += 'History-only propagation; target files stay unchanged.\n'
+            if step.get('resolution'):
+                detail += f'Resolution PR: #{step["resolution"]["pr"]}\n'
+            number = self.github.bot_pr(step['stage_id'], index, step['branch'], op['pr'], detail=detail)
+            require(step.get('pr', number) == number, 'Generated PR identity changed')
+            pr = self.github.pull(number)
+            step.update(pr=number, review_head=head)
+            step['pr_body'] = integration_body(step['stage_id'], op['pr'], detail)
+            require((pr.get('body') or '') == step['pr_body'], 'Generated PR identity or body changed')
+        self.store.save(op, 'prepared', 'integration-pr-linked')
+
+    def test_chain(self, op, graph, indices):
+        """Collect all missing evidence without opening any integration PRs."""
+        waiting = []
+        for index in indices:
+            step = op['data']['steps'][index]
+            try:
+                ok, message = self.tests(op, graph, index)
+            except Blocked as error:
+                ok, message = False, str(error)
+            step['test_summary'] = message
+            if not ok:
+                waiting.append(step['branch'] + ': ' + message)
+        if waiting:
+            op['data']['reason'] = '; '.join(waiting)
+        else:
+            op['data'].pop('reason', None)
+        self.store.save(op, 'prepared', 'candidate-tests-checked')
+        return not waiting
+
+    def tests(self, op, graph, index):
+        return candidate_tests(self, op, graph, index)
+
+    def verify_step(self, step, graph, index):
+        pr = self.github.pull(step['pr'])
         self.basic(pr)
-        require(pr["head"]["sha"] == step["review_head"] and pr["base"]["ref"] == step["branch"],
-                "Candidate changed; abort and prepare a new batch")
-        if pr["base"]["sha"] != step["base_sha"]:
-            raise TargetMoved("Target advanced; rebuilding unpublished candidates on the next poll")
-        self.github.reviewed(pr)
-        if "repair_body" in step:
-            require((pr.get("body") or "") == step["repair_body"], "Resolution instructions changed")
-            self.github.oca(pr)
-        if step.get("promotion"):
-            source = self.github.pull(step["source_pr"])
-            require(source["head"]["sha"] == step["source_head"] and
-                    (source.get("body") or "") == step["source_body"] and
-                    self.source(source) == step["promotion"], "Promotion approval changed after preparation")
-            _, commits = graph.inspect(step["promotion"]["base_sha"], source["head"]["sha"])
-            self.check_promotion(graph, source, step["promotion"], commits)
+        require(pr['head']['sha'] == step['review_head'] and pr['base']['ref'] == step['branch'],
+                'Integration PR changed; investigate before continuing')
+        require(pr['base']['sha'] == step['base_sha'], 'Target advanced; repeat testing before merging')
+        if index > 0:
+            require(pr.get('user', {}).get('id') == self.policy['bot_user_id']
+                    and pr['head']['repo']['full_name'] == self.policy['repository']
+                    and pr['head']['ref'] == f'merge/{step["stage_id"]}/{index}'
+                    and (pr.get('body') or '') == step['pr_body'],
+                    'Generated PR identity or body changed')
+            require(graph.parents(pr['head']['sha']) == step['parents']
+                    and graph.merge_tree(step['base_sha'], pr['head']['sha']) == step['tree'],
+                    'Integration PR differs from the tested candidate')
+            self.github.reviewed(pr, require_approval=False)
+        else:
+            self.github.reviewed(pr)
         return pr
 
-    def refresh_targets(self, op):
-        """Discard only unpublished candidates; retain authorization on the source head."""
-        data = op["data"]
-        require(not data["intent"], "Reconcile publication before rebuilding candidates")
-        changed = any(self.github.branch(s["branch"]) != s["base_sha"] for s in data["steps"])
-        if not changed:
+    def rebuild(self, op):
+        """Rehearse every remaining hop from the last actual merge before proceeding."""
+        data = op['data']
+        start = next(i for i, s in enumerate(data['steps']) if not s.get('merged_sha'))
+        old = data['steps']
+        if start == 0:
+            self.verify_chain()
+        heads = {s['branch']: self.github.branch(s['branch']) for s in old[start:]}
+        changed = any(heads[s['branch']] != s['base_sha'] for s in old[start:])
+        previous = old[start - 1]['merged_sha'] if start else op['head']
+        if not changed and old[start].get('input_head') == previous:
             return
-        require(not any(s.get("promotion") or "repair_body" in s for s in data["steps"]),
-                "Target changed for a promotion or reviewed resolution; abort and prepare a reviewed replacement")
-        data.setdefault("superseded_batches", []).append(data["steps"])
-        data.setdefault("superseded_prs", []).extend(s["pr"] for s in data["steps"]
-                                                   if s.get("pr") and s["pr"] != op["pr"])
-        data["generation"] = data.get("generation", 0) + 1
-        data["steps"] = []
-        data.pop("conflict_index", None)
-        data.pop("reason", None)
-        self.store.save(op, "queued", "target-moved-rebuild-unpublished-batch")
+        needs_resolution = {i for i in range(start, len(old)) if changed and old[i].get('resolution')}
+        if changed:
+            for step in old[start:]:
+                if step.get('pr') and step['pr'] != op['pr']:
+                    data.setdefault('superseded_prs', []).append(step['pr'])
+        steps = old[:start] + [{k: s[k] for k in ('branch', 'null', 'resolved_tree', 'resolution', 'message', 'test_request', 'test_attempt', 'fresh_tests') if k in s}
+                              for s in old[start:]]
+        for i in needs_resolution:
+            steps[i].pop('resolution', None)
+            steps[i].pop('resolved_tree', None)
+        with self.graph(self.policy) as graph:
+            # Bundles preserve preflight resolution trees across runner replacement.
+            graph.restore_candidates(self.prepared_steps(op), self.bundle(op))
+            graph.fetch(list(heads.values()) +
+                        ([old[start - 1]['merged_sha']] if start else [op['head']]))
+            for step in steps[start:]:
+                step['base_sha'] = heads[step['branch']]
+            self.candidates(op, graph, steps, previous, start=start, invalidated=needs_resolution, staging=True)
+            data['generation'] = data.get('generation', 0) + 1
+            data['steps'] = steps
+            graph.export_candidates(self.prepared_steps(op), self.bundle(op))
+        self.store.save(op, 'prepared', 'remaining-chain-preflight')
+
+    def expose_conflict(self, op):
+        """Make the exact preflight input available for a contributor's resolution."""
+        data = op['data']
+        index = data['conflict_index']
+        step = data['steps'][index]
+        ref = f'refs/heads/merge-tests/{op["id"]}-preflight-r{data.get("generation", 0)}/{index}'
+        with self.graph(self.policy) as graph:
+            graph.restore_candidates(self.prepared_steps(op), self.bundle(op))
+            current = graph.remote_refs([ref]).get(ref)
+            require(current in (None, step['input_head']), 'Conflict input ref changed')
+            step['input_ref'] = ref
+            self.store.save(op, 'conflict', 'conflict-input-staging-intent')
+            if current is None:
+                graph.run('push', '--force-with-lease=' + ref + ':', graph.remote,
+                          step['input_head'] + ':' + ref, token=self.github.token())
+
+    def check_resolutions(self, op):
+        for step in op['data']['steps']:
+            if 'resolution' in step and not step.get('merged_sha'):
+                saved = step['resolution']
+                pr = self.github.pull(saved['pr'])
+                self.basic(pr)
+                require(pr['head']['sha'] == saved['head'] and (pr.get('body') or '') == saved['body']
+                        and pr['base']['ref'] == step['branch'] and pr['base']['sha'] == step['base_sha'],
+                        'Reviewed resolution changed')
+                self.github.oca(pr)
+                self.github.reviewed(pr)
 
     def advance(self, op):
-        data = op["data"]
+        data = op['data']
+        if op['state'] in ('complete', 'aborted'):
+            return
         try:
-            if data["intent"]:
+            self.acquire(op)
+            if data['intent']:
                 self.reconcile(op)
                 return
             self.deployment()
-            self.source(self.github.pull(op["pr"]), op)
-            if data["steps"]:
-                self.check_prepared_policy(op)
-                self.refresh_targets(op)
-            if not data["steps"]:
+            require(all(self.github.branch(s['branch']) == s['merged_sha']
+                        for s in data['steps'] if s.get('merged_sha')),
+                    'A previously merged target moved; investigate before continuing propagation')
+            self.source(self.github.pull(op['pr']), op)
+            if not data['steps']:
                 self.prepare(op)
             self.check_prepared_policy(op)
+            self.rebuild(op)
+            self.check_resolutions(op)
+            # An optional Resolution-PR can supply an adapted version even when
+            # Git's automatic merge is clean. Validate links in chain order.
+            linked = data.get('resolution_prs', {})
+            for i, step in enumerate(data['steps']):
+                if step['branch'] in linked and not step.get('resolution') and not step.get('merged_sha'):
+                    if 'conflict_index' not in data or i <= data['conflict_index']:
+                        data['conflict_index'] = i
+                        self.expose_conflict(op)
+                        self.repair(op, linked[step['branch']])
+                        return  # Validate the next linked version on the next bounded pass.
+                    break
+            if 'conflict_index' in data:
+                self.expose_conflict(op)
+                data['reason'] = f'Testing conflicts at {data["steps"][data["conflict_index"]]["branch"]}; provide a reviewed resolution PR'
+                self.store.save(op, 'conflict', 'waiting-for-reviewed-resolution')
+                return
             with self.graph(self.policy) as graph:
                 graph.restore_candidates(self.prepared_steps(op), self.bundle(op))
-                self.stage(op, graph)
-                if "conflict_index" in data:
-                    self.store.save(op, "conflict", "waiting-for-reviewed-resolution")
+                index = next(i for i, step in enumerate(data['steps']) if not step.get('merged_sha'))
+                indices = list(range(index, len(data['steps'])))
+                # Testing is a separate phase. Every remaining version must pass
+                # before opening the next PR or changing any target.
+                if not self.test_chain(op, graph, indices):
                     return
-                waiting = []
-                for step in data["steps"]:
-                    pr = self.github.pull(step["pr"])
-                    paths, _ = graph.inspect(step["base_sha"], step["after"])
-                    try:
-                        ok, message = self.ci(pr, step["after"], paths, parents=step["parents"], staged=True, graph=graph)
-                    except Blocked as error:
-                        ok, message = False, str(error)
-                    try:
-                        self.verify_step(step, graph)
-                    except Blocked as error:
-                        ok, message = False, str(error)
-                    self.github.check(pr, "Merge check", "success" if ok else "failure",
-                                      "Prepared batch; publication awaits every target\n\n" + message if ok else message,
-                                      candidate=step["after"])
-                    if not ok:
-                        waiting.append(message)
-                if waiting:
-                    data["reason"] = "; ".join(sorted(set(waiting)))
-                    self.store.save(op, "prepared", "waiting-for-batch-validation")
-                    return
-                # Revalidate authorization and every review immediately before
-                # publishing. Expected-old-SHA leases reject any target movement.
+                step = data['steps'][index]
+                self.stage(op, graph, index)
                 self.deployment()
-                self.source(self.github.pull(op["pr"]), op)
-                for step in data["steps"]:
-                    pr = self.verify_step(step, graph)
-                    paths, _ = graph.inspect(step["base_sha"], step["after"])
-                    require(self.ci(pr, step["after"], paths, parents=step["parents"], staged=True, graph=graph)[0],
-                            "Candidate CI changed before publication")
-                data["receipt"] = graph.receipt(op["id"], data["steps"], data["actor"])
-                data["intent"] = True
-                self.store.save(op, "publishing", "atomic-push-intent")
-                graph.atomic_publish(data["steps"], data["receipt"], token=self.github.token())
+                self.source(self.github.pull(op['pr']), op)
+                self.check_resolutions(op)
+                if not self.test_chain(op, graph, indices):
+                    return
+                self.source(self.github.pull(op['pr']), op)
+                self.check_resolutions(op)
+                pr = self.verify_step(step, graph, index)
+                if pr.get('mergeable', True) is None:
+                    data['reason'] = 'Waiting for GitHub to calculate PR mergeability'
+                    self.store.save(op, 'prepared', 'waiting-for-native-mergeability')
+                    return
+                require(pr.get('mergeable', True), 'GitHub reports an integration conflict')
+                require(all(self.github.branch(s['branch']) == s['base_sha']
+                            for s in data['steps'][index:]), 'A remaining target moved; repeat testing')
+                self.store.checkpoint()
+                self.github.status(self.github.pull(step['pr']), 'Merge check', 'success',
+                    'Reviewed source/resolutions; matching version test evidence revalidated')
+                data['merge_intent'] = dict(index=index, pr=step['pr'], head=step['review_head'],
+                                            base=step['base_sha'], tree=step['tree'],
+                                            method='squash' if index == 0 else 'merge',
+                                            message=graph.run('show', '-s', '--format=%B', step['after']).replace('[skip ci]', ''))
+                data['intent'] = True
+                self.store.save(op, 'publishing', 'github-pr-merge-intent')
+                self.github.merge_pr(step['pr'], step['review_head'], data['merge_intent']['method'],
+                                     data['merge_intent']['message'], generated=index > 0)
             self.reconcile(op)
-        except TargetMoved as error:
-            data["reason"] = str(error)
-            self.store.save(op, "uncertain" if data["intent"] else "prepared", "target-moved")
+        except PersistenceError:
+            raise
         except Blocked as error:
-            data["reason"] = str(error)
-            self.store.save(op, "uncertain" if data["intent"] else "blocked", "blocked")
+            data['reason'] = str(error)
+            self.store.save(op, 'uncertain' if data['intent'] else 'blocked', 'blocked')
         except Exception:
-            data["reason"] = "Inspect private service diagnostics and reconcile publication receipt"
-            self.store.save(op, "uncertain" if data["intent"] else "blocked", "unexpected-error")
+            data['reason'] = ('Reconcile the recorded PR merge before continuing' if data['intent'] else
+                              'Operation interrupted; resume from its checkpoint')
+            self.store.save(op, 'uncertain' if data['intent'] else 'prepared', 'unexpected-error')
             raise
 
     def reconcile(self, op):
-        receipt = op["data"]["receipt"]
+        """GitHub's actual merge commit, never CLI exit status, confirms a hop."""
+        data = op['data']
+        self.acquire(op)
+        require(data.get('merge_intent') and data['intent'], 'No serial PR merge intent to reconcile')
+        intent = data['merge_intent']
+        step = data['steps'][intent['index']]
+        pr = self.github.pull(intent['pr'])
+        require(pr['head']['sha'] == intent['head'] and pr['base']['ref'] == step['branch'],
+                'PR identity changed while merge outcome was uncertain')
+        if not pr.get('merged'):
+            data['reason'] = 'PR merge is unconfirmed; inspect GitHub and use retry after resolving protections or queue state'
+            self.store.save(op, 'uncertain', 'pr-merge-not-yet-observed')
+            return
+        actual = sha(pr.get('merge_commit_sha'))
         with self.graph(self.policy) as graph:
-            actual = graph.remote_refs([receipt["ref"]]).get(receipt["ref"])
-        if actual == receipt["sha"]:
-            op["data"].pop("reason", None)
-            self.store.save(op, "complete", "atomic-receipt-confirmed")
-        else:
-            require(actual is None, "Unexpected publication receipt; investigate before continuing")
-            self.store.save(op, "uncertain", "receipt-not-yet-observed")
+            graph.fetch([actual, self.github.branch(step['branch'])])
+            parents = graph.parents(actual)
+            require(parents and parents[0] == intent['base'], 'Target moved during GitHub merge; inspect the partial integration')
+            require(graph.tree(actual) == intent['tree'], 'GitHub merged an unexpected tree; inspect the partial integration')
+            require(len(parents) == (1 if intent['method'] == 'squash' else 2), 'Unexpected GitHub merge method')
+            require(intent['method'] == 'squash' or parents[1] == intent['head'], 'GitHub did not preserve the verified integration head')
+            require(graph.ancestor(actual, self.github.branch(step['branch'])), 'Merged commit is missing from target history')
+        step['merged_sha'] = actual
+        data['intent'] = False
+        data.pop('reason', None)
+        data.setdefault('merges', []).append(dict(intent, commit=actual))
+        data.pop('merge_intent')
+        done = intent['index'] == len(data['steps']) - 1
+        self.store.save(op, 'complete' if done else 'prepared', 'github-merge-confirmed')
+        if done:
+            self.release(op)
 
     def retry(self, op):
-        """Operator-requested retry of the SAME transaction; never rebuild uncertain work.
-
-        Identical receipt creation and old-SHA leases make concurrent/lost-response
-        retries safe: at most one of these equivalent transactions can succeed.
-        """
-        require(op["data"]["intent"], "No publication intent to retry")
+        """The same PR can merge only once. Reconcile first, then recheck every gate."""
+        require(op['data']['intent'], 'No PR merge intent to retry')
         self.reconcile(op)
-        if op["state"] == "complete":
+        if not op['data']['intent']:
             return
-        self.deployment()
-        self.check_prepared_policy(op)
-        self.source(self.github.pull(op["pr"]), op)
-        with self.graph(self.policy) as graph:
-            graph.restore_candidates(op["data"]["steps"], self.bundle(op))
-            # Recheck current-head PR CI, including reruns/revocations.
-            for step in op["data"]["steps"]:
-                pr = self.verify_step(step, graph)
-                paths, _ = graph.inspect(step["base_sha"], step["after"])
-                require(self.ci(pr, step["after"], paths, parents=step["parents"], staged=True, graph=graph)[0],
-                        "Candidate CI is pending")
-            graph.atomic_publish(op["data"]["steps"], op["data"]["receipt"], token=self.github.token())
-        self.reconcile(op)
+        pr = self.github.pull(op['data']['merge_intent']['pr'])
+        require(pr['state'] == 'open' and not pr.get('auto_merge'),
+                'PR is closed or queued; resolve its GitHub state before retrying')
+        op['data']['intent'] = False
+        self.store.save(op, 'prepared', 'retry-same-pr-after-reconciliation')
+        self.advance(op)
 
     def verify_chain(self):
         with self.graph(self.policy) as graph:
@@ -475,74 +565,81 @@ class Coordinator:
         return heads
 
     def report(self, op):
-        """Public-safe progress is retried independently of the Git transaction."""
-        data = op["data"]
-        key = "operation-report:" + op["id"]
-        summary = f'CE operation `{op["id"]}`: **{op["state"]}**.\n\n'
-        if op["state"] == "complete":
-            summary += f'All targets published atomically. Receipt: `{data["receipt"]["ref"]}`.\n\n'
-        else:
-            summary += data.get("reason", "Preparing all branch candidates before publication.") + "\n\n"
-        for step in data["steps"]:
-            summary += f'- `{step["branch"]}`: ' + (f'PR #{step["pr"]}; ' if "pr" in step else "")
-            summary += (f'candidate `{step["after"]}`' if "after" in step else "awaiting preparation")
-            summary += "; ancestry only\n" if step["null"] else "\n"
-        if "conflict_index" in data:
-            step = data["steps"][data["conflict_index"]]
-            summary += (f'\nResolve `{step["branch"]}` by merging lower candidate `{step["input_head"]}` '
-                        f'with target `{step["base_sha"]}` in a personal fork. Open a resolution PR against '
-                        f'`{step["branch"]}`. After OCA and approval from a reviewer with Write, Maintain, or Admin access, the merge captain runs '
-                        f'`repair-upmerge {op["id"]} --pr NUMBER`. Every candidate still needs CI before publication.')
+        """Reporting is retried independently of successful GitHub merges."""
+        data = op['data']
+        summary = f'Merge operation `{op["id"]}`: **{op["state"]}**.\n\n'
+        summary += data.get('reason', 'Test changes across versions, then create and merge integration PRs in sequence.') + '\n\n'
+        url = 'https://github.com/' + self.policy['repository']
+        for step in data['steps']:
+            summary += f'- `{step["branch"]}`: '
+            if step.get('pr'):
+                summary += f'[PR #{step["pr"]}]({url}/pull/{step["pr"]}); '
+            commit = step.get('merged_sha')
+            summary += (f'[merged `{commit}`]({url}/commit/{commit})' if commit else 'awaiting merge')
+            summary += '; ancestry only\n' if step['null'] else '\n'
+            if step.get('test_summary'):
+                summary += '  ' + step['test_summary'] + '\n'
+            if step.get('resolution'):
+                summary += f'  Reviewed resolution: [#{step["resolution"]["pr"]}]({url}/pull/{step["resolution"]["pr"]}).\n'
+        if 'conflict_index' in data:
+            step = data['steps'][data['conflict_index']]
+            if step.get('input_ref'):
+                summary += f'\nFetch conflict input: `git fetch origin {step["input_ref"]}`.\n'
+            summary += (f'\nConflict repair: merge exact input `{step["input_head"]}` and target '
+                        f'`{step["base_sha"]}` in a resolution PR to `{step["branch"]}`. '
+                        'After OCA and current-head approval, run `use-resolution` with the operation ID and resolution PR. '
+                        'The repaired chain is rehearsed again before the next merge.\n')
+        summary += '\nSerial merges are durable: earlier merges remain if a later PR is blocked.\n'
+        key = 'operation-report:' + op['id']
         fingerprint = hashlib.sha256(summary.encode()).hexdigest()
         if self.store.setting(key) == fingerprint:
             return
-        conclusion = "success" if op["state"] == "complete" else (
-            "action_required" if op["state"] in ("blocked", "conflict", "uncertain") else "neutral")
-        reviews = {op["pr"]: op["head"]}
-        reviews.update({s["pr"]: s["review_head"] for s in data["steps"] if "pr" in s})
+        self.store.checkpoint()
+        conclusion = 'success' if op['state'] == 'complete' else 'neutral'
+        reviews = {op['pr']: op['head']}
+        reviews.update({s['pr']: s['review_head'] for s in data['steps'] if 'pr' in s})
         for number, head in reviews.items():
             pr = self.github.pull(number)
-            self.github.check(pr, "CE / operation", conclusion, summary, candidate=head)
-            if pr["head"]["sha"] == head:
-                self.github.advisory_label(pr, False)
-        for number in data.get("superseded_prs", []):
-            pr = self.github.pull(number)
-            self.github.check(pr, "CE / operation", "neutral",
-                              f'Superseded by a reviewed resolution in operation `{op["id"]}`.\n\n' + summary)
-            self.github.close_pr(pr)
-        # A squash does not make the original contributor commit reachable;
-        # close it only after the atomic receipt, with the SHA recorded above.
-        if op["state"] == "complete" and data["steps"] and not data["steps"][0].get("promotion"):
-            pr = self.github.pull(op["pr"])
-            if (pr["head"]["sha"] == op["head"] and pr["base"]["ref"] == data["base"]
-                    and (pr.get("body") or "") == data["body"]):
-                self.github.close_pr(pr)
-        self.store.set_setting(key, fingerprint, "coordinator")
+            self.github.status(pr, 'Merge progress', conclusion, f'Merge operation {op["id"]}: {op["state"]}', candidate=head)
+            self.github.comment(pr, 'operation:' + op['id'], summary)
+            self.github.advisory_label(pr, False)
+        for number in data.get('superseded_prs', []):
+            self.github.close_pr(self.github.pull(number))
+        self.github.summary(summary)
+        self.store.set_setting(key, fingerprint, 'coordinator')
 
     def tick(self):
         try:
             self.work()
         finally:
-            if self.policy["mode"] == "active":
-                for op in self.store.operations():
-                    self.report(op)
+            self.store.ensure_healthy()
+            for op in self.store.operations():
+                self.report(op)
 
     def work(self):
-        # Caller holds only a process-scoped publisher mutex, not a durable merge lock.
-        # Waiting for review never results in partially updated CE branches.
-        if self.policy["mode"] == "active":
-            if self.store.uncertain():
-                for op in self.store.uncertain():
-                    self.reconcile(op)
-                return
-            pending = next((o for o in self.store.operations() if o["state"] in ("queued", "prepared")), None)
-            if pending:
-                self.advance(pending)
-                return
-        generated = {s["pr"] for o in self.store.operations()
-                     for s in o["data"]["steps"] if "pr" in s and (
-                         s["pr"] != o["pr"] or o["state"] not in ("aborted", "complete"))}
-        generated.update(n for o in self.store.operations() for n in o["data"].get("superseded_prs", []))
-        for pr in self.github.pages("/pulls?state=open"):
-            if pr["number"] not in generated and pr["base"]["ref"] in self.policy["branches"] + self.policy.get("release_branches", []):
-                self.evaluate(self.github.pull(pr["number"]))
+        operations = self.store.operations()
+        require(all(o['data'].get('protocol') == 'two-phase-v1' or o['state'] in ('complete', 'aborted')
+                    for o in operations), 'Reconcile or abort legacy operations before cutover')
+        owner = self.store.setting('merge-lock')
+        if owner:
+            pending = next((o for o in operations if o['id'] == owner), None)
+            require(pending is not None, 'Unknown CE soft lock owner; investigate state')
+            if pending['state'] in ('complete', 'aborted'):
+                self.release(pending)
+                pending = None
+        else:
+            pending = next((o for o in operations if o['state'] in ('queued', 'prepared', 'publishing', 'uncertain')), None)
+        if pending and pending['state'] in ('queued', 'prepared', 'publishing', 'uncertain', 'conflict'):
+            self.advance(pending)
+        generated = {s['pr'] for o in operations for s in o['data']['steps'] if s.get('pr')}
+        generated.update(o['pr'] for o in operations if o['state'] not in ('complete', 'aborted'))
+        generated.update(n for o in operations for n in o['data'].get('superseded_prs', []))
+        generated.update(s['resolution']['pr'] for o in operations for s in o['data']['steps'] if s.get('resolution'))
+        # Do not advertise another integration while the durable lock is held.
+        for pr in self.github.pages('/pulls?state=open'):
+            if pr['number'] in generated:
+                continue
+            if pr['base']['ref'] in self.policy['branches']:
+                self.evaluate(self.github.pull(pr['number']))
+            else:
+                self.publish_unmanaged(pr)

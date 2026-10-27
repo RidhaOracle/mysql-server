@@ -1,6 +1,5 @@
 # Copyright (c) 2026, Oracle and/or its affiliates.
-"""Small GitHub App client. Never retries a write with an uncertain outcome."""
-import base64
+"""Small token-authenticated GitHub client. Never retries a write with an uncertain outcome."""
 import hashlib
 import http.client
 import json
@@ -15,47 +14,40 @@ import urllib.request
 from .policy import Blocked, require, sha
 
 
-def encode(value):
-    return base64.urlsafe_b64encode(value).rstrip(b"=").decode()
-
-
 def authorization_identity(pr):
-    """Bind the App action to a PR revision, target, and propagation instructions."""
+    """Bind an integration request to a PR revision, target, and propagation instructions."""
     digest = hashlib.sha256(json.dumps([pr["base"]["ref"], pr["head"]["sha"],
                                        pr.get("body") or ""]).encode()).hexdigest()
     return f'{pr["number"]}:{digest}'
 
 
+def integration_body(operation, original, detail=''):
+    return (f'Original PR: #{original}\nMerge operation: {operation}\n\n'
+            'Version testing passed before this integration PR was opened. '
+            'The bot revalidates reviewed source/resolution content and test evidence before merging. '
+            'Separate approval of this generated PR is not required by the configured bot policy.\n\n' + detail)
+
+
 class GitHub:
     def __init__(self, policy):
         self.policy = policy
-        self.tokens = {}
 
-    def token(self, fork=False):
-        installation = self.policy["fork_installation_id" if fork else "installation_id"]
-        cache_key = (installation, self.policy["bot_fork" if fork else "repository"])
-        token, expires = self.tokens.get(cache_key, (None, 0))
-        if expires > time.time() + 60:
-            return token
-        now = int(time.time())
-        header = encode(json.dumps({"alg": "RS256", "typ": "JWT"}).encode())
-        claims = encode(json.dumps({"iat": now - 60, "exp": now + 540,
-                                   "iss": str(self.policy["app_id"])}).encode())
-        unsigned = header + "." + claims
-        signature = subprocess.run(
-            ["openssl", "dgst", "-sha256", "-sign", os.environ["CE_APP_PRIVATE_KEY"]],
-            input=unsigned.encode(), stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True).stdout
-        result = self.request("POST", f"/app/installations/{installation}/access_tokens",
-                              {"repositories": [self.policy["bot_fork" if fork else "repository"].split("/")[1]]},
-                              token=unsigned + "." + encode(signature))
-        self.tokens[cache_key] = (result["token"], time.time() + 3000)
-        return result["token"]
+    def token(self):
+        token = os.environ.get("CE_MERGE_TOKEN", "")
+        require(token.strip(), "CE_MERGE_TOKEN is required")
+        return token
 
-    def request(self, method, path, data=None, token=None, fork=False):
+    def verify_identity(self):
+        identity = self.request("GET", "/user")
+        require(self.policy.get("bot_user_id", 0) > 0 and
+                identity["id"] == self.policy["bot_user_id"],
+                "CE_MERGE_TOKEN must belong to the configured automation account")
+
+    def request(self, method, path, data=None):
         require(path.startswith("/") and not path.startswith("//"), "Invalid API path")
         req = urllib.request.Request("https://api.github.com" + path,
             data=json.dumps(data).encode() if data is not None else None, method=method,
-            headers={"Authorization": "Bearer " + (token or self.token(fork)),
+            headers={"Authorization": "Bearer " + self.token(),
                      "Accept": "application/vnd.github+json", "Content-Type": "application/json",
                      "X-GitHub-Api-Version": "2022-11-28", "User-Agent": "mysql-ce-merge"})
         attempts = 3 if method in ("GET", "HEAD") else 1
@@ -83,9 +75,8 @@ class GitHub:
                             delay, attempt + 2, attempts)
             time.sleep(delay)
 
-    def repo(self, suffix, method="GET", data=None, fork=False):
-        name = self.policy["bot_fork" if fork else "repository"]
-        return self.request(method, "/repos/" + name + suffix, data, fork=fork)
+    def repo(self, suffix, method="GET", data=None):
+        return self.request(method, "/repos/" + self.policy["repository"] + suffix, data)
 
     def pages(self, suffix, key=None):
         result = []
@@ -108,16 +99,14 @@ class GitHub:
     def branch(self, branch):
         return self.repo("/branches/" + urllib.parse.quote(branch, safe=""))["commit"]["sha"]
 
-    def revision(self, ref):
-        """Resolve the configured branch or tag to a commit, including annotated tags."""
-        return self.repo("/commits/" + urllib.parse.quote(ref, safe=""))["sha"]
-
     def can_integrate(self, login):
         return login in self.policy["maintainers"] and self.repo(
             "/collaborators/" + urllib.parse.quote(login, safe="") + "/permission")["permission"] in (
                 "admin", "maintain", "write")
 
-    def reviewed(self, pr):
+    def reviewed(self, pr, require_approval=True):
+        """Source/resolution reviews are exact-head; generated PRs still honor objections."""
+        head = sha(pr['head']['sha'])
         owner, name = self.policy["repository"].split("/")
         cursor = None
         while True:
@@ -125,7 +114,8 @@ class GitHub:
                 "query": "query($owner:String!,$name:String!,$number:Int!,$after:String){repository(owner:$owner,name:$name){pullRequest(number:$number){reviewThreads(first:100,after:$after){nodes{isResolved} pageInfo{hasNextPage endCursor}}}}}",
                 "variables": {"owner": owner, "name": name, "number": pr["number"], "after": cursor}})
             require(not threads.get("errors"), "Review conversations unavailable")
-            value = threads["data"]["repository"]["pullRequest"]["reviewThreads"]
+            pull = threads["data"]["repository"]["pullRequest"]
+            value = pull["reviewThreads"]
             require(all(t["isResolved"] for t in value["nodes"]), "Unresolved review conversations")
             if not value["pageInfo"]["hasNextPage"]:
                 break
@@ -143,8 +133,9 @@ class GitHub:
             if access.get("role_name") not in ("write", "maintain", "admin"):
                 continue
             require(review["state"] != "CHANGES_REQUESTED", "A reviewer with Write, Maintain, or Admin access has requested changes")
-            approved |= review["commit_id"] == pr["head"]["sha"]
-        require(approved, "Current-head approval from a collaborator with Write, Maintain, or Admin access is missing")
+            approved |= review["commit_id"] == head
+        require(not require_approval or approved,
+                "Current-head approval from a collaborator with Write, Maintain, or Admin access is missing")
 
     def oca(self, pr):
         label = self.policy["oca_label"]
@@ -155,14 +146,40 @@ class GitHub:
                 and self.can_integrate(events[-1]["actor"]["login"]),
                 "OCA label lacks trusted verification provenance")
 
-    def check(self, pr, name, conclusion, summary, action=False, candidate=None):
-        result = self.repo("/check-runs", "POST", {
-            "name": name, "head_sha": candidate or pr["head"]["sha"], "status": "completed",
-            "conclusion": conclusion, "external_id": authorization_identity(pr),
-            "output": {"title": name, "summary": summary},
-            "actions": [{"label": "Integrate", "description": "Authorize this reviewed revision",
-                         "identifier": "integrate"}] if action else []})
-        return result["id"]
+    def status(self, pr, name, conclusion, summary, candidate=None):
+        state = {"success": "success", "neutral": "pending", "action_required": "error"}.get(conclusion, conclusion)
+        head = sha(candidate or pr["head"]["sha"])
+        description = summary.splitlines()[0][:140]
+        # Avoid exhausting GitHub's per-context status limit while awaiting review.
+        statuses = self.pages(f"/commits/{head}/statuses")
+        previous = next((s for s in statuses if s["context"] == name and
+                         s.get("creator", {}).get("id") == self.policy["bot_user_id"]), None)
+        if previous and previous["state"] == state and previous.get("description") == description:
+            return previous
+        payload = {"context": name, "state": state, "description": description}
+        run_id = os.environ.get("GITHUB_RUN_ID")
+        if run_id:
+            payload["target_url"] = f'https://github.com/{self.policy["repository"]}/actions/runs/{int(run_id)}'
+        return self.repo(f"/statuses/{head}", "POST", payload)
+
+    def comment(self, pr, key, body):
+        marker = f"<!-- ce-merge:{key} -->"
+        text = marker + "\n" + body
+        comments = self.pages(f'/issues/{pr["number"]}/comments')
+        previous = next((c for c in comments if c.get("user", {}).get("id") == self.policy["bot_user_id"]
+                         and c.get("body", "").startswith(marker + "\n")), None)
+        if previous:
+            if previous["body"] != text:
+                self.repo(f'/issues/comments/{previous["id"]}', "PATCH", {"body": text})
+        else:
+            self.repo(f'/issues/{pr["number"]}/comments', "POST", {"body": text})
+
+    @staticmethod
+    def summary(text):
+        path = os.environ.get("GITHUB_STEP_SUMMARY")
+        if path:
+            with open(path, "a") as stream:
+                stream.write(text + "\n\n")
 
     def advisory_label(self, pr, ready):
         present = any(label["name"] == "Integrate" for label in pr.get("labels", []))
@@ -175,24 +192,36 @@ class GitHub:
         if pr["state"] == "open":
             self.repo(f'/pulls/{pr["number"]}', "PATCH", {"state": "closed"})
 
-    def bot_pr(self, operation, index, head, base, original, detail=""):
+    def merge_pr(self, number, head, method, message, generated=False):
+        """One attempt only. The journal reconciles GitHub's merged state afterward."""
+        require(method in ("squash", "merge"), "Unsupported merge method")
+        require(not generated or method == 'merge', 'Review exception is only for generated merge PRs')
+        env = dict(os.environ, GH_TOKEN=self.token(), GH_HOST="github.com",
+                   GH_PROMPT_DISABLED="1")
+        # --admin suppresses gh's local BLOCKED-state refusal for the configured
+        # PR-only review exception. It grants no server permissions: quality and
+        # history rules have no bot exception. Never use it for the source PR.
+        subject, _, body = message.partition('\n')
+        try:
+            result = subprocess.run(
+                ["gh", "pr", "merge", str(int(number)), "--repo", self.policy["repository"],
+                 "--" + method, *(['--admin'] if generated else []), "--match-head-commit", sha(head),
+                 '--subject', subject, '--body-file', '-'],
+                env=env, input=body.lstrip('\n').encode(), stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE, timeout=120)
+        except (OSError, subprocess.TimeoutExpired):
+            raise Blocked("GitHub merge interrupted; reconcile before retrying") from None
+        require(result.returncode == 0, "GitHub merge was not confirmed; reconcile before retrying")
+
+    def bot_pr(self, operation, index, base, original, detail=""):
         """Deterministic names and lookup make retry after create-PR failure safe."""
-        require(self.policy["mode"] == "active", "Shadow mode cannot create bot branches")
-        branch = f"upmerge/{operation}/{index}"
-        refs = self.repo("/git/matching-refs/heads/" + branch, fork=True)
-        exact = [r for r in refs if r["ref"] == "refs/heads/" + branch]
-        if exact:
-            require(exact[0]["object"]["sha"] == head, "Bot branch changed unexpectedly")
-        else:
-            self.repo("/git/refs", "POST", {"ref": "refs/heads/" + branch, "sha": head}, fork=True)
-        owner = self.policy["bot_fork"].split("/")[0]
+        branch = f"merge/{operation}/{index}"
+        owner = self.policy["repository"].split("/")[0]
         pulls = self.repo("/pulls?state=all&head=" + urllib.parse.quote(owner + ":" + branch, safe=""))
         require(len(pulls) <= 1, "Ambiguous generated PR")
         if pulls:
             return pulls[0]["number"]
         return self.repo("/pulls", "POST", {
-            "title": f"Upmerge #{original} into {base}", "head": owner + ":" + branch,
-            "base": base, "body": f"Original PR: #{original}\nCE operation: {operation}\n\n"
-                                     "Review this exact prepared candidate. All affected CE branches publish together "
-                                     "only after every candidate passes review and CI; no separate PR merge occurs.\n\n" + detail
+            "title": f"Merge #{original} into {base}", "head": branch,
+            "base": base, "body": integration_body(operation, original, detail)
         })["number"]
