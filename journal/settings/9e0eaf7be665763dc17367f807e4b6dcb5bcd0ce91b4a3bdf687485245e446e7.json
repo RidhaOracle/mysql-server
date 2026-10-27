@@ -4,7 +4,7 @@
     "0f693ffc76b00fdb1d14f107545d504718a4514d1b1ed8bf777d396f1550fc44",
     "65:363f5dca907f7e1c0507178e8fbcaebdcd21694b023f113f81a7944ca86937a9",
     "318f8b4d9335832c286276f78a40d9989e27ec77",
-    "Current-head approval from a collaborator with Write, Maintain, or Admin access is missing",
-    false
+    "Builds not applicable: documentation-only allowlist",
+    true
   ]
 }
