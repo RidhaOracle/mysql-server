@@ -1,6 +1,4 @@
 {
   "key": "hold",
-  "value": {
-    "reason": "Live rehearsal setup: trusted baseline bootstrap and App-to-Actions ruleset cutover"
-  }
+  "value": null
 }
