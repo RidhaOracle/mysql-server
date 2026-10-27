@@ -75,3 +75,4 @@
 {"data": {"state": "prepared"}, "event": "candidate-tests-checked", "operation": "45aee340cb1250a6902fec31f3f1d7e1", "timestamp": 1793093690.0716712}
 {"data": {"state": "prepared"}, "event": "integration-pr-linked", "operation": "45aee340cb1250a6902fec31f3f1d7e1", "timestamp": 1793093691.7880244}
 {"data": {"state": "prepared"}, "event": "candidate-tests-checked", "operation": "45aee340cb1250a6902fec31f3f1d7e1", "timestamp": 1793093699.82781}
+{"data": {"state": "publishing"}, "event": "github-pr-merge-intent", "operation": "45aee340cb1250a6902fec31f3f1d7e1", "timestamp": 1793093708.2558768}
