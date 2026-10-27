@@ -45,3 +45,4 @@
 {"data": {"operator": "RidhaOracle", "value": "45aee340cb1250a6902fec31f3f1d7e1"}, "event": "setting:merge-lock", "operation": null, "timestamp": 1793093004.5823202}
 {"data": {"state": "prepared"}, "event": "candidates-prepared", "operation": "45aee340cb1250a6902fec31f3f1d7e1", "timestamp": 1793093016.0028627}
 {"data": {"state": "prepared"}, "event": "candidate-tests-checked", "operation": "45aee340cb1250a6902fec31f3f1d7e1", "timestamp": 1793093018.9162161}
+{"data": {"state": "prepared"}, "event": "integration-pr-linked", "operation": "45aee340cb1250a6902fec31f3f1d7e1", "timestamp": 1793093020.4007897}
