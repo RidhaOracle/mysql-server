@@ -154,32 +154,30 @@ class PolicyAndWorkflowTests(unittest.TestCase):
             with self.subTest(body=bad), self.assertRaises(Blocked):
                 resolution_prs(bad, 'lts', POLICY)
 
-    def test_state_and_staging_names_cannot_overlap_targets(self):
+    def test_state_and_version_names_cannot_overlap(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "policy.json"
-            for change in ({"state_branch": "lts"}, {"branches": ["merge/test"]},
-                           {"state_branch": "merge-tests/state"}, {"bot_user_id": 0}, {"state_branch": "bad..name"}):
+            for change in ({"state_branch": "lts"}, {"branches": ["ce-merge-state/child"]},
+                           {"bot_user_id": 0}, {"state_branch": "bad..name"}):
                 path.write_text(json.dumps(dict(POLICY, **change)))
                 with self.subTest(change=change), self.assertRaises(Blocked):
                     load(path)
             path.write_text(json.dumps(POLICY))
             self.assertEqual(load(path), POLICY)
 
-    def test_rulesets_protect_native_pr_merges_staging_and_state(self):
+    def test_rulesets_protect_native_pr_merges_and_only_the_persistent_state_branch(self):
         generated = {r["name"]: r for r in rulesets(POLICY)}
         for name in ("CE merge executor", "CE reviewed changes", "CE merge quality", "CE branch lifecycle"):
             self.assertEqual(generated[name]["conditions"]["ref_name"]["include"], ["refs/heads/lts", "refs/heads/trunk"])
         actor = generated["CE merge executor"]["bypass_actors"]
         self.assertEqual(actor, [{"actor_id": 42, "actor_type": "User", "bypass_mode": "pull_request"}])
-        self.assertEqual(generated["CE bot history"]["bypass_actors"], [])
+        self.assertEqual(generated["CE state history"]["bypass_actors"], [])
         self.assertEqual(generated["CE merge quality"]["bypass_actors"], [])
         self.assertEqual(generated["CE reviewed changes"]["bypass_actors"], actor)
         self.assertEqual(generated["CE pull requests"]["bypass_actors"], [])
         self.assertNotIn("CE receipt creation", generated)
-        refs = generated["CE bot history"]["conditions"]["ref_name"]["include"]
-        self.assertIn("refs/heads/ce-merge-state", refs)
-        self.assertIn("refs/heads/merge/**/*", refs)
-        self.assertIn("refs/heads/merge-tests/**/*", refs)
+        for name in ('CE merge state', 'CE state history'):
+            self.assertEqual(generated[name]['conditions']['ref_name']['include'], ['refs/heads/ce-merge-state'])
 
     def test_manual_commands_including_once_require_a_current_maintainer(self):
         with tempfile.TemporaryDirectory() as directory:

@@ -73,7 +73,7 @@ class Journal:
         op = {"id": operation, "pr": pr["number"], "head": pr["head"]["sha"],
               "state": "queued", "created": time.time(), "data": {
                   "actor": actor, "body": pr.get("body") or "", "base": pr["base"]["ref"],
-                  "protocol": "two-phase-v1", "steps": [], "intent": False}}
+                  "protocol": "direct-versions-v1", "steps": [], "intent": False}}
         self.save(op, "queued", "authorized")
         return operation
 

@@ -115,6 +115,7 @@ class PreparationEvidenceTests(unittest.TestCase):
         self.case.setUp()
         self.addCleanup(self.case.doCleanups)
         self.case.prepare()
+        self.case.store.head = 'd' * 40  # GitJournal's already-confirmed public checkpoint.
         self.runs, self.jobs, self.dispatches = {}, {}, []
         self.workflows = {name: dict(id=i, path='.github/workflows/' + name, name=name)
                           for i, name in enumerate((*WORKFLOWS, WORKFLOW), 1)}
@@ -161,6 +162,35 @@ class PreparationEvidenceTests(unittest.TestCase):
         self.assertTrue(self.check(0)[0])
         self.assertEqual(self.dispatches, [])
 
+    def null_request(self, path, content, replace_source=False):
+        self.case.repo.git('checkout', 'trunk')
+        tip = self.case.repo.commit(path, content)
+        self.case.repo.git('push', str(self.case.remote), tip + ':refs/heads/trunk')
+        if replace_source:
+            self.case.repo.git('checkout', '-b', 'docs-source', self.case.repo.base)
+            head = self.case.repo.commit(path, content)
+            self.case.repo.git('push', str(self.case.remote), '+' + head + ':refs/pull/1/head')
+            self.case.api.pulls[1]['head']['sha'] = head
+        self.case.api.pulls[1]['body'] = 'Merge-Through: lts'
+        op = self.case.op()
+        op['head'] = self.case.api.pulls[1]['head']['sha']
+        op['data'].update(body=self.case.api.pulls[1]['body'], steps=[])
+        self.case.store.save(op, 'queued', 'null-source')
+        self.case.coordinator.prepare(op)
+
+    def test_documentation_only_null_merge_needs_no_compilation(self):
+        self.null_request('Docs/rehearsal.md', 'Rehearsal\n', replace_source=True)
+        ok, message = self.check(1)
+        self.assertTrue(ok)
+        self.assertIn('target tree unchanged', message)
+        self.assertEqual(self.dispatches, [])
+
+    def test_code_null_merge_still_requires_version_tests(self):
+        self.null_request('fix.cc', 'int fix;\n')
+        self.assertFalse(self.check(1)[0])
+        self.assertEqual(len(self.dispatches), 1)
+        self.assertEqual(json.loads(self.dispatches[0]['inputs']['checks']), ['pr-build.yml', 'mtr.yml'])
+
     def test_only_missing_check_group_is_dispatched(self):
         self.ordinary_ci(1, ['pr-build.yml', 'mtr.yml'])
         self.assertFalse(self.check(0)[0])
@@ -170,7 +200,11 @@ class PreparationEvidenceTests(unittest.TestCase):
     def test_dispatch_is_pinned_checkpointed_and_not_repeated_on_new_runner(self):
         self.assertFalse(self.check(1)[0])
         record = self.case.op()['data']['steps'][1]['test_request']
-        self.assertEqual(self.case.remote_git('rev-parse', record['ref']), record['candidate'])
+        self.assertEqual(record['state'], 'd' * 40)
+        self.assertEqual(record['bundle'], self.case.coordinator.bundle(self.case.op()).name)
+        self.assertEqual(self.case.remote_git('for-each-ref', '--format=%(refname)', 'refs/heads'),
+                         'refs/heads/lts\nrefs/heads/trunk')
+        self.assertNotIn('ref', record)
         from scripts.ce_merge.journal import Journal
         self.case.coordinator.store = Journal(self.case.root / 'journal')
         self.assertFalse(self.check(1)[0])
