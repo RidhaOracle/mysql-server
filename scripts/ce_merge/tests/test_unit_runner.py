@@ -21,11 +21,11 @@ class UnitRunnerTests(unittest.TestCase):
             (root / 'build/CTestTestfile.cmake').write_text(
                 f'add_test(hung_test "{sys.executable}" "-c" "import time; time.sleep(3)")\n')
             wrapper = root / 'ctest'
-            # Shorten the runner's 120-second budget without changing its flags.
+            # Shorten the runner's 900-second budget without changing its flags.
             # --test-timeout would let this test pass instead of timing out.
             wrapper.write_text(f'#!{sys.executable}\nimport os, sys\n'
                                f'os.execv({shutil.which("ctest")!r}, ["ctest"] + '
-                               '["1" if arg == "120" else arg for arg in sys.argv[1:]])\n')
+                               '["1" if arg == "900" else arg for arg in sys.argv[1:]])\n')
             wrapper.chmod(0o755)
             summary = root / 'summary.md'
             result = subprocess.run(['bash', str(ROOT / 'scripts/ci/run_unit_tests.sh')],
