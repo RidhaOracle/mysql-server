@@ -49,6 +49,9 @@
           "828c5e11616fc98a107ae0897204a1b710fa665f",
           "4956090d89ee94b0f6831d78631d4fb2e6154a23"
         ],
+        "pr": 67,
+        "pr_body": "Original PR: #65\nMerge operation: pr-65/trunk/45aee340cb1250a6902fec31f3f1d7e1-r2\n\nVersion testing passed before this integration PR was opened. The bot revalidates reviewed source/resolution content and test evidence before merging. Separate approval of this generated PR is not required by the configured bot policy.\n\nTested file tree: `eb70f80fa77cd5fc25c75361ca57d0207c1c15b0`\n",
+        "review_head": "2cbc57dd55cab7cbe641654f7c4a311a9ec3b86e",
         "squash": false,
         "stage_id": "pr-65/trunk/45aee340cb1250a6902fec31f3f1d7e1-r2",
         "test_summary": "Documentation-only exemption",
