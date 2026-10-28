@@ -69,7 +69,7 @@ def candidate_tests(coordinator, op, graph, index):
     """Reuse individual equivalent PR checks; dispatch only missing checks."""
     step = op['data']['steps'][index]
     paths = graph.paths(step['base_sha'], step['after'])
-    if not paths and step['null']:
+    if not paths:
         source = op['data']['steps'][0]
         if documentation_only(graph.paths(source['base_sha'], source['after'])):
             return True, 'Documentation-only history propagation; target tree unchanged'

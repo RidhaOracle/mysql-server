@@ -162,7 +162,7 @@ class PreparationEvidenceTests(unittest.TestCase):
         self.assertTrue(self.check(0)[0])
         self.assertEqual(self.dispatches, [])
 
-    def null_request(self, path, content, replace_source=False):
+    def already_applied_request(self, path, content, replace_source=False):
         self.case.repo.git('checkout', 'trunk')
         tip = self.case.repo.commit(path, content)
         self.case.repo.git('push', str(self.case.remote), tip + ':refs/heads/trunk')
@@ -171,22 +171,21 @@ class PreparationEvidenceTests(unittest.TestCase):
             head = self.case.repo.commit(path, content)
             self.case.repo.git('push', str(self.case.remote), '+' + head + ':refs/pull/1/head')
             self.case.api.pulls[1]['head']['sha'] = head
-        self.case.api.pulls[1]['body'] = 'Merge-Through: lts'
         op = self.case.op()
         op['head'] = self.case.api.pulls[1]['head']['sha']
         op['data'].update(body=self.case.api.pulls[1]['body'], steps=[])
-        self.case.store.save(op, 'queued', 'null-source')
+        self.case.store.save(op, 'queued', 'already-applied-source')
         self.case.coordinator.prepare(op)
 
-    def test_documentation_only_null_merge_needs_no_compilation(self):
-        self.null_request('Docs/rehearsal.md', 'Rehearsal\n', replace_source=True)
+    def test_already_applied_documentation_needs_no_compilation(self):
+        self.already_applied_request('Docs/rehearsal.md', 'Rehearsal\n', replace_source=True)
         ok, message = self.check(1)
         self.assertTrue(ok)
         self.assertIn('target tree unchanged', message)
         self.assertEqual(self.dispatches, [])
 
-    def test_code_null_merge_still_requires_version_tests(self):
-        self.null_request('fix.cc', 'int fix;\n')
+    def test_already_applied_code_still_requires_version_tests(self):
+        self.already_applied_request('fix.cc', 'int fix;\n')
         self.assertFalse(self.check(1)[0])
         self.assertEqual(len(self.dispatches), 1)
         self.assertEqual(json.loads(self.dispatches[0]['inputs']['checks']), ['pr-build.yml', 'mtr.yml'])

@@ -15,11 +15,10 @@ activation gate.
 
 ## Contributor interface
 
-Target the oldest applicable configured version and include:
-
-```text
-Merge-Through: trunk
-```
+Target the oldest applicable configured version. Every integration continues
+through the last configured version, `trunk`: `8.4` → `9.7` → `trunk`, or
+`9.7` → `trunk`. A PR targeting `trunk` needs only its original squash merge.
+No propagation metadata is required.
 
 Optional version-specific conflict resolutions can be linked in the same body:
 
@@ -30,22 +29,11 @@ Resolution-PR: trunk https://github.com/RidhaOracle/mysql-server/pull/457
 
 Each configured later version can have one resolution link. Numbers such as
 `#456` are accepted too; URLs must belong to this repository. Hidden examples in
-HTML comments are ignored. When the PR target equals `Merge-Through`, the bot
-infers **backport null merge**:
-apply the fix only to that target, then merge its history through every later
-version without changing their files. No separate reason field is required.
-For example, a PR targeting `8.4` with `Merge-Through: 8.4` changes `8.4`, then
-creates history-only merge PRs into `9.7` and `trunk`. A PR targeting `9.7` with
-`Merge-Through: 9.7` changes `9.7`, null-merges into `trunk`, and leaves `8.4` alone.
-
-For a content stop beyond the PR target but before the newest version, include
-`Merge-Reason:` with a reviewed applicability explanation. Supplied reason fields
-must be non-empty. Later versions receive history-only merges with unchanged
-files, even when a normal content merge would conflict. A conflict within the
-content-carrying part of the chain still needs a reviewed resolution PR. Backport
-patches must be submitted to the desired older target; the bot does not create
-backward cherry-picks from a PR targeting a newer version, and `Backport-To:`
-instructions remain unsupported.
+HTML comments are ignored. Version stops and intentional null merges are not
+supported. Remove obsolete `Merge-Through:`, `Merge-Reason:`, `Upmerge:` and
+backport-control fields; they are rejected rather than silently ignored.
+Contributors can prepare a patch for an older target, but it follows the same
+normal forward merges through trunk. The bot does not create backward cherry-picks.
 
 The original PR needs trusted OCA verification, current-head approval by a
 reviewer with Write, Maintain, or Admin access, resolved conversations, and passing
@@ -136,10 +124,10 @@ PR to include it and obtain fresh approval and CI. The bot never copies a review
 tree onto a new branch. No propagation PRs are opened during testing;
 contributor-provided resolution PRs are the deliberate exception.
 
-For a backport, a normal version-branch merge is permitted only when it preserves
-the newer target tree exactly. Otherwise the bot pauses before publication for a
-reviewed history-only resolution PR. It never substitutes a content-changing merge
-for an ancestry-only request.
+Every later version receives a normal merge of the actual preceding version.
+If its fix is already present, Git can naturally produce no file changes while
+preserving that commit in history. Conflicts still require a reviewed resolution;
+there is no separate ancestry-only publication path.
 
 ## Phase 2: merge changes across versions
 
