@@ -11,7 +11,7 @@ from scripts.ce_merge.coordinator import Coordinator
 from scripts.ce_merge.git import PublicGraph
 from scripts.ce_merge.github import GitHub, integration_body
 from scripts.ce_merge.journal import Journal
-from scripts.ce_merge.policy import Blocked, require, documentation_only, rulesets, merge_through
+from scripts.ce_merge.policy import Blocked, require, documentation_only, rulesets, resolution_prs
 
 
 POLICY = {
@@ -76,7 +76,7 @@ class FakeGitHub:
         self.add_pull(1, case.head, "lts", "contributor/ce")
 
     def add_pull(self, number, head, branch, repository):
-        self.pulls[number] = {"number": number, "state": "open", "draft": False, "body": "Merge-Through: trunk",
+        self.pulls[number] = {"number": number, "state": "open", "draft": False, "body": "Public fix",
             "user": {"id": 9, "login": "contributor"}, "head": {"sha": head, "repo": {"full_name": repository}},
             "base": {"sha": self.branch(branch), "ref": branch, "repo": {"full_name": "example/ce"}}}
 
@@ -252,14 +252,13 @@ class SerialTests(unittest.TestCase):
         self.assertEqual(self.remote_git('for-each-ref', '--format=%(refname)', 'refs/heads'),
                          'refs/heads/lts\nrefs/heads/trunk')
 
-    def test_content_changing_null_merge_waits_for_resolution_before_first_merge(self):
+    def test_removed_version_stop_blocks_before_any_merge(self):
         self.api.pulls[1]['body'] = 'Merge-Through: lts'
         op = self.op()
         op['data']['body'] = self.api.pulls[1]['body']
-        self.store.save(op, 'queued', 'null-request')
+        self.store.save(op, 'queued', 'obsolete-stop-request')
         self.coordinator.advance(self.op())
-        self.assertEqual(self.op()['state'], 'conflict')
-        self.assertEqual(self.op()['data']['conflict_index'], 1)
+        self.assertEqual(self.op()['state'], 'blocked')
         self.assertEqual(self.api.merges, [])
         self.unchanged()
         self.assertEqual(len(self.api.pulls), 1)
@@ -544,7 +543,7 @@ class SerialTests(unittest.TestCase):
 
     def test_changed_body_after_first_merge_blocks_next(self):
         self.coordinator.advance(self.op())
-        self.api.pulls[1]['body'] = 'Merge-Through: lts\nMerge-Reason: changed'
+        self.api.pulls[1]['body'] = 'Changed integration instructions'
         self.coordinator.advance(self.op())
         self.assertEqual(self.op()['state'], 'blocked')
         self.assertEqual(self.api.merges, [(1, 'squash')])
@@ -615,81 +614,49 @@ class SerialTests(unittest.TestCase):
         self.assertEqual(self.api.merges, before)
         self.assertTrue(self.api.pulls[1]['merged'])
 
-    def test_null_suffix_preserves_target_tree_and_actual_lower_ancestry(self):
+    def test_already_applied_fix_still_merges_forward_with_unchanged_tree(self):
         self.repo.git('checkout', 'trunk')
         tip = self.repo.commit('fix.cc', 'int fix;\n')
         self.repo.git('push', str(self.remote), tip + ':refs/heads/trunk')
-        self.api.pulls[1]['body'] = 'Merge-Through: lts\nMerge-Reason: Already fixed on trunk'
-        op = self.op()
-        op['data']['body'] = self.api.pulls[1]['body']
-        self.store.save(op, 'queued', 'test')
         steps = self.finish()['data']['steps']
         self.remote_git('merge-base', '--is-ancestor', steps[0]['merged_sha'], steps[1]['merged_sha'])
         self.assertEqual(self.remote_git('rev-parse', steps[1]['merged_sha'] + '^{tree}'),
                          self.remote_git('rev-parse', tip + '^{tree}'))
 
-    def backport_null_chain(self, base):
-        # Different later-version implementations deliberately conflict with
-        # the source patch. Null merges must preserve those versions verbatim.
-        self.repo.git('checkout', 'trunk')
-        middle = self.repo.commit('fix.cc', 'int version97;\n')
-        self.repo.git('push', str(self.remote), middle + ':refs/heads/middle')
-        trunk = self.repo.commit('fix.cc', 'int trunk_version;\n')
-        self.repo.git('push', str(self.remote), trunk + ':refs/heads/trunk')
-        self.coordinator.policy = dict(POLICY, branches=['lts', 'middle', 'trunk'])
-        if base == 'middle':
-            self.repo.git('checkout', '-b', 'backport-fix', middle)
-            self.head = self.repo.commit('fix.cc', 'int fix;\n')
-            self.repo.git('push', '--force-with-lease=refs/pull/1/head:' + self.api.pulls[1]['head']['sha'],
-                          str(self.remote), 'HEAD:refs/pull/1/head')
-            self.api.pulls[1]['head']['sha'] = self.head
+    def forward_chain(self, base):
+        branches = ['8.4', '9.7', 'trunk']
+        for branch in branches[:-1]:
+            self.remote_git('update-ref', 'refs/heads/' + branch, self.repo.base)
+        self.coordinator.policy = dict(POLICY, branches=branches)
         self.api.pulls[1]['base']['ref'] = base
-        self.api.pulls[1]['body'] = 'Merge-Through: ' + base
+        self.api.pulls[1]['body'] = 'Apply this fix to all newer versions'
         op = self.op()
-        op['head'] = self.head
         op['data'].update(base=base, body=self.api.pulls[1]['body'])
-        self.store.save(op, 'queued', 'backport-null-test')
-        bases = {'lts': self.repo.base, 'middle': middle, 'trunk': trunk}
-        for _ in range(12):
-            self.coordinator.advance(self.op())
-            op = self.op()
-            if op['state'] == 'complete':
-                break
-            if op['state'] == 'conflict':
-                index = op['data']['conflict_index']
-                step = op['data']['steps'][index]
-                self.repo.git('fetch', str(self.coordinator.bundle(op)),
-                              '+refs/ce-candidates/*:refs/ce-candidates/*')
-                tree = self.repo.git('rev-parse', step['base_sha'] + '^{tree}')
-                head = self.repo.git('commit-tree', tree, '-p', step['base_sha'], '-p', step['input_head'],
-                                     input=b'Reviewed history-only resolution\n')
-                number = 10 + index
-                self.repo.git('push', str(self.remote), '+' + head + f':refs/pull/{number}/head')
-                self.api.add_pull(number, head, step['branch'], 'contributor/ce')
-                self.coordinator.repair(self.op(), number)
-            # Replace the runner between passes, retaining the journal and bundles.
-            self.store = Journal(self.store.path)
-            self.coordinator = Coordinator(self.coordinator.policy, self.store, self.api, self.graph)
-            self.coordinator.tests = lambda *a, **kw: (True, 'version test evidence')
-        self.assertEqual(self.op()['state'], 'complete', str(self.op()))
-        steps = self.op()['data']['steps']
-        self.assertEqual([s['null'] for s in steps], [False] + [True] * (len(steps) - 1))
-        self.assertEqual(self.remote_git('show', steps[0]['merged_sha'] + ':fix.cc'), 'int fix;')
+        self.store.save(op, 'queued', 'forward-chain-request')
+        steps = self.finish()['data']['steps']
+        self.assertEqual([s['branch'] for s in steps], branches[branches.index(base):])
+        for step in steps:
+            self.assertNotIn('null', step)
+            self.assertEqual(self.remote_git('show', step['merged_sha'] + ':fix.cc'), 'int fix;')
+            self.assertTrue(self.api.pulls[step['pr']]['merged'])
         for lower, upper in zip(steps, steps[1:]):
+            self.assertEqual(self.api.pulls[upper['pr']]['head']['ref'], lower['branch'])
             self.remote_git('merge-base', '--is-ancestor', lower['merged_sha'], upper['merged_sha'])
-            self.assertEqual(self.remote_git('rev-parse', upper['merged_sha'] + '^{tree}'),
-                             self.remote_git('rev-parse', bases[upper['branch']] + '^{tree}'))
-            self.assertTrue(self.api.pulls[upper['pr']]['merged'])
-        self.assertTrue(self.api.pulls[1]['merged'])
         self.assertIsNone(self.store.setting('merge-lock'))
         return steps
 
-    def test_backport_to_oldest_null_merges_all_later_versions(self):
-        self.assertEqual(len(self.backport_null_chain('lts')), 3)
+    def test_eight_four_always_propagates_through_nine_seven_to_trunk(self):
+        self.assertEqual(len(self.forward_chain('8.4')), 3)
 
-    def test_backport_to_middle_leaves_older_version_untouched(self):
-        self.assertEqual(len(self.backport_null_chain('middle')), 2)
-        self.assertEqual(self.api.branch('lts'), self.repo.base)
+    def test_nine_seven_always_propagates_to_trunk_without_changing_eight_four(self):
+        self.assertEqual(len(self.forward_chain('9.7')), 2)
+        self.assertEqual(self.api.branch('8.4'), self.repo.base)
+
+    def test_trunk_target_needs_only_the_original_squash(self):
+        self.assertEqual(len(self.forward_chain('trunk')), 1)
+        self.assertEqual(self.api.merges, [(1, 'squash')])
+        self.assertEqual(self.api.branch('8.4'), self.repo.base)
+        self.assertEqual(self.api.branch('9.7'), self.repo.base)
 
     def test_three_branch_chain_preserves_each_actual_merge(self):
         self.remote_git('update-ref', 'refs/heads/middle', self.repo.base)
@@ -876,39 +843,23 @@ class SerialTests(unittest.TestCase):
 
 
 class PolicyTests(unittest.TestCase):
-    def test_malformed_or_backward_metadata_fails_closed(self):
-        for body in ("Merge-Through:\nMerge-Reason: example", "Merge-Through: trunk\nMerge-Through: trunk",
-                     "Backport-To: lts", "Merge-Through: lts\nMerge-Reason: \nNext section"):
+    def test_removed_version_controls_fail_closed(self):
+        for body in ('Merge-Through: trunk', 'Merge-Through: lts', 'Merge-Reason: older only',
+                     'Upmerge: trunk', 'Upmerge-Till: lts', 'Backport-To: lts'):
             with self.subTest(body=body), self.assertRaises(Blocked):
-                merge_through(body, "lts", POLICY["branches"])
+                resolution_prs(body, 'lts', POLICY)
 
     def test_unknown_base_fails_with_public_reason(self):
         with self.assertRaises(Blocked):
-            merge_through("", "unknown", POLICY["branches"])
-    def test_explicit_merge_through_field_is_required(self):
-        with self.assertRaises(Blocked):
-            merge_through('', 'lts', POLICY['branches'])
-        self.assertEqual(merge_through('Merge-Through: trunk', 'lts', POLICY['branches']), 'trunk')
+            resolution_prs('', 'unknown', POLICY)
+
+    def test_no_propagation_metadata_is_required(self):
+        for base in POLICY['branches']:
+            with self.subTest(base=base):
+                self.assertEqual(resolution_prs('A public fix', base, POLICY), {})
 
     def test_hidden_template_example_is_not_an_instruction(self):
-        with self.assertRaises(Blocked):
-            merge_through("<!--\nMerge-Through: trunk\n-->", "lts", POLICY["branches"])
-
-    def test_target_equal_to_stop_selects_backport_null_without_reason(self):
-        branches = ['8.4', '9.7', 'trunk']
-        for base in branches:
-            with self.subTest(base=base):
-                self.assertEqual(merge_through(f'Merge-Through: {base}', base, branches), base)
-
-    def test_intermediate_early_stop_requires_reason(self):
-        with self.assertRaises(Blocked):
-            merge_through('Merge-Through: 9.7', '8.4', ['8.4', '9.7', 'trunk'])
-        self.assertEqual(merge_through('Merge-Through: 9.7\nMerge-Reason: Already fixed on trunk',
-                                     '8.4', ['8.4', '9.7', 'trunk']), '9.7')
-
-    def test_no_backward_merge(self):
-        with self.assertRaises(Blocked):
-            merge_through("Merge-Through: lts\nMerge-Reason: test", "trunk", POLICY["branches"])
+        self.assertEqual(resolution_prs('<!--\nMerge-Through: lts\nUpmerge: trunk\n-->', 'lts', POLICY), {})
 
     def test_docs_exemption_is_narrow(self):
         self.assertTrue(documentation_only(["Docs/test.md"]))

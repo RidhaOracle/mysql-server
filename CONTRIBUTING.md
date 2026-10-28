@@ -84,12 +84,11 @@ CI reports completion or actionable failures after the build and MTR run finish.
 
 After administrator provisioning, a configured maintainer requests integration
 with `/integrate` on an approved, OCA-verified PR with successful **Merge check**.
-Target the oldest applicable version and include `Merge-Through: <last-version>`.
+Target the oldest applicable version. Every integration merges forward through
+`trunk`: `8.4` → `9.7` → `trunk`, or `9.7` → `trunk`. No propagation field is needed.
 Optional `Resolution-PR: <version> <PR-link>` lines supply reviewed version-specific
-conflict resolutions. When the PR target equals `Merge-Through`, the bot infers a
-backport null merge: apply the fix there and preserve all later versions' files
-while connecting their history. No separate reason is needed. For an earlier
-content stop beyond the PR target, include `Merge-Reason:`.
+conflict resolutions. Version stops and backport-only/null-merge instructions are
+not supported; remove obsolete `Merge-Through:` and `Merge-Reason:` fields.
 
 The bot first prepares the whole chain and tests all versions in parallel,
 without opening generated integration PRs. Matching original/resolution PR CI
@@ -103,7 +102,8 @@ These PRs connect the real version branches directly: `8.4` → `9.7` → `trunk
 The bot never creates temporary integration or testing branches. A conflicting
 hop uses your reviewed resolution PR itself; it must include the actual preceding
 merge commit. Updating a preflight resolution after the squash needs fresh approval.
-History-only hops must preserve the newer tree exactly or wait for a resolution PR.
+Already-applied changes can naturally leave a newer version's files unchanged;
+its normal merge still preserves the lower version commit in history.
 Verified generated PRs do not require another human approval under the configured
 bot review exception. Required tests, PR use, and history protections remain.
 Changed targets or file trees need fresh evidence. Earlier merges remain published

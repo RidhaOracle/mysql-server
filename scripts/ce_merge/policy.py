@@ -74,27 +74,6 @@ def matches(expected, actual):
     return expected == actual
 
 
-def merge_through(body, base, branches):
-    body = re.sub(r"<!--.*?-->", "", body or "", flags=re.S)
-    require(base in branches, "Target branch is not in the forward chain")
-    require(not re.search(r"^[ \t]*Backport[^:\n]*:", body, re.M | re.I),
-            "Backport instructions are not supported: target the oldest applicable branch")
-    require(not re.search(r"^[ \t]*Upmerge(?:-Till|-Reason)?:", body, re.M),
-            "Use Merge-Through and Merge-Reason metadata")
-    values = re.findall(r"^[ \t]*Merge-Through:[ \t]*([^\n]*)$", body, re.M)
-    require(len(values) == 1, "Exactly one Merge-Through: <last-content-branch> field is required")
-    target = values[0].strip()
-    require(target in branches and branches.index(target) >= branches.index(base),
-            "Invalid Merge-Through target")
-    if target != branches[-1]:
-        reasons = re.findall(r"^[ \t]*Merge-Reason:[ \t]*(.*)$", body, re.M)
-        # Stopping at the PR base explicitly selects a backport-only change;
-        # every later version receives an ancestry-only merge.
-        require((target == base and not reasons) or (len(reasons) == 1 and reasons[0].strip()),
-                "Early content stop beyond the PR target requires Merge-Reason; supplied reasons must be non-empty")
-    return target
-
-
 def resolution_number(value, repository):
     value = str(value).strip()
     match = re.fullmatch(r"(?:#)?([1-9][0-9]*)", value) or re.fullmatch(
@@ -105,6 +84,10 @@ def resolution_number(value, repository):
 
 def resolution_prs(body, base, policy):
     body = re.sub(r"<!--.*?-->", "", body or "", flags=re.S)
+    require(base in policy['branches'], 'Target branch is not in the forward chain')
+    require(not re.search(r'^[ \t]*(?:Merge-(?:Through|Reason)|Upmerge(?:-Till|-Reason)?|Backport[^:\n]*):',
+                          body, re.M | re.I),
+            'Remove version-stop/backport metadata: every integration merges forward through ' + policy['branches'][-1])
     result = {}
     for line in re.findall(r"^[ \t]*Resolution-PR:[ \t]*([^\n]*)$", body, re.M):
         parts = line.split()

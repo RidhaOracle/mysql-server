@@ -9,7 +9,7 @@ from .github import authorization_identity, integration_body
 from .testing import candidate_tests
 from .journal import PersistenceError
 from .git import MergeConflict, PublicGraph
-from .policy import Blocked, check_content, documentation_only, matches, require, rulesets, sha, merge_through, rehearsal_test, resolution_prs
+from .policy import Blocked, check_content, documentation_only, matches, require, rulesets, sha, rehearsal_test, resolution_prs
 
 
 def ruleset_revision(value):
@@ -27,7 +27,7 @@ class Coordinator:
         self.policy, self.store, self.github, self.graph = policy, store, github, graph
 
     def policy_identity(self):
-        return hashlib.sha256(json.dumps({"protocol": "direct-versions-v1", "policy": self.policy}, sort_keys=True).encode()).hexdigest()
+        return hashlib.sha256(json.dumps({"protocol": "forward-only-v1", "policy": self.policy}, sort_keys=True).encode()).hexdigest()
 
     def bundle(self, op):
         return self.store.bundle(op["id"], op["data"].get("generation", 0))
@@ -155,7 +155,6 @@ class Coordinator:
     def evaluate(self, pr):
         try:
             self.source(pr)
-            merge_through(pr.get("body"), pr["base"]["ref"], self.policy["branches"])
             with self.graph_for(pr) as graph:
                 merge, paths, _ = self.evidence(pr, graph)
                 ok, summary = self.ci(pr, merge, paths, graph=graph)
@@ -170,7 +169,6 @@ class Coordinator:
                     'Original squash merge changed')
         else:
             self.basic(pr)
-        merge_through(pr.get('body'), pr['base']['ref'], self.policy['branches'])
         resolution_prs(pr.get('body'), pr['base']['ref'], self.policy)
         if op:
             require(pr["head"]["sha"] == op["head"] and
@@ -196,9 +194,6 @@ class Coordinator:
                 # its old resolved tree would still apply without a Git conflict.
                 if index in invalidated:
                     raise MergeConflict('Reviewed resolution target moved')
-                if step['null'] and not step.get('resolved_tree'):
-                    if graph.merge_tree(step['base_sha'], previous) != graph.tree(step['base_sha']):
-                        raise MergeConflict('History-only propagation needs a reviewed resolution preserving the target files')
                 graph.candidates([step], previous, op['id'])
             except MergeConflict:
                 require(index > 0, 'Original PR conflicts with its target; update the PR and authorize a new operation')
@@ -212,7 +207,6 @@ class Coordinator:
         chain = self.policy["branches"]
         op['data']['resolution_prs'] = resolution_prs(root.get('body'), root['base']['ref'], self.policy)
         branches = chain[chain.index(root["base"]["ref"]):]
-        stop = merge_through(root.get("body"), root["base"]["ref"], chain)
         with self.graph(self.policy) as graph:
             refs = ["refs/heads/" + b for b in chain]
             advertised = graph.remote_refs(refs)
@@ -220,8 +214,7 @@ class Coordinator:
             graph.fetch(list(heads.values()) + [f'refs/pull/{root["number"]}/head'])
             for lower, higher in zip(chain, chain[1:]):
                 require(graph.ancestor(heads[lower], heads[higher]), "CE ancestry needs reconciliation before cutover")
-            steps = [{"branch": b, "base_sha": heads[b], "null": chain.index(b) > chain.index(stop)}
-                     for b in branches]
+            steps = [{"branch": b, "base_sha": heads[b]} for b in branches]
             steps[0]["message"] = root.get("title", "CE contribution") + f' (#{root["number"]})'
             self.candidates(op, graph, steps, op["head"])
             require(steps[0]["tree"] != graph.tree(steps[0]["base_sha"]),
@@ -261,13 +254,12 @@ class Coordinator:
                     "Resolution must merge the exact lower candidate and recorded target base")
             graph.inspect(step["base_sha"], head)
             tree = graph.tree(head)
-            require(not step["null"] or tree == graph.tree(step["base_sha"]), "Null merge must preserve the target tree")
-            replacement = {"branch": step["branch"], "base_sha": step["base_sha"], "null": step["null"],
+            replacement = {"branch": step["branch"], "base_sha": step["base_sha"],
                            "parents": [step["base_sha"], head], "tree": tree, "input_head": step["input_head"],
                            "resolved_tree": tree, "resolution": {"pr": number, "head": head, "body": pr.get("body") or ""}}
             replacement["after"] = graph.commit(tree, replacement["parents"], f'Reviewed resolution #{number} for CE {op["id"]}')
             steps = data["steps"][:index] + [replacement] + [
-                {k: s[k] for k in ("branch", "base_sha", "null")} for s in data["steps"][index + 1:]]
+                {k: s[k] for k in ("branch", "base_sha")} for s in data["steps"][index + 1:]]
             data.pop("reason", None)
             self.candidates(op, graph, steps, replacement["after"], start=index + 1)
             data["generation"] = data.get("generation", 0) + 1
@@ -278,7 +270,7 @@ class Coordinator:
             self.store.save(op, "prepared", "reviewed-resolution-accepted")
 
     def acquire(self, op):
-        require(op['data'].get('protocol') == 'direct-versions-v1',
+        require(op['data'].get('protocol') == 'forward-only-v1',
                 'Legacy operation: reconcile or abort it with the previous coordinator before cutover')
         owner = self.store.setting('merge-lock')
         require(owner in (None, op['id']), 'CE soft merge lock belongs to another operation')
@@ -316,8 +308,6 @@ class Coordinator:
                     op['data']['conflict_index'] = index
                     raise MergeConflict('A normal version-branch merge would change the required tree; provide a reviewed resolution PR')
                 detail = f'From `{branch}` into `{step["branch"]}`.\n'
-                if step['null']:
-                    detail += 'History-only propagation; target files stay unchanged.\n'
                 self.store.save(op, 'prepared', 'version-pr-create-intent')
                 number = self.github.bot_pr(op['id'], branch, step['branch'], op['pr'], detail=detail)
                 require(step.get('pr', number) == number, 'Integration PR identity changed')
@@ -387,7 +377,7 @@ class Coordinator:
         if not changed and old[start].get('input_head') == previous:
             return
         needs_resolution = {i for i in range(start, len(old)) if changed and old[i].get('resolution')}
-        steps = old[:start] + [{k: s[k] for k in ('branch', 'null', 'resolved_tree', 'resolution', 'message', 'test_request', 'test_attempt', 'fresh_tests') if k in s}
+        steps = old[:start] + [{k: s[k] for k in ('branch', 'resolved_tree', 'resolution', 'message', 'test_request', 'test_attempt', 'fresh_tests') if k in s}
                               for s in old[start:]]
         for i in needs_resolution:
             steps[i].pop('resolution', None)
@@ -579,7 +569,7 @@ class Coordinator:
                 summary += f'[PR #{step["pr"]}]({url}/pull/{step["pr"]}); '
             commit = step.get('merged_sha')
             summary += (f'[merged `{commit}`]({url}/commit/{commit})' if commit else 'awaiting merge')
-            summary += '; ancestry only\n' if step['null'] else '\n'
+            summary += '\n'
             if step.get('test_summary'):
                 summary += '  ' + step['test_summary'] + '\n'
             if step.get('resolution'):
@@ -622,7 +612,7 @@ class Coordinator:
 
     def work(self):
         operations = self.store.operations()
-        require(all(o['data'].get('protocol') == 'direct-versions-v1' or o['state'] in ('complete', 'aborted')
+        require(all(o['data'].get('protocol') == 'forward-only-v1' or o['state'] in ('complete', 'aborted')
                     for o in operations), 'Reconcile or abort legacy operations before cutover')
         owner = self.store.setting('merge-lock')
         if owner:

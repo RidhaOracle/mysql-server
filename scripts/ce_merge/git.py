@@ -152,7 +152,7 @@ class PublicGraph:
             step["input_head"] = previous
             # Inspect original history even when the resulting commit is squashed.
             self.inspect(base, previous)
-            tree = step.get("resolved_tree") or (self.tree(base) if step["null"] else self.merge_tree(base, previous))
+            tree = step.get("resolved_tree") or self.merge_tree(base, previous)
             squash = step.get("squash", index == 0)
             step["parents"] = [base] if squash else [base, previous]
             step["tree"] = tree
@@ -161,7 +161,6 @@ class PublicGraph:
             step["after"] = self.commit(tree, step["parents"],
                 (step.get("message", "") + "\n\n" if step.get("message") else "") +
                 f'CE integration {operation} into {step["branch"]}' +
-                (" (reviewed ancestry-only propagation)" if step["null"] else "") +
                 ("\n\n" + "\n".join(dict.fromkeys(authors)) if squash else ""), author=author)
             previous = step["after"]
             self.inspect(base, previous)

@@ -16,11 +16,10 @@
      integration PRs one at a time. Source and resolution PRs need human review;
      verified generated PRs do not need an additional approval.
 
-     Replace Merge-Through below with the last version needing the fix. For a
-     backport-only fix, set it equal to this PR's target: later versions receive
-     null merges (history only, unchanged files), with no separate reason needed.
-     For an earlier stop beyond the PR target, add Merge-Reason explaining why
-     newer versions need no content. History continues through the last version.
+     Every integration merges forward through trunk: 8.4 -> 9.7 -> trunk,
+     or 9.7 -> trunk. No propagation fields or version stops are supported.
+     Propagation PRs connect the real version branches; the bot creates no
+     temporary integration or testing branches.
 
      Optional reviewed conflict resolutions (one per target version):
      Resolution-PR: 9.7 https://github.com/RidhaOracle/mysql-server/pull/456
@@ -28,8 +27,6 @@
      Resolutions must include the exact candidate and target inputs published by
      the bot. Matching CI is reused; missing tests run independently of PR creation.
      Earlier merges remain if a later version blocks. No backports from trunk. -->
-
-Merge-Through: trunk
 
 ### How was it tested?
 
