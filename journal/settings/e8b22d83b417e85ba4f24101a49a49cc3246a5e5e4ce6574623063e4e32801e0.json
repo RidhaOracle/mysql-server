@@ -1,4 +1,6 @@
 {
   "key": "hold",
-  "value": null
+  "value": {
+    "reason": "Pause new integrations while simplifying the bot to always merge forward through trunk; remove version stops and intentional null/backport mode at user request."
+  }
 }
