@@ -71,8 +71,6 @@ jobs:
         name: Prepare runner storage
         run: |
           test "$RUNNER_ENVIRONMENT" = github-hosted
-          test -d "$RUNNER_TEMP"
-          echo "TMPDIR=$RUNNER_TEMP" >> "$GITHUB_ENV"
           df -h / /tmp "$RUNNER_TEMP"
           # MySQL debug builds need the space occupied by these unused SDKs.
           sudo rm -rf -- /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/.ghcup
