@@ -1,4 +1,6 @@
 {
   "key": "hold",
-  "value": null
+  "value": {
+    "reason": "Brief maintenance: correct version CI completion wake-up after completed no-op demo"
+  }
 }
