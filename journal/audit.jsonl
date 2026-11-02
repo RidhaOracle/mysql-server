@@ -200,3 +200,4 @@
 {"data": {"operator": "coordinator", "value": "dbd148e32385457bad6886ab272a09c253482d20ada227ef2fabaf429682b561"}, "event": "setting:operation-report:282fbac876ad8331716d1ca6b94ce2e8", "operation": null, "timestamp": 1793618954.6389627}
 {"data": {"state": "prepared"}, "event": "candidate-tests-checked", "operation": "282fbac876ad8331716d1ca6b94ce2e8", "timestamp": 1793619034.8481574}
 {"data": {"state": "aborted"}, "event": "abort:RidhaOracle", "operation": "282fbac876ad8331716d1ca6b94ce2e8", "timestamp": 1793621950.9794562}
+{"data": {"operator": "RidhaOracle", "value": null}, "event": "setting:merge-lock", "operation": null, "timestamp": 1793621952.7190754}
