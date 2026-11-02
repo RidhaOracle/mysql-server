@@ -1,0 +1,15 @@
+{
+  "created": 1793624586.4555292,
+  "data": {
+    "actor": "RidhaOracle",
+    "base": "9.7",
+    "body": "<!-- ce-merge:demo-noop -->\n**DEMO ONLY: version CI uses no-op steps. No builds, MTR or unit tests will execute for this integration demo.**\n\nDemonstrate the real user flow on RidhaOracle/mysql-server: collaborator approval \u2192 maintainer `/integrate` \u2192 Git conflict/ancestry preparation \u2192 parallel no-op version checks \u2192 native sequential PR merges.\n\nThis unchanged source commit adds an inert three-line public fixture, `mysql-test/std_data/ce_merge_rehearsal.txt`, to 9.7. Its existing collaborator approval and earlier real source CI are retained. The current demo simulates the missing version CI; green DEMO jobs are not evidence that tests ran.\n\nThe bot must squash this source PR into the fork\u2019s 9.7, then create a PR from the real 9.7 branch into the fork\u2019s trunk and merge it normally. The actual squash commit must remain in trunk\u2019s history. 8.4 stays unchanged. No temporary integration branches are used.\n\nRequires trusted OCA verification and current-head approval from a Write collaborator. Wait for readiness, then post a fresh `/integrate`. Do not merge manually. All targets are in RidhaOracle/mysql-server, not the original repository.\n",
+    "intent": false,
+    "protocol": "forward-only-v1",
+    "steps": []
+  },
+  "head": "935d1d01533a3f46bc7fea01392763aa170db2b9",
+  "id": "8371db5855d33c7e0d7838f90657c635",
+  "pr": 64,
+  "state": "queued"
+}
