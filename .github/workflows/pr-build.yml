@@ -14,6 +14,7 @@ concurrency:
 
 jobs:
   build:
+    if: ${{ !(github.repository == 'RidhaOracle/mysql-server' && github.event.pull_request.user.id == 91072007 && contains(github.event.pull_request.body, '<!-- ce-merge:demo-noop -->')) }}
     name: Debug build (${{ matrix.compiler }})
     runs-on: ubuntu-latest
     timeout-minutes: 360

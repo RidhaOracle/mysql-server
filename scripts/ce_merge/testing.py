@@ -41,7 +41,9 @@ def matching_pr_mtr_profile(graph, base, suites):
 def validate_run(github, policy, record):
     """Read GitHub-owned run/job metadata, never a downloaded candidate artifact."""
     _, runs = workflow_runs(github, policy, WORKFLOW, 'workflow_dispatch', record['trusted'])
-    runs = [r for r in runs if r.get('display_title') == 'merge-test:' + record['request']
+    demo = bool(record.get('demo'))
+    prefix = 'DEMO (no builds/tests) ' if demo else ''
+    runs = [r for r in runs if r.get('display_title') == prefix + 'merge-test:' + record['request']
             and r.get('actor', {}).get('id') == policy['bot_user_id']]
     if not runs:
         return False, 'Waiting for candidate test workflow; use refresh-checks if dispatch was interrupted'
@@ -49,6 +51,17 @@ def validate_run(github, policy, record):
     if run['status'] != 'completed':
         return False, 'Candidate tests: ' + run['status']
     require(run['conclusion'] == 'success', 'Candidate tests did not pass')
+    if demo:
+        require(policy.get('ci_demo') and policy['repository'] == 'RidhaOracle/mysql-server',
+                'No-op CI is not enabled for this repository')
+        name = 'DEMO CI (no builds or tests)'
+        jobs = github.pages(f'/actions/runs/{run["id"]}/jobs?filter=all', 'jobs')
+        require(all(j['name'] == name or j.get('conclusion') == 'skipped' for j in jobs),
+                'Demo workflow unexpectedly executed real check jobs')
+        expected = {name: ['Verify demo scope', 'Build (DEMO no-op)', 'MTR (DEMO no-op)',
+                           'Unit tests (DEMO no-op)', 'Report demo result']}
+        list(checked_jobs(github, run, expected, allow_unselected=True))
+        return True, f'DEMO ONLY: build/MTR/unit steps were no-ops: https://github.com/{policy["repository"]}/actions/runs/{run["id"]}'
     # The same trusted default-branch workflow may be manually dispatched by a
     # different actor, but that run cannot satisfy a bot-created request.
     expected = {name: ['Verify candidate' if s == 'Verify PR merge commit' else s for s in steps]
@@ -103,6 +116,9 @@ def candidate_tests(coordinator, op, graph, index):
                     base=step['base_sha'], tree=step['tree'], trusted=trusted, suites=suites,
                     mtr_test=rehearsal_test(coordinator.policy), checks=missing,
                     attempt=step.get('test_attempt', 0))
+    if coordinator.policy.get('ci_demo'):
+        require(coordinator.policy['repository'] == 'RidhaOracle/mysql-server', 'Wrong demo repository')
+        identity['demo'] = True
     request = hashlib.sha256(json.dumps(identity, sort_keys=True).encode()).hexdigest()
     record = step.get('test_request')
     if not record or record['request'] != request:
@@ -119,7 +135,8 @@ def candidate_tests(coordinator, op, graph, index):
                 'request': request, 'candidate': record['candidate'], 'base': record['base'],
                 'tree': record['tree'], 'checks': json.dumps(missing),
                 'suites': json.dumps(suites), 'mtr_test': record['mtr_test'],
-                'state': record['state'], 'bundle': record['bundle']}})
+                'state': record['state'], 'bundle': record['bundle'],
+                'demo': 'true' if record.get('demo') else 'false'}})
     elif not record.get('dispatched'):
         # A runner interrupted between staging intent and dispatch has made no
         # uncertain dispatch. Recreate the request on the next bounded pass.

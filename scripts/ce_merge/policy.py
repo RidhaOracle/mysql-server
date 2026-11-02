@@ -46,6 +46,9 @@ def load(path):
     require(type(policy.get("bot_user_id")) is int and policy["bot_user_id"] > 0,
             "Configure bot_user_id with the automation account's GitHub ID")
     rehearsal_test(policy)
+    require(type(policy.get('ci_demo', False)) is bool and
+            (not policy.get('ci_demo') or policy['repository'] == 'RidhaOracle/mysql-server'),
+            'No-op CI is restricted to the configured demo fork')
     profiles = policy.get('ci_suites', {})
     require(isinstance(profiles, dict) and set(profiles) <= set(branches),
             'Test profiles must name configured versions')
