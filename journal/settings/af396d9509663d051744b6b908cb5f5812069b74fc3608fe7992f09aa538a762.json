@@ -4,7 +4,7 @@
     "02043a6e99f5895efc2cb914c62eb53b320fcbad5fa2134c346bd9c615f1e7e5",
     "68:79e69e71478997492433c2c6997ea5b3cfe2ca10c492eeb30ddf4a446dca158a",
     "910af4925c0cc19c3dcf4a5885e5412269d7e02e",
-    "CE soft merge lock is held by another operation",
+    "Current-head approval from a collaborator with Write, Maintain, or Admin access is missing",
     false
   ]
 }
