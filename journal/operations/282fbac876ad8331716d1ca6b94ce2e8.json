@@ -7,7 +7,7 @@
     "intent": false,
     "policy": "72e64c3c043474ded634bff412433d30e5ff90758930529b76a11577c3e9c7f0",
     "protocol": "forward-only-v1",
-    "reason": "9.7: Waiting for candidate test workflow; use refresh-checks if dispatch was interrupted; trunk: Waiting for candidate test workflow; use refresh-checks if dispatch was interrupted",
+    "reason": "9.7: Candidate tests: in_progress; trunk: Candidate tests: in_progress",
     "resolution_prs": {},
     "steps": [
       {
@@ -45,7 +45,7 @@
           "tree": "7b97b56e0a260434f180e1c7b8cfd63e775a3be5",
           "trusted": "7a21f5b88e7cf3974c94a16bab1e482e96b91f1a"
         },
-        "test_summary": "Waiting for candidate test workflow; use refresh-checks if dispatch was interrupted",
+        "test_summary": "Candidate tests: in_progress",
         "tree": "7b97b56e0a260434f180e1c7b8cfd63e775a3be5"
       },
       {
@@ -83,7 +83,7 @@
           "tree": "d8ba7479f4d55a84fdc3e63916cf70b2a7531198",
           "trusted": "7a21f5b88e7cf3974c94a16bab1e482e96b91f1a"
         },
-        "test_summary": "Waiting for candidate test workflow; use refresh-checks if dispatch was interrupted",
+        "test_summary": "Candidate tests: in_progress",
         "tree": "d8ba7479f4d55a84fdc3e63916cf70b2a7531198"
       }
     ]
