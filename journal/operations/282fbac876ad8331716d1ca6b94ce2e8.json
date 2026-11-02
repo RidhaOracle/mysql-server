@@ -28,11 +28,13 @@
             "pr-build.yml",
             "mtr.yml"
           ],
+          "dispatched": true,
           "index": 0,
           "mtr_test": "main.1st",
           "operation": "282fbac876ad8331716d1ca6b94ce2e8",
           "policy": "72e64c3c043474ded634bff412433d30e5ff90758930529b76a11577c3e9c7f0",
           "request": "56cf9d521e9fc78d101e6195f6c0e5c5d3ddb4a5436b8865a41a9a2124daad77",
+          "state": "660c0da4456f79fd4790718d4fa4035b015d18e4",
           "suites": {
             "core": "auth_sec,collations,component_connection_control,component_keyring_file,connection_control,funcs_2,gcol,gis,information_schema,interactive_utilities,jdv,json,main,opt_trace,query_rewrite_plugins,x",
             "replication": "binlog,binlog_gtid,binlog_nogtid,clone,federated,group_replication,rpl,rpl_gtid,rpl_nogtid",
