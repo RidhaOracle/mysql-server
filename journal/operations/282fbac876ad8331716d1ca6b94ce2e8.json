@@ -5,11 +5,38 @@
     "base": "9.7",
     "body": "Live Merge Bot rehearsal on the fork's actual 8.4, 9.7, and trunk product trees.\n\nAdds an inert public test-data fixture on 9.7. It should propagate to trunk; 8.4 must remain unchanged during this forward integration. Unlike the documentation-only prototype, this path triggers actual GCC/Clang builds and all four MTR shards, with `main.1st` rehearsal coverage and unit tests.\n\n\nPhase 1 must finish version testing before generated integration PRs are opened. Phase 2 squashes this source PR, then creates/merges the trunk PR using the actual squash commit.\n\nEvery integration uses normal forward merges through trunk. A separately prepared older-version PR follows the same forward chain; there is no version-stop or intentional null-merge mode.\n\nRequires real current-head collaborator approval and trusted OCA verification. Do not merge manually; after readiness, a configured maintainer posts a fresh `/integrate` so the workflow itself performs the integration. Baseline setup is tracked in #63.\n",
     "intent": false,
+    "policy": "72e64c3c043474ded634bff412433d30e5ff90758930529b76a11577c3e9c7f0",
     "protocol": "forward-only-v1",
-    "steps": []
+    "resolution_prs": {},
+    "steps": [
+      {
+        "after": "42ce0d3f590491841bd0cdbe9a927924bdd60ef9",
+        "base_sha": "4956090d89ee94b0f6831d78631d4fb2e6154a23",
+        "branch": "9.7",
+        "input_head": "935d1d01533a3f46bc7fea01392763aa170db2b9",
+        "message": "Rehearse sequential merges on the real 9.7 and trunk branches (#64)",
+        "parents": [
+          "4956090d89ee94b0f6831d78631d4fb2e6154a23"
+        ],
+        "squash": true,
+        "tree": "7b97b56e0a260434f180e1c7b8cfd63e775a3be5"
+      },
+      {
+        "after": "517cfe5728bb9df43def38e303d4256fbf3bf8d7",
+        "base_sha": "7a21f5b88e7cf3974c94a16bab1e482e96b91f1a",
+        "branch": "trunk",
+        "input_head": "42ce0d3f590491841bd0cdbe9a927924bdd60ef9",
+        "parents": [
+          "7a21f5b88e7cf3974c94a16bab1e482e96b91f1a",
+          "42ce0d3f590491841bd0cdbe9a927924bdd60ef9"
+        ],
+        "squash": false,
+        "tree": "d8ba7479f4d55a84fdc3e63916cf70b2a7531198"
+      }
+    ]
   },
   "head": "935d1d01533a3f46bc7fea01392763aa170db2b9",
   "id": "282fbac876ad8331716d1ca6b94ce2e8",
   "pr": 64,
-  "state": "queued"
+  "state": "prepared"
 }
