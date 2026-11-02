@@ -301,3 +301,4 @@
 {"data": {"state": "prepared"}, "event": "candidate-tests-checked", "operation": "8371db5855d33c7e0d7838f90657c635", "timestamp": 1793624873.0147965}
 {"data": {"state": "prepared"}, "event": "version-pr-create-intent", "operation": "8371db5855d33c7e0d7838f90657c635", "timestamp": 1793624875.2770834}
 {"data": {"state": "prepared"}, "event": "integration-pr-linked", "operation": "8371db5855d33c7e0d7838f90657c635", "timestamp": 1793624879.6261525}
+{"data": {"state": "prepared"}, "event": "candidate-tests-checked", "operation": "8371db5855d33c7e0d7838f90657c635", "timestamp": 1793624889.4686017}
