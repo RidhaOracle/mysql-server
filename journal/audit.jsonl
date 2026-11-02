@@ -275,3 +275,4 @@
 {"data": {"state": "prepared"}, "event": "candidates-prepared", "operation": "8371db5855d33c7e0d7838f90657c635", "timestamp": 1793624601.7082953}
 {"data": {"state": "prepared"}, "event": "candidate-test-staging-intent", "operation": "8371db5855d33c7e0d7838f90657c635", "timestamp": 1793624607.9114306}
 {"data": {"state": "prepared"}, "event": "candidate-test-dispatch-intent", "operation": "8371db5855d33c7e0d7838f90657c635", "timestamp": 1793624609.6573584}
+{"data": {"state": "prepared"}, "event": "candidate-test-staging-intent", "operation": "8371db5855d33c7e0d7838f90657c635", "timestamp": 1793624614.611362}
