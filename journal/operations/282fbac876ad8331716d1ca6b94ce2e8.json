@@ -1,0 +1,15 @@
+{
+  "created": 1793618779.2260056,
+  "data": {
+    "actor": "RidhaOracle",
+    "base": "9.7",
+    "body": "Live Merge Bot rehearsal on the fork's actual 8.4, 9.7, and trunk product trees.\n\nAdds an inert public test-data fixture on 9.7. It should propagate to trunk; 8.4 must remain unchanged during this forward integration. Unlike the documentation-only prototype, this path triggers actual GCC/Clang builds and all four MTR shards, with `main.1st` rehearsal coverage and unit tests.\n\n\nPhase 1 must finish version testing before generated integration PRs are opened. Phase 2 squashes this source PR, then creates/merges the trunk PR using the actual squash commit.\n\nEvery integration uses normal forward merges through trunk. A separately prepared older-version PR follows the same forward chain; there is no version-stop or intentional null-merge mode.\n\nRequires real current-head collaborator approval and trusted OCA verification. Do not merge manually; after readiness, a configured maintainer posts a fresh `/integrate` so the workflow itself performs the integration. Baseline setup is tracked in #63.\n",
+    "intent": false,
+    "protocol": "forward-only-v1",
+    "steps": []
+  },
+  "head": "935d1d01533a3f46bc7fea01392763aa170db2b9",
+  "id": "282fbac876ad8331716d1ca6b94ce2e8",
+  "pr": 64,
+  "state": "queued"
+}
