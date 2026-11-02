@@ -1,4 +1,10 @@
 {
   "key": "published:64",
-  "value": null
+  "value": [
+    "72e64c3c043474ded634bff412433d30e5ff90758930529b76a11577c3e9c7f0",
+    "64:c2e35cf1930621ced772a61c0678955ff11ca20a7b51e7ea361f95330d8d00e7",
+    "4956090d89ee94b0f6831d78631d4fb2e6154a23",
+    "CE is on hold",
+    false
+  ]
 }
