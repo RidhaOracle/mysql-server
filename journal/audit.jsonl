@@ -272,3 +272,4 @@
 {"data": {"operator": "coordinator", "value": ["02043a6e99f5895efc2cb914c62eb53b320fcbad5fa2134c346bd9c615f1e7e5", "2:0011a91775d6b635327bc872ec378ebbfa3fb709fa6b452a1120b1b2bd01ed6e", "247b64d93ba9b16e836ba3521e6f2cbfa2799fcd", "Current-head approval from a collaborator with Write, Maintain, or Admin access is missing", false]}, "event": "setting:published:2", "operation": null, "timestamp": 1793624443.5492947}
 {"data": {"state": "queued"}, "event": "authorized", "operation": "8371db5855d33c7e0d7838f90657c635", "timestamp": 1793624586.4595802}
 {"data": {"operator": "RidhaOracle", "value": "8371db5855d33c7e0d7838f90657c635"}, "event": "setting:merge-lock", "operation": null, "timestamp": 1793624588.3279495}
+{"data": {"state": "prepared"}, "event": "candidates-prepared", "operation": "8371db5855d33c7e0d7838f90657c635", "timestamp": 1793624601.7082953}
