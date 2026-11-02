@@ -273,3 +273,4 @@
 {"data": {"state": "queued"}, "event": "authorized", "operation": "8371db5855d33c7e0d7838f90657c635", "timestamp": 1793624586.4595802}
 {"data": {"operator": "RidhaOracle", "value": "8371db5855d33c7e0d7838f90657c635"}, "event": "setting:merge-lock", "operation": null, "timestamp": 1793624588.3279495}
 {"data": {"state": "prepared"}, "event": "candidates-prepared", "operation": "8371db5855d33c7e0d7838f90657c635", "timestamp": 1793624601.7082953}
+{"data": {"state": "prepared"}, "event": "candidate-test-staging-intent", "operation": "8371db5855d33c7e0d7838f90657c635", "timestamp": 1793624607.9114306}

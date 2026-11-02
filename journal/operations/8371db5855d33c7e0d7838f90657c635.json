@@ -19,6 +19,30 @@
           "4956090d89ee94b0f6831d78631d4fb2e6154a23"
         ],
         "squash": true,
+        "test_request": {
+          "attempt": 0,
+          "base": "4956090d89ee94b0f6831d78631d4fb2e6154a23",
+          "bundle": "8371db5855d33c7e0d7838f90657c635.bundle",
+          "candidate": "feccf65b98bc1cede0993647bc8de3db763c1fcf",
+          "checks": [
+            "pr-build.yml",
+            "mtr.yml"
+          ],
+          "demo": true,
+          "index": 0,
+          "mtr_test": "main.1st",
+          "operation": "8371db5855d33c7e0d7838f90657c635",
+          "policy": "02043a6e99f5895efc2cb914c62eb53b320fcbad5fa2134c346bd9c615f1e7e5",
+          "request": "4a917a8896c4e12b97a1ee13e8922ac6fac1b7ed6901c2f665162bc4856a10d0",
+          "suites": {
+            "core": "auth_sec,collations,component_connection_control,component_keyring_file,connection_control,funcs_2,gcol,gis,information_schema,interactive_utilities,jdv,json,main,opt_trace,query_rewrite_plugins,x",
+            "replication": "binlog,binlog_gtid,binlog_nogtid,clone,federated,group_replication,rpl,rpl_gtid,rpl_nogtid",
+            "services": "perfschema,router,secondary_engine,service_status_var_registration,service_sys_var_registration,service_udf_registration,sys_vars,sysschema,test_service_sql_api,test_services",
+            "storage": "encryption,innodb,innodb_fts,innodb_gis,innodb_undo,innodb_zip,parts"
+          },
+          "tree": "7b97b56e0a260434f180e1c7b8cfd63e775a3be5",
+          "trusted": "247b64d93ba9b16e836ba3521e6f2cbfa2799fcd"
+        },
         "tree": "7b97b56e0a260434f180e1c7b8cfd63e775a3be5"
       },
       {
