@@ -29,11 +29,13 @@
             "mtr.yml"
           ],
           "demo": true,
+          "dispatched": true,
           "index": 0,
           "mtr_test": "main.1st",
           "operation": "8371db5855d33c7e0d7838f90657c635",
           "policy": "02043a6e99f5895efc2cb914c62eb53b320fcbad5fa2134c346bd9c615f1e7e5",
           "request": "4a917a8896c4e12b97a1ee13e8922ac6fac1b7ed6901c2f665162bc4856a10d0",
+          "state": "48db61ab2e6e3ed88e1f586729423a1fea7e0ab3",
           "suites": {
             "core": "auth_sec,collations,component_connection_control,component_keyring_file,connection_control,funcs_2,gcol,gis,information_schema,interactive_utilities,jdv,json,main,opt_trace,query_rewrite_plugins,x",
             "replication": "binlog,binlog_gtid,binlog_nogtid,clone,federated,group_replication,rpl,rpl_gtid,rpl_nogtid",
