@@ -18,6 +18,7 @@ concurrency:
 # shard stays below MTR's suite timeout and the runner's job time limit.
 jobs:
   mtr:
+    if: ${{ !(github.repository == 'RidhaOracle/mysql-server' && github.event.pull_request.user.id == 91072007 && contains(github.event.pull_request.body, '<!-- ce-merge:demo-noop -->')) }}
     name: MTR (${{ matrix.shard }})
     runs-on: ubuntu-latest
     # A full default MTR selection needs substantially more time than the

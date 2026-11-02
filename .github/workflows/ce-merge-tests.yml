@@ -10,7 +10,15 @@ on:
       - '.github/workflows/merge-version-tests.yml'
 permissions: {}
 jobs:
+  demo-setup:
+    if: ${{ github.repository == 'RidhaOracle/mysql-server' && github.event.pull_request.user.id == 91072007 && contains(github.event.pull_request.body, '<!-- ce-merge:demo-noop -->') }}
+    name: DEMO setup (no tests)
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Report no-op demo setup
+        run: echo 'DEMO ONLY - regression tests deliberately not executed' >> "$GITHUB_STEP_SUMMARY"
   test:
+    if: ${{ !(github.repository == 'RidhaOracle/mysql-server' && github.event.pull_request.user.id == 91072007 && contains(github.event.pull_request.body, '<!-- ce-merge:demo-noop -->')) }}
     runs-on: ubuntu-24.04
     permissions:
       contents: read

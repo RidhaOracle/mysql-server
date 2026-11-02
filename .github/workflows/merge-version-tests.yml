@@ -1,6 +1,6 @@
 # Copyright (c) 2026, Oracle and/or its affiliates.
 name: Merge Version Tests
-run-name: 'merge-test:${{ inputs.request }}'
+run-name: '${{ inputs.demo && ''DEMO (no builds/tests) '' || '''' }}merge-test:${{ inputs.request }}'
 on:
   workflow_dispatch:
     inputs:
@@ -41,6 +41,11 @@ on:
         required: false
         default: ''
         type: string
+      demo:
+        description: Fork demo only; use no-op steps instead of builds and tests
+        required: false
+        default: false
+        type: boolean
 permissions:
   contents: read
 env:
@@ -54,8 +59,27 @@ concurrency:
   group: merge-tests-${{ inputs.request }}
   cancel-in-progress: false
 jobs:
+  demo:
+    if: inputs.demo
+    name: DEMO CI (no builds or tests)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Verify demo scope
+        run: test "$GITHUB_REPOSITORY" = RidhaOracle/mysql-server
+      - name: Build (DEMO no-op)
+        run: echo 'DEMO ONLY - no compilation executed'
+      - name: MTR (DEMO no-op)
+        run: echo 'DEMO ONLY - no MTR test executed'
+      - name: Unit tests (DEMO no-op)
+        run: echo 'DEMO ONLY - no unit tests executed'
+      - name: Report demo result
+        env:
+          CANDIDATE: ${{ inputs.candidate }}
+        run: |
+          printf '## DEMO ONLY\n\nBuild, MTR and unit-test steps are no-ops. No tests were executed.\n\nCandidate: `%s`\n' "$CANDIDATE" >> "$GITHUB_STEP_SUMMARY"
   build:
-    if: contains(fromJSON(inputs.checks), 'pr-build.yml')
+    if: ${{ !inputs.demo && contains(fromJSON(inputs.checks), 'pr-build.yml') }}
     name: Debug build (${{ matrix.compiler }})
     runs-on: ubuntu-24.04
     timeout-minutes: 360
@@ -130,7 +154,7 @@ jobs:
         working-directory: source
         run: ../trusted/scripts/ci/build.sh debug
   mtr:
-    if: contains(fromJSON(inputs.checks), 'mtr.yml')
+    if: ${{ !inputs.demo && contains(fromJSON(inputs.checks), 'mtr.yml') }}
     name: MTR (${{ matrix.shard }})
     runs-on: ubuntu-24.04
     timeout-minutes: 360
@@ -187,7 +211,7 @@ jobs:
           if-no-files-found: ignore
           retention-days: 14
   format:
-    if: contains(fromJSON(inputs.checks), 'clang-format.yml')
+    if: ${{ !inputs.demo && contains(fromJSON(inputs.checks), 'clang-format.yml') }}
     name: clang-format
     runs-on: ubuntu-24.04
     timeout-minutes: 30

@@ -62,7 +62,7 @@ def checked_jobs(github, run, expected, allow_unselected=False):
     require(all(0 < job['run_attempt'] <= run['run_attempt'] for job in jobs),
             'CI rerun metadata is not yet consistent')
     if allow_unselected:
-        known = {name for checks in WORKFLOWS.values() for name in checks}
+        known = {name for checks in WORKFLOWS.values() for name in checks} | set(expected)
         require(all(job['name'] in known or job.get('conclusion') == 'skipped' for job in jobs),
                 'Unexpected candidate test job')
     else:

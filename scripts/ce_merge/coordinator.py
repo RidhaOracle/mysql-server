@@ -129,6 +129,8 @@ class Coordinator:
         self.store.checkpoint()
         self.github.advisory_label(pr, eligible)
         heading = "Ready: an authorized maintainer may comment `/integrate`." if eligible else "Integration blocked."
+        if self.policy.get('ci_demo'):
+            heading += ' DEMO ONLY: version build/test steps will be no-ops.'
         if rehearsal_test(self.policy):
             heading += f' REHEARSAL: {rehearsal_test(self.policy)} only per MTR shard.'
         revision = hashlib.sha256(json.dumps(fingerprint).encode()).hexdigest()
@@ -308,6 +310,8 @@ class Coordinator:
                     op['data']['conflict_index'] = index
                     raise MergeConflict('A normal version-branch merge would change the required tree; provide a reviewed resolution PR')
                 detail = f'From `{branch}` into `{step["branch"]}`.\n'
+                if self.policy.get('ci_demo'):
+                    detail += '\n<!-- ce-merge:demo-noop -->\nDEMO ONLY: version CI uses no-op steps; no build or tests were executed.\n'
                 self.store.save(op, 'prepared', 'version-pr-create-intent')
                 number = self.github.bot_pr(op['id'], branch, step['branch'], op['pr'], detail=detail)
                 require(step.get('pr', number) == number, 'Integration PR identity changed')
@@ -477,6 +481,7 @@ class Coordinator:
                             for s in data['steps'][index:]), 'A remaining target moved; repeat testing')
                 self.store.checkpoint()
                 self.github.status(self.github.pull(step['pr']), 'Merge check', 'success',
+                    'DEMO: no-op CI; Git/review gates checked' if self.policy.get('ci_demo') else
                     'Reviewed source/resolutions; matching version test evidence revalidated')
                 data['merge_intent'] = dict(index=index, pr=step['pr'], head=step['review_head'],
                                             base=step['base_sha'], tree=step['tree'],
@@ -561,6 +566,8 @@ class Coordinator:
         """Reporting is retried independently of successful GitHub merges."""
         data = op['data']
         summary = f'Merge operation `{op["id"]}`: **{op["state"]}**.\n\n'
+        if any(s.get('test_request', {}).get('demo') for s in data['steps']):
+            summary += '**DEMO ONLY: build, MTR and unit-test steps are no-ops. No version tests were executed.**\n\n'
         summary += data.get('reason', 'Test changes across versions, then create and merge integration PRs in sequence.') + '\n\n'
         url = 'https://github.com/' + self.policy['repository']
         for step in data['steps']:

@@ -11,6 +11,7 @@
     "RidhaOracle"
   ],
   "ci_mtr_test": "main.1st",
+  "ci_demo": true,
   "oca_label": "OCA Verified",
   "forbidden_paths": [
     "internal",
