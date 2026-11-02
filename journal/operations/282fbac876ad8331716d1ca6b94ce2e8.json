@@ -44,6 +44,7 @@
           "tree": "7b97b56e0a260434f180e1c7b8cfd63e775a3be5",
           "trusted": "7a21f5b88e7cf3974c94a16bab1e482e96b91f1a"
         },
+        "test_summary": "Waiting for candidate test workflow; use refresh-checks if dispatch was interrupted",
         "tree": "7b97b56e0a260434f180e1c7b8cfd63e775a3be5"
       },
       {
@@ -56,6 +57,29 @@
           "42ce0d3f590491841bd0cdbe9a927924bdd60ef9"
         ],
         "squash": false,
+        "test_request": {
+          "attempt": 0,
+          "base": "7a21f5b88e7cf3974c94a16bab1e482e96b91f1a",
+          "bundle": "282fbac876ad8331716d1ca6b94ce2e8.bundle",
+          "candidate": "517cfe5728bb9df43def38e303d4256fbf3bf8d7",
+          "checks": [
+            "pr-build.yml",
+            "mtr.yml"
+          ],
+          "index": 1,
+          "mtr_test": "main.1st",
+          "operation": "282fbac876ad8331716d1ca6b94ce2e8",
+          "policy": "72e64c3c043474ded634bff412433d30e5ff90758930529b76a11577c3e9c7f0",
+          "request": "36cc56afde893f3fca3fbe62c45f62ddaca447100702ae0777fd4ce36aee4555",
+          "suites": {
+            "core": "auth_sec,collations,component_connection_control,component_keyring_file,connection_control,funcs_2,gcol,gis,information_schema,interactive_utilities,jdv,json,main,opt_trace,query_rewrite_plugins,x",
+            "replication": "binlog,binlog_gtid,binlog_nogtid,clone,federated,group_replication,rpl,rpl_gtid,rpl_nogtid",
+            "services": "perfschema,router,secondary_engine,service_status_var_registration,service_sys_var_registration,service_udf_registration,sys_vars,sysschema,test_service_sql_api,test_services",
+            "storage": "encryption,innodb,innodb_fts,innodb_gis,innodb_undo,innodb_zip,parts"
+          },
+          "tree": "d8ba7479f4d55a84fdc3e63916cf70b2a7531198",
+          "trusted": "7a21f5b88e7cf3974c94a16bab1e482e96b91f1a"
+        },
         "tree": "d8ba7479f4d55a84fdc3e63916cf70b2a7531198"
       }
     ]

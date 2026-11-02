@@ -180,3 +180,4 @@
 {"data": {"state": "prepared"}, "event": "candidates-prepared", "operation": "282fbac876ad8331716d1ca6b94ce2e8", "timestamp": 1793618790.593997}
 {"data": {"state": "prepared"}, "event": "candidate-test-staging-intent", "operation": "282fbac876ad8331716d1ca6b94ce2e8", "timestamp": 1793618796.426084}
 {"data": {"state": "prepared"}, "event": "candidate-test-dispatch-intent", "operation": "282fbac876ad8331716d1ca6b94ce2e8", "timestamp": 1793618798.3192146}
+{"data": {"state": "prepared"}, "event": "candidate-test-staging-intent", "operation": "282fbac876ad8331716d1ca6b94ce2e8", "timestamp": 1793618802.3999941}
