@@ -7,7 +7,6 @@
     "intent": false,
     "policy": "02043a6e99f5895efc2cb914c62eb53b320fcbad5fa2134c346bd9c615f1e7e5",
     "protocol": "forward-only-v1",
-    "reason": "9.7: Waiting for candidate test workflow; use refresh-checks if dispatch was interrupted; trunk: Waiting for candidate test workflow; use refresh-checks if dispatch was interrupted",
     "resolution_prs": {},
     "steps": [
       {
@@ -46,7 +45,7 @@
           "tree": "7b97b56e0a260434f180e1c7b8cfd63e775a3be5",
           "trusted": "247b64d93ba9b16e836ba3521e6f2cbfa2799fcd"
         },
-        "test_summary": "Waiting for candidate test workflow; use refresh-checks if dispatch was interrupted",
+        "test_summary": "DEMO ONLY: build/MTR/unit steps were no-ops: https://github.com/RidhaOracle/mysql-server/actions/runs/41449704515",
         "tree": "7b97b56e0a260434f180e1c7b8cfd63e775a3be5"
       },
       {
@@ -85,7 +84,7 @@
           "tree": "7ba93ea8cf9b7beda9d69546959060bcce2735ab",
           "trusted": "247b64d93ba9b16e836ba3521e6f2cbfa2799fcd"
         },
-        "test_summary": "Waiting for candidate test workflow; use refresh-checks if dispatch was interrupted",
+        "test_summary": "DEMO ONLY: build/MTR/unit steps were no-ops: https://github.com/RidhaOracle/mysql-server/actions/runs/41449720103",
         "tree": "7ba93ea8cf9b7beda9d69546959060bcce2735ab"
       }
     ]
