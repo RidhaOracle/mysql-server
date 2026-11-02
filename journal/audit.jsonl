@@ -178,3 +178,4 @@
 {"data": {"state": "queued"}, "event": "authorized", "operation": "282fbac876ad8331716d1ca6b94ce2e8", "timestamp": 1793618779.4989333}
 {"data": {"operator": "RidhaOracle", "value": "282fbac876ad8331716d1ca6b94ce2e8"}, "event": "setting:merge-lock", "operation": null, "timestamp": 1793618781.492856}
 {"data": {"state": "prepared"}, "event": "candidates-prepared", "operation": "282fbac876ad8331716d1ca6b94ce2e8", "timestamp": 1793618790.593997}
+{"data": {"state": "prepared"}, "event": "candidate-test-staging-intent", "operation": "282fbac876ad8331716d1ca6b94ce2e8", "timestamp": 1793618796.426084}
