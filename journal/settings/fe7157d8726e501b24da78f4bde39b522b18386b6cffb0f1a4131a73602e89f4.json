@@ -4,7 +4,7 @@
     "02043a6e99f5895efc2cb914c62eb53b320fcbad5fa2134c346bd9c615f1e7e5",
     "64:ae6cb4f11924f2bc24e5d0ca550d01c6206ed16cb4133c8edb8d8bf2e0d3469c",
     "4956090d89ee94b0f6831d78631d4fb2e6154a23",
-    "CE is on hold",
-    false
+    "REHEARSAL (main.1st only per MTR shard): Existing PR CI passed for the unchanged PR head; current target merges cleanly. CI may cover an earlier target revision.",
+    true
   ]
 }
