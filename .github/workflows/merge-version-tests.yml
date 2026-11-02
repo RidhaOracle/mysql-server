@@ -43,6 +43,10 @@ on:
         type: string
 permissions:
   contents: read
+env:
+  # These disposable jobs do not restore a compiler cache. Avoid storing a
+  # second copy of large debug objects beside the build itself.
+  CCACHE_DISABLE: '1'
 # Tests execute contributor code on separate disposable runners. The merger
 # credential never enters these jobs. A pinned public state bundle supplies the
 # candidate without a temporary branch. All verification scripts are trusted.
@@ -63,6 +67,14 @@ jobs:
       CC: ${{ matrix.compiler == 'gcc' && 'gcc' || 'clang' }}
       CXX: ${{ matrix.compiler == 'gcc' && 'g++' || 'clang++' }}
     steps:
+      - &prepare_storage
+        name: Prepare runner storage
+        run: |
+          test "$RUNNER_ENVIRONMENT" = github-hosted
+          df -h /
+          # MySQL debug builds need the space occupied by these unused SDKs.
+          sudo rm -rf -- /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/.ghcup
+          df -h /
       - &checkout_candidate
         name: Check out target snapshot
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -133,6 +145,7 @@ jobs:
       MTR_REHEARSAL: ${{ inputs.mtr_test }}
       MTR_SHARD: ${{ matrix.shard }}
     steps:
+      - *prepare_storage
       - *checkout_candidate
       - *checkout_bundle
       - *checkout_automation
@@ -179,6 +192,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
+      - *prepare_storage
       - *checkout_candidate
       - *checkout_bundle
       - *checkout_automation
