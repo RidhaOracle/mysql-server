@@ -68,11 +68,16 @@
         "after": "68f0dc32d701f33892b127adea0547863b3675ff",
         "base_sha": "247b64d93ba9b16e836ba3521e6f2cbfa2799fcd",
         "branch": "trunk",
+        "head_branch": "9.7",
         "input_head": "33c18d6cf02b3af9503cee9523f9e77d66320bf5",
         "parents": [
           "247b64d93ba9b16e836ba3521e6f2cbfa2799fcd",
           "33c18d6cf02b3af9503cee9523f9e77d66320bf5"
         ],
+        "pr": 72,
+        "pr_body": "Original PR: #64\nMerge operation: 8371db5855d33c7e0d7838f90657c635\n\nVersion testing passed before this integration PR was opened. The bot revalidates reviewed source/resolution content and test evidence before merging. Separate approval of this generated PR is not required by the configured bot policy.\n\nFrom `9.7` into `trunk`.\n\n<!-- ce-merge:demo-noop -->\nDEMO ONLY: version CI uses no-op steps; no build or tests were executed.\n",
+        "pr_kind": "version",
+        "review_head": "33c18d6cf02b3af9503cee9523f9e77d66320bf5",
         "squash": false,
         "test_request": {
           "attempt": 0,
