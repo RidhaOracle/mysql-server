@@ -296,3 +296,4 @@
 {"data": {"state": "prepared"}, "event": "candidate-tests-checked", "operation": "8371db5855d33c7e0d7838f90657c635", "timestamp": 1793624769.2761474}
 {"data": {"state": "publishing"}, "event": "github-pr-merge-intent", "operation": "8371db5855d33c7e0d7838f90657c635", "timestamp": 1793624780.5261297}
 {"data": {"state": "prepared"}, "event": "github-merge-confirmed", "operation": "8371db5855d33c7e0d7838f90657c635", "timestamp": 1793624789.588921}
+{"data": {"operator": "coordinator", "value": "fc4ca0c3bb56c80cf1f18a3c7551a315b0472b70448db0e518b27f230deb02ab"}, "event": "setting:operation-report:8371db5855d33c7e0d7838f90657c635", "operation": null, "timestamp": 1793624800.5084605}
