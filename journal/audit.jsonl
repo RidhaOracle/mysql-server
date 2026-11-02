@@ -204,3 +204,4 @@
 {"data": {"operator": "RidhaOracle", "value": null}, "event": "setting:published:64", "operation": null, "timestamp": 1793621954.505082}
 {"data": {"operator": "RidhaOracle", "value": null}, "event": "setting:ready:64", "operation": null, "timestamp": 1793621956.2054126}
 {"data": {"operator": "coordinator", "value": "42ae53970c1c7147cf1234164b5f05d692201f720c5e22a24cb5ccf85f718e1e"}, "event": "setting:operation-report:282fbac876ad8331716d1ca6b94ce2e8", "operation": null, "timestamp": 1793621961.1601427}
+{"data": {"operator": "RidhaOracle", "value": {"reason": "Rehearsal runner-storage recovery: 9.7 candidate build failed with ENOSPC in https://github.com/RidhaOracle/mysql-server/actions/runs/41436884936/job/125248776562; unpublished operation 282fbac876ad8331716d1ca6b94ce2e8 aborted. Hold until workflow fix and deployment verification pass."}}, "event": "setting:hold", "operation": null, "timestamp": 1793622090.9508274}
