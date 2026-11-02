@@ -294,3 +294,4 @@
 {"data": {"state": "prepared"}, "event": "candidate-tests-checked", "operation": "8371db5855d33c7e0d7838f90657c635", "timestamp": 1793624750.36667}
 {"data": {"state": "prepared"}, "event": "integration-pr-linked", "operation": "8371db5855d33c7e0d7838f90657c635", "timestamp": 1793624752.2865293}
 {"data": {"state": "prepared"}, "event": "candidate-tests-checked", "operation": "8371db5855d33c7e0d7838f90657c635", "timestamp": 1793624769.2761474}
+{"data": {"state": "publishing"}, "event": "github-pr-merge-intent", "operation": "8371db5855d33c7e0d7838f90657c635", "timestamp": 1793624780.5261297}
