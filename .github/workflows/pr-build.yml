@@ -2,8 +2,8 @@
 name: PR Build
 on:
   pull_request:
-    branches: [trunk]
-    paths-ignore: ["Docs/**", "**/*.md"]
+    branches: ['8.4', '9.7', trunk]
+    paths-ignore: ["Docs/**", "README", "README.md", "CONTRIBUTING.md"]
 
 permissions: {}
 
