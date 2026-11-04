@@ -171,6 +171,7 @@ class PublicGraph:
                 self.run("ls-remote", "--refs", self.remote, *refs).splitlines()}
 
     def export_candidates(self, steps, path):
+        path = Path(path).resolve()
         refs = []
         for i, step in enumerate(steps):
             ref = f"refs/ce-candidates/{i}"

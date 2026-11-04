@@ -62,6 +62,16 @@ class PipelineTests(unittest.TestCase):
                 self.assertEqual(graph.tree(step['after']), step['tree'])
                 self.assertEqual(graph.parents(step['after'])[0], step['base_sha'])
 
+    def test_prepare_exports_bundle_with_relative_output_directory(self):
+        before = Path.cwd()
+        try:
+            os.chdir(self.root)
+            prepare(self.api, POLICY, 1, Path('pipeline'), 'owner')
+            self.assertTrue((self.directory / 'candidates.bundle').is_file())
+            self.assertTrue((self.directory / 'plan.json').is_file())
+        finally:
+            os.chdir(before)
+
     def test_publish_native_merges_preserve_source_commit_in_trunk(self):
         plan = self.plan()
         publish(self.api, POLICY, plan)
