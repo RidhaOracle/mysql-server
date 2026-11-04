@@ -3,8 +3,8 @@ name: Assign Code Owners
 
 on:
   pull_request_target:
+    branches: ['8.4', '9.7', trunk]
     types: [ready_for_review, labeled]
-    branches: [trunk]
 
 permissions:
   contents: read

@@ -3,8 +3,8 @@ name: Reset PR Head State
 
 on:
   pull_request_target:
+    branches: ['8.4', '9.7', trunk]
     types: [opened, reopened, synchronize]
-    branches: [trunk]
 
 permissions: {}
 
@@ -34,7 +34,6 @@ jobs:
               'Build Failed',
               'MTR Passed',
               'MTR Failed',
-              'Integrate',
             ];
             for (const name of headBoundLabels) {
               try {

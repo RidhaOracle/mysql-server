@@ -3,7 +3,7 @@ name: Auto Label
 
 on:
   pull_request_target:
-    branches: [trunk]
+    branches: ['8.4', '9.7', trunk]
 
 permissions: { contents: read, pull-requests: write, issues: write }
 

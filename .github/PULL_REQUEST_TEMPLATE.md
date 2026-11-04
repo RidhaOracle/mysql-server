@@ -9,6 +9,13 @@
 
 ### Why is it needed?
 
+### Merge across versions
+
+<!-- Target the oldest applicable version: 8.4, 9.7, or trunk.
+     A maintainer comments /integrate after review and OCA verification.
+     The fixed pipeline tests every affected version before merging forward
+     through trunk. No propagation metadata is needed. Conflicts fail the run. -->
+
 ### How was it tested?
 
 - [ ] Added/updated MTR tests under `mysql-test/`

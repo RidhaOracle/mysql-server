@@ -1,0 +1,73 @@
+# Copyright (c) 2026, Oracle and/or its affiliates.
+name: Merge Bot
+on:
+  issue_comment:
+    types: [created]
+permissions: {}
+concurrency:
+  group: ce-merge-${{ github.repository }}
+  cancel-in-progress: false
+  queue: max
+jobs:
+  prepare:
+    if: github.event.issue.pull_request && github.event.comment.body == '/integrate'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    outputs:
+      versions: ${{ steps.prepare.outputs.versions }}
+      artifact: ${{ steps.candidates.outputs.artifact-id }}
+    steps:
+      - &automation
+        name: Check out trusted automation
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          sparse-checkout: |
+            scripts/ce_merge
+            .github/ce-merge-policy.json
+          sparse-checkout-cone-mode: false
+      - id: prepare
+        name: Prepare every affected version
+        env:
+          CE_MERGE_TOKEN: ${{ secrets.CE_MERGE_TOKEN }}
+        run: python3 -m scripts.ce_merge.pipeline prepare
+      - id: candidates
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: merge-candidates
+          path: pipeline/
+          retention-days: 1
+  tests:
+    needs: prepare
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        version: ${{ fromJSON(needs.prepare.outputs.versions) }}
+    uses: ./.github/workflows/merge-version-tests.yml
+    with:
+      artifact: ${{ needs.prepare.outputs.artifact }}
+      branch: ${{ matrix.version.branch }}
+      candidate: ${{ matrix.version.after }}
+      base: ${{ matrix.version.base_sha }}
+      tree: ${{ matrix.version.tree }}
+      suites: ${{ toJSON(matrix.version.suites) }}
+  merge:
+    needs: [prepare, tests]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - *automation
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          artifact-ids: ${{ needs.prepare.outputs.artifact }}
+          merge-multiple: true
+          path: pipeline
+      - name: Merge the tested versions in order
+        env:
+          CE_MERGE_TOKEN: ${{ secrets.CE_MERGE_TOKEN }}
+        run: python3 -m scripts.ce_merge.pipeline publish
