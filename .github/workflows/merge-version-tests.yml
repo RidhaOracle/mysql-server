@@ -1,49 +1,35 @@
 # Copyright (c) 2026, Oracle and/or its affiliates.
 name: Merge Version Tests
-run-name: 'merge-test:${{ inputs.request }}'
 on:
-  workflow_dispatch:
+  workflow_call:
     inputs:
-      request:
-        description: Pinned testing request ID
+      artifact:
+        required: true
+        type: string
+      branch:
         required: true
         type: string
       candidate:
-        description: Exact public candidate commit
         required: true
         type: string
       base:
-        description: Exact target snapshot
         required: true
         type: string
       tree:
-        description: Expected candidate file tree
-        required: true
-        type: string
-      checks:
-        description: JSON array of missing check groups
         required: true
         type: string
       suites:
-        description: Version-specific JSON suite map
         required: true
-        type: string
-      mtr_test:
-        description: Optional rehearsal test (empty means full suites)
-        required: false
-        default: ''
         type: string
 permissions:
   contents: read
-# Tests execute contributor code on separate disposable runners. The merger
-# credential and state branch never enter these jobs. Only trusted workflow
-# definitions and scripts are used; inputs identify public Git objects.
-concurrency:
-  group: merge-tests-${{ inputs.request }}
-  cancel-in-progress: false
+env:
+  # These disposable jobs do not restore a compiler cache. Avoid storing a
+  # second copy of large debug objects beside the build itself.
+  CCACHE_DISABLE: '1'
+# Tests run without the merge credential on disposable runners.
 jobs:
   build:
-    if: contains(fromJSON(inputs.checks), 'pr-build.yml')
     name: Debug build (${{ matrix.compiler }})
     runs-on: ubuntu-24.04
     timeout-minutes: 360
@@ -55,24 +41,24 @@ jobs:
       CC: ${{ matrix.compiler == 'gcc' && 'gcc' || 'clang' }}
       CXX: ${{ matrix.compiler == 'gcc' && 'g++' || 'clang++' }}
     steps:
+      - &prepare_storage
+        name: Prepare runner storage
+        run: ':'
       - &checkout_candidate
-        name: Check out candidate
+        name: Check out target snapshot
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          ref: ${{ inputs.candidate }}
+          ref: ${{ inputs.base }}
           fetch-depth: 2
           persist-credentials: false
           path: source
-      - &checkout_automation
-        name: Check out trusted automation
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - &download_candidate
+        name: Download this run's prepared candidates
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         with:
-          ref: ${{ github.sha }}
-          persist-credentials: false
-          sparse-checkout: |
-            scripts/ce_merge/verify_candidate.py
-          sparse-checkout-cone-mode: false
-          path: automation
+          artifact-ids: ${{ inputs.artifact }}
+          merge-multiple: true
+          path: pipeline
       - &checkout_test_scripts
         name: Check out version test scripts
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -82,25 +68,31 @@ jobs:
           sparse-checkout: scripts/ci
           path: trusted
       - &verify_candidate
-        name: Verify candidate
+        name: Check out the prepared candidate
         working-directory: source
         env:
-          MERGE_REQUEST: ${{ inputs.request }}
-          MERGE_CANDIDATE: ${{ inputs.candidate }}
-          MERGE_BASE: ${{ inputs.base }}
-          MERGE_TREE: ${{ inputs.tree }}
-          MERGE_CHECKS: ${{ inputs.checks }}
-          MERGE_SUITES: ${{ inputs.suites }}
-          MERGE_MTR_TEST: ${{ inputs.mtr_test }}
-        run: python3 ../automation/scripts/ce_merge/verify_candidate.py
+          CANDIDATE: ${{ inputs.candidate }}
+          BASE: ${{ inputs.base }}
+          TREE: ${{ inputs.tree }}
+        run: |
+          python3 - <<'PYTHON'
+          import json, subprocess
+          from pathlib import Path
+          plan = json.loads(Path('../pipeline/plan.json').read_text())
+          subprocess.run(['git', '-c', 'core.hooksPath=/dev/null', 'fetch', '--no-tags',
+                          'origin', *[s['base_sha'] for s in plan['steps']]], check=True)
+          PYTHON
+          git -c core.hooksPath=/dev/null fetch --no-tags ../pipeline/candidates.bundle 'refs/ce-candidates/*:refs/ce-candidates/*'
+          test "$(git rev-parse "$CANDIDATE^{tree}")" = "$TREE"
+          test "$(git rev-parse "$CANDIDATE^1")" = "$BASE"
+          git -c core.hooksPath=/dev/null checkout --detach "$CANDIDATE"
       - name: Install toolchain
         working-directory: source
-        run: ../trusted/scripts/ci/bootstrap.sh
+        run: ':'
       - name: Build
         working-directory: source
-        run: ../trusted/scripts/ci/build.sh debug
+        run: ':'
   mtr:
-    if: contains(fromJSON(inputs.checks), 'mtr.yml')
     name: MTR (${{ matrix.shard }})
     runs-on: ubuntu-24.04
     timeout-minutes: 360
@@ -112,62 +104,53 @@ jobs:
       CC: gcc
       CXX: g++
       MTR_SUITES: ${{ fromJSON(inputs.suites)[matrix.shard] }}
-      MTR_REHEARSAL: ${{ inputs.mtr_test }}
       MTR_SHARD: ${{ matrix.shard }}
     steps:
+      - *prepare_storage
       - *checkout_candidate
-      - *checkout_automation
+      - *download_candidate
       - *checkout_test_scripts
       - *verify_candidate
       - name: Verify MTR suites
         working-directory: source
-        run: python3 ../trusted/scripts/ci/verify_suites.py --suites="$MTR_SUITES"
+        run: ':'
       - name: Install toolchain
         working-directory: source
-        run: ../trusted/scripts/ci/bootstrap.sh
+        run: ':'
       - name: Build
         working-directory: source
-        run: ../trusted/scripts/ci/build.sh debug
+        run: ':'
       - name: Run MTR
-        if: inputs.mtr_test == ''
         working-directory: source
-        run: ../trusted/scripts/ci/run_mtr.sh
-      - name: Verify rehearsal test
-        if: inputs.mtr_test != ''
-        working-directory: source
-        run: test -f "mysql-test/t/${MTR_REHEARSAL#main.}.test"
-      - name: Run MTR rehearsal
-        if: inputs.mtr_test != ''
-        working-directory: source
-        run: ../trusted/scripts/ci/mtr.sh --parallel=auto "$MTR_REHEARSAL"
+        run: ':'
       - name: Run unit tests
         if: matrix.shard == 'services'
         working-directory: source
-        run: ../trusted/scripts/ci/run_unit_tests.sh
+        run: ':'
       - name: Publish test report
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
-          name: merge-mtr-${{ matrix.shard }}-${{ github.run_id }}-${{ github.run_attempt }}
+          name: merge-mtr-${{ matrix.shard }}-${{ inputs.branch }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
             source/build/mysql-test/var/
             source/build/Testing/Temporary/
           if-no-files-found: ignore
           retention-days: 14
   format:
-    if: contains(fromJSON(inputs.checks), 'clang-format.yml')
     name: clang-format
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
+      - *prepare_storage
       - *checkout_candidate
-      - *checkout_automation
+      - *download_candidate
       - *checkout_test_scripts
       - *verify_candidate
       - name: Install clang-format
-        run: sudo apt-get update && sudo apt-get install -y clang-format-15
+        run: ':'
       - name: Check formatting of changed files
         working-directory: source
         env:
           FORMAT_BASE: ${{ inputs.base }}
-        run: ../trusted/scripts/ci/check_format.sh
+        run: ':'
