@@ -1,0 +1,1 @@
+Public fixture for the version forward-merge screenshot walkthrough.
